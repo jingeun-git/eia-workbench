@@ -197,6 +197,32 @@ def probe_file(hwp, path: Path):
         log(f"  C. ✗ PageHiding 접근 실패: {e}")
         log("     → 감추기 자동 제어 불가 가능성. 대안 검토 필요")
 
+    # ── D-2. 감추기 단서 — 기존 pghd·secd 속성을 넓은 키 목록으로 덤프 ──
+    #    감추기가 별도 컨트롤(pghd)인지 구역(secd) 속성인지 판별하기 위한 조사.
+    try:
+        WIDE = ("HideHeader", "HideFooter", "HidePageNum", "HideBorder", "HideFill",
+                "HideMasterPage", "HideAll", "Hide", "ShowHeader", "ShowFooter",
+                "ShowPageNum", "HeadType", "FootType", "PageStartsOn", "StartNum",
+                "SectionType", "TextDirection", "HideFirstHeader", "HideFirstFooter",
+                "HideFirstPageNum", "HideFirstBorder", "HideFirstFill")
+        found_any = False
+        c = hwp.HeadCtrl
+        while c is not None:
+            if c.CtrlID in ("pghd", "secd"):
+                try:
+                    st = c.Properties
+                    got = [f"{k}={st.Item(k)}" for k in WIDE if _safe_has(st, k)]
+                    if got:
+                        found_any = True
+                        log(f"  D-2. {c.CtrlID} 속성: {' | '.join(got[:14])}")
+                except Exception:
+                    pass
+            c = c.Next
+        if not found_any:
+            log("  D-2. pghd/secd에서 감추기 관련 속성 키를 찾지 못함")
+    except Exception as e:
+        log(f"  D-2. ✗ 속성 덤프 실패: {e}")
+
     # ── D. 새 쪽번호(NewNumber) 파라미터 ────────────────────────────────
     try:
         act = hwp.CreateAction("NewNumber")
@@ -271,21 +297,42 @@ def write_test(hwp, src: Path):
         log(f"  1) ✗ 공란 삽입 실패: {e}")
 
     # (2) 감추기 — 머리말·꼬리말·쪽번호 숨김
-    try:
-        hwp.MovePos(3)
-        act = hwp.CreateAction("PageHiding")
-        st = act.CreateSet()
-        act.GetDefault(st)
-        applied = []
-        for k in ("HideHeader", "HideFooter", "HidePageNum"):
-            if _safe_has(st, k):
+    #    ⚠ PageHiding은 Execute가 True를 반환해도 pghd 컨트롤이 생기지 않았다(2026-07-20 실측).
+    #    반환값을 믿지 말고 **컨트롤 개수 변화로 판정**하고, 액션 이름 후보를 넓게 시도한다.
+    def _count(cid):
+        n, c = 0, hwp.HeadCtrl
+        while c is not None:
+            if c.CtrlID == cid:
+                n += 1
+            c = c.Next
+        return n
+
+    ACTIONS = ["PageHiding", "PageHide", "HideProperty", "HideHeaderFooter", "PageNumberHide"]
+    hide_ok = None
+    for name in ACTIONS:
+        try:
+            hwp.MovePos(3)
+            before_pghd = _count("pghd")
+            act = hwp.CreateAction(name)
+            st = act.CreateSet()
+            act.GetDefault(st)
+            keys = [k for k in ("HideHeader", "HideFooter", "HidePageNum", "HideBorder",
+                                "HideFill", "HideMasterPage", "HideAll", "Hide")
+                    if _safe_has(st, k)]
+            for k in keys:
                 st.SetItem(k, 1)
-                applied.append(k)
-        ok = act.Execute(st)
-        log(f"  2) 감추기(PageHiding {','.join(applied) or '항목없음'}): "
-            f"{'✓ Execute 성공' if ok else '✗ Execute 반환 False'}")
-    except Exception as e:
-        log(f"  2) ✗ 감추기 실패: {e}")
+            ret = act.Execute(st)
+            after_pghd = _count("pghd")
+            made = after_pghd > before_pghd
+            log(f"  2) 감추기 [{name}] 키={keys or '없음'} Execute={ret} "
+                f"pghd {before_pghd}→{after_pghd} {'✓ 컨트롤 생성됨' if made else '✗ 변화 없음'}")
+            if made:
+                hide_ok = name
+                break
+        except Exception as e:
+            log(f"  2) 감추기 [{name}] ✗ {type(e).__name__}: {str(e)[:80]}")
+    if not hide_ok:
+        log("     → 액션 경로로는 감추기 생성 실패. 아래 D-2(기존 pghd 속성 덤프) 참고")
 
     # (3) 새 쪽번호 — 홀수 강제에 필요
     try:
@@ -389,8 +436,27 @@ def _run(target: Path, max_files: int = 5):
     for p in picked:
         probe_file(hwp, p)
 
-    # 쓰기 검증 — 사본에서, 첫 파일 하나로만
+    # 쓰기 검증 — 감추기 조사가 목적이므로 **pghd가 실재하는 문서를 우선** 고른다
     if picked:
+        def _has_pghd(p):
+            try:
+                ok, _ = open_doc(hwp, p)
+                if not ok:
+                    return False
+                c, found = hwp.HeadCtrl, False
+                while c is not None:
+                    if c.CtrlID == "pghd":
+                        found = True
+                        break
+                    c = c.Next
+                hwp.XHwpDocuments.Item(0).Close(isDirty=False)
+                return found
+            except Exception:
+                return False
+        target = next((p for p in picked if _has_pghd(p)), picked[0])
+        if target is not picked[0]:
+            log(f"\n  (쓰기 검증 대상으로 pghd 보유 문서 선택: {target.name})")
+        picked = [target] + [p for p in picked if p is not target]
         try:
             write_test(hwp, picked[0])
         except Exception as e:
