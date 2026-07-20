@@ -16,7 +16,7 @@
    └─ 건축물대장 조회            ← 브라우저 완결
               ↕ http://127.0.0.1
 [로컬 브리지]                     ← 실행 중일 때만 활성화
-   ├─ 한컴 4종 (hwp2pdf·hwpContent·hwpPageNum·끼워넣기)
+   ├─ 한컴 2종 (hwp2pdf·hwpPageNum) ※차례·끼워넣기는 2026-07-20 기능 삭제
    ├─ md 변환 고품질 (convert_core.py — HWP/HWPX·OCR·듀얼엔진)
    └─ EIASS 사업코드 자동탐색 (eiass_doc_resolver.py)
 ```
@@ -48,16 +48,16 @@
 | 3. 디자인 시스템 | ✅ `shared/tokens.css` + `docs/design-system.md` |
 | 4. 건축물대장 | ✅ 실브라우저 검증 통과 (SHP·주소 모드) |
 | 5. md 변환 | ✅ 웹 경로 검증 통과 + 브리지 고품질 경로 연결 |
-| 6. EIASS | 🔄 구현 완료 — 통합 테스트 대기 |
-| 7. 로컬 브리지 | 🔄 서버 구현·job 파이프라인 검증(실PDF 완주) — Windows 실검증 대기 |
+| 6. EIASS | ✅ 검증 통과 — FILE_SEQ·사업코드(절차 그룹핑)·사후(연도별 회차→PDF 선택) |
+| 7. 로컬 브리지 | ✅ Windows 실검증 통과 — 원클릭 페어링(run_bridge.bat) |
 | 8. 문서 | ✅ `사용법.md` |
 
 ### 구조
 
-- `index.html` — 셸 (탭 7종·브리지 상태칩·테마·설정)
+- `index.html` — 셸 (탭 5종·브리지 상태칩·테마·설정)
 - `shared/` — tokens.css · ui.css · app.js · bridge.js(pollJob 포함) · geo.js(18케이스 검증)
-- `modules/` — parcel(건축물대장) · md(웹+브리지 2경로) · eiass(FILE_SEQ+사업코드 2경로) · hwp(pdf/toc/pagenum/merge 4종)
-- `bridge/` — bridge_server.py (기존 도구 import/서브프로세스 참조 — 복제 없음) + 실행 bat
+- `modules/` — parcel(건축물대장) · md(웹+브리지 2경로) · eiass(FILE_SEQ+사업코드+사후회차) · hwp(pdf·pagenum)
+- `bridge/` — bridge_server.py (기존 도구 import/서브프로세스 참조 — 복제 없음) + `run_bridge.bat`
 - `vendor/` — shpjs·proj4·xlsx-js-style·pdf.js·mammoth·Pretendard (전부 동봉, 런타임 CDN 없음)
 
 사용법: [사용법.md](사용법.md)
