@@ -84,8 +84,9 @@ export function init(section, { bridge, toast }) {
           </div>
           <button class="btn btn-primary" id="ec-search" type="button">목록 조회</button>
         </div>
-        <p class="help" style="margin-top:-6px">전략(SEA)은 EIASS가 평가와 같은 엔드포인트를 쓰므로 내부적으로 '평가' 경로로 조회됩니다.
-          자동 판별이 안 되는 코드만 유형을 지정하세요.</p>
+        <p class="help" style="margin-top:-6px">⚠ <b>사후환경영향조사는 평가와 사업코드가 동일합니다.</b> 기본(자동 판별)은 항상 <b>평가 원문</b>을
+          조회하므로, 사후 보고서를 받으려면 유형을 <b>사후</b>로 지정 후 조회하세요 — 연도별 조사회차가 표시됩니다.
+          전략(SEA)은 '전략' 선택 시 평가와 같은 경로로 조회됩니다.</p>
 
         <div id="ec-listwrap" style="display:none">
           <div style="display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)">
@@ -215,7 +216,7 @@ export function init(section, { bridge, toast }) {
         method: "POST", body: { code, gubn: gubnValue() }, timeoutMs: 90000,
       });
 
-      /* 사후: 회차 목록 — 연도가 소제목, 행=회차(노선·기간·상태). 회차 단위 선택 */
+      /* 사후: 회차 목록 — 연도가 소제목. [파일 보기]로 펼치면 PDF 단위 선택 */
       if (r.mode === "rounds") {
         const rounds = r.rounds || [];
         $("#ec-listtitle").textContent = `${r.code} — 사후 조사회차 ${rounds.length}건 (연도별)`;
@@ -229,12 +230,13 @@ export function init(section, { bridge, toast }) {
           head.innerHTML = `
             <td style="background:var(--surface-2)">
               <input type="checkbox" id="${gid}" class="ec-gchk" checked aria-label="${y}년 전체 선택"></td>
-            <td colspan="3" style="background:var(--surface-2);font-weight:var(--weight-semibold)">
-              ${y}년 조사 <span style="color:var(--text-dim);font-weight:400">(${items.length}회차)</span></td>`;
+            <td colspan="3" style="background:var(--surface-2);font-weight:var(--weight-semibold)">${y}년 조사</td>`;
           head.querySelector(".ec-gchk").addEventListener("change", (e) => {
-            tb.querySelectorAll(`[data-group="${gid}"]`).forEach((c) => { c.checked = e.target.checked; });
+            tb.querySelectorAll(`[data-group="${gid}"], [data-rgroup="${gid}"]`)
+              .forEach((c) => { c.checked = e.target.checked; });
           });
           tb.appendChild(head);
+
           for (const x of items) {
             const tr = document.createElement("tr");
             tr.innerHTML = `
@@ -243,13 +245,66 @@ export function init(section, { bridge, toast }) {
                    aria-label="${x.year}년 회차 ${x.aes_seq} 선택"></td>
               <td style="white-space:nowrap;color:var(--text-dim)">${x.status || "-"}</td>
               <td style="white-space:nowrap">${x.period || "-"}</td>
-              <td>${x.biz_nm || "(사업명 없음)"} <span style="color:var(--text-dim)">· 회차 ${x.aes_seq}</span></td>`;
+              <td>${x.biz_nm || "(사업명 없음)"}
+                <button type="button" class="btn btn-secondary ec-expand" data-seq="${x.aes_seq}"
+                  style="height:24px;padding:0 10px;font-size:11px;margin-left:8px">파일 보기</button></td>`;
+
+            const rchk = tr.querySelector(".ec-chk");
+            // 회차 체크 → 펼쳐진 파일 전체 연동
+            rchk.addEventListener("change", () =>
+              tb.querySelectorAll(`.ec-fchk[data-round="${x.aes_seq}"]`)
+                .forEach((c) => { c.checked = rchk.checked; }));
+
+            // [파일 보기] — 해당 회차 파일목록 lazy 조회 후 하위 행 삽입
+            tr.querySelector(".ec-expand").addEventListener("click", async (e) => {
+              const btn = e.target;
+              if (btn.dataset.loaded) {   // 재클릭 = 접기/펴기 토글
+                const show = btn.dataset.open !== "1";
+                tb.querySelectorAll(`tr[data-file-of="${x.aes_seq}"]`)
+                  .forEach((row) => { row.style.display = show ? "" : "none"; });
+                btn.dataset.open = show ? "1" : "0";
+                btn.textContent = show ? "접기" : "파일 보기";
+                return;
+              }
+              btn.disabled = true;
+              btn.textContent = "조회 중…";
+              try {
+                const fr = await bridge.call("/eiass/resolve", {
+                  method: "POST",
+                  body: { code: $("#ec-code").value.trim(), gubn: "after", aes_seq: x.aes_seq },
+                  timeoutMs: 60000,
+                });
+                let anchor = tr;
+                for (const d of fr.docs || []) {
+                  const frow = document.createElement("tr");
+                  frow.dataset.fileOf = x.aes_seq;
+                  frow.innerHTML = `
+                    <td style="padding-left:var(--space-5)">
+                      <input type="checkbox" class="ec-fchk" data-round="${x.aes_seq}" data-rgroup="${gid}"
+                        value="${d.file_seq}" ${rchk.checked ? "checked" : ""}
+                        aria-label="${d.filename} 선택"></td>
+                    <td></td>
+                    <td style="white-space:nowrap;color:var(--text-dim)">${d.chapter_code || "-"}</td>
+                    <td style="color:var(--text-muted)">${d.filename}</td>`;
+                  anchor.after(frow);
+                  anchor = frow;
+                }
+                btn.dataset.loaded = "1";
+                btn.dataset.open = "1";
+                btn.textContent = "접기";
+              } catch (err) {
+                toast(err.message, "fail");
+                btn.textContent = "파일 보기";
+              } finally {
+                btn.disabled = false;
+              }
+            });
             tb.appendChild(tr);
           }
         }
         $("#ec-selall").checked = true;
         $("#ec-listwrap").style.display = "";
-        toast("회차를 선택하면 해당 연도 보고서 전체가 연도별 폴더로 저장됩니다", "ok");
+        toast("회차 체크 = 그 연도 전체 다운로드 · [파일 보기]로 PDF 단위 선택 가능", "ok");
         return;
       }
 
@@ -308,7 +363,7 @@ export function init(section, { bridge, toast }) {
   });
 
   $("#ec-selall").addEventListener("change", (e) =>
-    section.querySelectorAll(".ec-chk, .ec-gchk").forEach((c) => { c.checked = e.target.checked; }));
+    section.querySelectorAll(".ec-chk, .ec-gchk, .ec-fchk").forEach((c) => { c.checked = e.target.checked; }));
 
   $("#ec-pick").addEventListener("click", async () => {
     try {
@@ -332,14 +387,32 @@ export function init(section, { bridge, toast }) {
     if (ecRunning) return;
     const code = $("#ec-code").value.trim();
     const dir = $("#ec-dir").value.trim();
-    const checked = [...section.querySelectorAll(".ec-chk:checked")];
-    if (!checked.length) { toast("다운로드할 항목을 선택하세요", "fail"); return; }
-    if (!dir) { toast("저장 폴더를 먼저 선택하세요", "fail"); return; }
-    const isRounds = checked[0].dataset.kind === "round";
+    const roundChks = [...section.querySelectorAll('.ec-chk[data-kind="round"]')];
     const body = { type: "eiass_dl", code, gubn: gubnValue(),
                    out_dir: dir, zip: $("#ec-zip").checked };
-    if (isRounds) body.rounds = checked.map((c) => ({ seq: c.value, year: c.dataset.year }));
-    else body.seqs = checked.map((c) => c.value);
+    let count = 0;
+    if (roundChks.length) {
+      // 사후: 회차 단위 + 펼친 회차는 파일 단위 부분 선택
+      body.rounds = [];
+      for (const rc of roundChks) {
+        const files = [...section.querySelectorAll(`.ec-fchk[data-round="${rc.value}"]`)];
+        if (files.length) {   // 펼쳐진 회차 — 파일 체크가 기준
+          const sel = files.filter((f) => f.checked).map((f) => f.value);
+          if (sel.length) { body.rounds.push({ seq: rc.value, year: rc.dataset.year, files: sel }); count += sel.length; }
+        } else if (rc.checked) {   // 안 펼친 회차 — 회차 체크가 기준(전체 다운로드)
+          body.rounds.push({ seq: rc.value, year: rc.dataset.year });
+          count++;
+        }
+      }
+      if (!body.rounds.length) { toast("다운로드할 회차 또는 파일을 선택하세요", "fail"); return; }
+    } else {
+      const seqs = [...section.querySelectorAll(".ec-chk:checked")].map((c) => c.value);
+      if (!seqs.length) { toast("다운로드할 파일을 선택하세요", "fail"); return; }
+      body.seqs = seqs;
+      count = seqs.length;
+    }
+    if (!dir) { toast("저장 폴더를 먼저 선택하세요", "fail"); return; }
+    const checked = { length: count };   // 완료 토스트용 건수
     ecRunning = true;
     $("#ec-run").disabled = true;
     $("#ec-prog").classList.add("active");

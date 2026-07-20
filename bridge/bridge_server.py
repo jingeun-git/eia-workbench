@@ -203,8 +203,12 @@ def run_eiass_dl(job, params):
             seq, year = str(rd["seq"]), str(rd.get("year") or "회차")
             job_log(job, f"[{ri}/{len(rounds)}] {year}년 조사 (회차 {seq}) 파일목록 조회…")
             docs = r.resolve(code, "after", seq=seq)
+            # UI에서 파일 단위 부분 선택이 왔으면 그 파일들만 (2026-07-20 요구 3)
+            files_filter = set(map(str, rd.get("files") or []))
+            if files_filter:
+                docs = [d for d in docs if str(d.file_seq) in files_filter]
             if not docs:
-                job_log(job, f"  ⚠ 회차 {seq}: 파일 없음", )
+                job_log(job, f"  ⚠ 회차 {seq}: 파일 없음")
                 continue
             sub = base_dir / edr._safe_filename(f"{year}_{seq}")
             sub.mkdir(parents=True, exist_ok=True)
@@ -403,6 +407,12 @@ class Handler(BaseHTTPRequestHandler):
                 r = edr.EIASSDocResolver()
                 gubn = body.get("gubn", "auto")
                 if gubn == "after":
+                    aes = body.get("aes_seq")
+                    if aes:   # 특정 회차의 파일목록 (UI [파일 보기] 펼침용)
+                        docs = r.resolve(code, "after", seq=str(aes))
+                        self._json({"ok": True, "code": code, "mode": "docs",
+                                    "docs": [d.as_dict() for d in docs]})
+                        return
                     rounds = r.list_after_rounds(code)
                     if not rounds:
                         self._json({"ok": False,
