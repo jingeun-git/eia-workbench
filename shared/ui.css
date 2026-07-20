@@ -277,6 +277,31 @@ input:focus, textarea:focus, select:focus {
 .icon-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .icon-btn svg { width: 17px; height: 17px; }
 
+/* ── md 변환: 파일 목록·결과 탭 ─────────────────────────────────────── */
+.md-list { display: flex; flex-direction: column; gap: 4px; }
+.md-item {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--surface-2); border-radius: var(--radius-md);
+  padding: 6px var(--space-3); font-size: var(--text-sm);
+}
+.md-item .md-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-item .pill { flex-shrink: 0; height: 22px; display: inline-flex; align-items: center; }
+
+.rtabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.rtab {
+  appearance: none; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-muted); font: inherit; font-size: var(--text-xs);
+  padding: 4px 12px; border-radius: var(--radius-full); cursor: pointer;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.rtab:hover { color: var(--text); }
+.rtab.active {
+  background: var(--accent-subtle); border-color: var(--accent);
+  color: var(--accent); font-weight: var(--weight-semibold);
+}
+.rtab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
 /* 자리표시(준비 중) */
 .placeholder {
   border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);

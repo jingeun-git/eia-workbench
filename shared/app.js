@@ -8,7 +8,8 @@ import { bridge } from "./bridge.js";
 const TOOLS = [
   { id: "parcel", label: "건축물대장", needsBridge: false,
     load: () => import("../modules/parcel.js") },
-  { id: "md",     label: "md 변환",    needsBridge: false, load: null },   // 5단계
+  { id: "md",     label: "md 변환",    needsBridge: false,
+    load: () => import("../modules/md.js") },
   { id: "eiass",  label: "EIASS",      needsBridge: false, load: null },   // 6단계
   { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,  load: null },   // 7단계
   { id: "toc",    label: "차례",       needsBridge: true,  load: null },
