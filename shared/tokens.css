@@ -1,0 +1,245 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   EIA Workbench 디자인 토큰 (SYS-29 · 3단계)
+   3계층 구조: Primitive(원시값) → Semantic(용도) → Component(부품)
+   - 컴포넌트 CSS는 Semantic/Component 계층만 참조한다. Primitive 직접 참조 금지.
+   - 라이트/다크: prefers-color-scheme 기본 + [data-theme] 수동 오버라이드.
+   - 폰트: Pretendard 자체 호스팅(vendor/) — CDN 금지(사내망 대비). 미로드 시
+     Malgun Gothic 폴백.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. 폰트 (자체 호스팅 — CDN 금지) ─────────────────────────────────── */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;   /* 로드 전 Malgun Gothic 폴백으로 즉시 표시 */
+  src: url("../vendor/pretendard/PretendardVariable.woff2") format("woff2-variations");
+}
+
+/* ── 1. Primitive ─────────────────────────────────────────────────────── */
+:root {
+  /* slate 스케일 (문서회색 계열 — 도구형 UI 기준색) */
+  --slate-50:  #F8FAFC;
+  --slate-100: #F1F5F9;
+  --slate-200: #E2E8F0;
+  --slate-300: #CBD5E1;
+  --slate-400: #94A3B8;
+  --slate-500: #64748B;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1E293B;
+  --slate-900: #0F172A;
+
+  /* 다크 전용 심층 배경 (PoC 페이지 팔레트 계승) */
+  --navy-850: #18202F;
+  --navy-900: #0F1420;
+  --navy-950: #0B0F18;
+
+  /* blue (액션) */
+  --blue-500: #3B82F6;
+  --blue-600: #2563EB;
+  --blue-700: #1D4ED8;
+  --blue-300: #93C5FD;
+  --blue-light: #5B8DEF;   /* 다크 모드 액션 (채도 완화) */
+
+  /* 상태색 — 라이트/다크 톤 분리 (다크는 채도·명도 완화 변형, 반전 아님) */
+  --green-600: #16A34A;  --green-300: #34D399;
+  --amber-600: #D97706;  --amber-300: #FBBF24;
+  --red-600:   #DC2626;  --red-300:   #F87171;
+
+  /* 간격 — 4/8 리듬, 고밀도(density 8) 스케일 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* 타이포 스케일 */
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 15px;   /* 모바일(<768px)에서 16px로 승격 — 하단 미디어쿼리 */
+  --text-md:   16px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+  --leading-body: 1.6;
+  --leading-tight: 1.3;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+               "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: ui-monospace, "D2Coding", Consolas, "Courier New", monospace;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* 형태 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* 그림자 (elevation 스케일 — 임의값 금지) */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow-md: 0 2px 8px rgba(15, 23, 42, .10);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, .16);
+
+  /* z-index 스케일 */
+  --z-base: 0;
+  --z-sticky: 20;
+  --z-dropdown: 40;
+  --z-modal: 100;
+  --z-toast: 1000;
+
+  /* 모션 — 절제(motion 2). 의미 전달용만, 장식 금지 */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+/* ── 2. Semantic — 라이트 (기본) ──────────────────────────────────────── */
+:root {
+  --bg: var(--slate-50);
+  --surface: #FFFFFF;
+  --surface-2: var(--slate-100);
+  --border: var(--slate-200);
+  --border-strong: var(--slate-300);
+
+  --text: var(--slate-900);
+  --text-muted: var(--slate-600);   /* 본문 보조 — 4.5:1 이상 유지 */
+  --text-dim: var(--slate-500);     /* 캡션 전용 — 본문 사용 금지 */
+  --text-invert: #FFFFFF;
+
+  --accent: var(--blue-600);
+  --accent-hover: var(--blue-700);
+  --accent-subtle: #EFF6FF;
+
+  --ok: var(--green-600);
+  --warn: var(--amber-600);
+  --fail: var(--red-600);
+  --ok-subtle:   rgba(22, 163, 74, .10);
+  --warn-subtle: rgba(217, 119, 6, .10);
+  --fail-subtle: rgba(220, 38, 38, .10);
+
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --scrim: rgba(15, 23, 42, .5);
+}
+
+/* ── 2. Semantic — 다크 ───────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--navy-900);
+    --surface: var(--navy-850);
+    --surface-2: #1F2937;
+    --border: #2B3648;
+    --border-strong: #3B4A63;
+
+    --text: #E8EDF5;
+    --text-muted: #94A3B8;
+    --text-dim: #5B6B83;
+    --text-invert: var(--slate-900);
+
+    --accent: var(--blue-light);
+    --accent-hover: var(--blue-300);
+    --accent-subtle: rgba(91, 141, 239, .14);
+
+    --ok: var(--green-300);
+    --warn: var(--amber-300);
+    --fail: var(--red-300);
+    --ok-subtle:   rgba(52, 211, 153, .14);
+    --warn-subtle: rgba(251, 191, 36, .14);
+    --fail-subtle: rgba(248, 113, 113, .14);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, .4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, .5);
+    --scrim: rgba(0, 0, 0, .6);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: var(--navy-900);
+  --surface: var(--navy-850);
+  --surface-2: #1F2937;
+  --border: #2B3648;
+  --border-strong: #3B4A63;
+  --text: #E8EDF5;
+  --text-muted: #94A3B8;
+  --text-dim: #5B6B83;
+  --text-invert: var(--slate-900);
+  --accent: var(--blue-light);
+  --accent-hover: var(--blue-300);
+  --accent-subtle: rgba(91, 141, 239, .14);
+  --ok: var(--green-300);
+  --warn: var(--amber-300);
+  --fail: var(--red-300);
+  --ok-subtle:   rgba(52, 211, 153, .14);
+  --warn-subtle: rgba(251, 191, 36, .14);
+  --fail-subtle: rgba(248, 113, 113, .14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, .4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, .5);
+  --scrim: rgba(0, 0, 0, .6);
+}
+
+/* ── 3. Component ─────────────────────────────────────────────────────── */
+:root {
+  /* 버튼 */
+  --btn-height: 40px;            /* 터치 최소 44px는 padding 합산으로 충족 */
+  --btn-radius: var(--radius-md);
+  --btn-primary-bg: var(--accent);
+  --btn-primary-bg-hover: var(--accent-hover);
+  --btn-primary-fg: #FFFFFF;
+
+  /* 탭 (상단 도구 전환) */
+  --tab-height: 44px;
+  --tab-fg: var(--text-muted);
+  --tab-fg-active: var(--accent);
+  --tab-indicator: var(--accent);
+
+  /* 상태칩 (브리지 연결 등) */
+  --chip-radius: var(--radius-full);
+  --chip-ok-bg: var(--ok-subtle);     --chip-ok-fg: var(--ok);
+  --chip-warn-bg: var(--warn-subtle); --chip-warn-fg: var(--warn);
+  --chip-fail-bg: var(--fail-subtle); --chip-fail-fg: var(--fail);
+
+  /* 입력 */
+  --input-height: 40px;
+  --input-bg: var(--surface);
+  --input-border: var(--border-strong);
+  --input-border-focus: var(--accent);
+
+  /* 진행률 */
+  --progress-track: var(--surface-2);
+  --progress-fill: var(--accent);
+  --progress-height: 6px;
+
+  /* 로그 영역 (변환·다운로드 결과) */
+  --log-bg: var(--surface-2);
+  --log-font: var(--font-mono);
+  --log-size: var(--text-sm);
+}
+
+/* ── 전역 기본 ────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+
+/* 모바일: 본문 16px 승격 (iOS 자동 줌 방지) */
+@media (max-width: 767px) {
+  :root { --text-base: 16px; }
+}
+
+/* 모션 축소 존중 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

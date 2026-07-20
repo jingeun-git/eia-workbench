@@ -1,0 +1,106 @@
+# EIA Workbench 디자인 시스템 (SYS-29 · 3단계 산출물)
+
+> 토큰 원본: `shared/tokens.css` (3계층: Primitive→Semantic→Component)
+> 근거: design-system·ui-ux-pro-max 스킬 권고(2026-07-20, density 8·motion 2) + 조정 2건
+> — Inter→**Pretendard 자체 호스팅**(한국어 UI·CDN 금지), 다크 팔레트는 PoC 페이지 계승.
+
+## 원칙
+
+1. **컴포넌트 CSS에 raw hex 금지** — Semantic/Component 토큰만 참조. Primitive 직접 참조도 금지.
+2. **라이트/다크 동시 설계** — 다크는 반전이 아니라 채도·명도 완화 변형. 대비는 모드별 별도 검증(본문 4.5:1).
+3. **아이콘은 SVG(Lucide 계열) 동봉** — 이모지·CDN 아이콘 금지. stroke 1.5px 통일, 크기 토큰(16/20/24).
+4. **모션 절제** — 의미 전달용만(상태 전환·로딩). 120/200ms, `prefers-reduced-motion` 존중. 장식 애니메이션 금지.
+5. **색만으로 의미 전달 금지** — 상태칩·판정은 항상 아이콘 또는 텍스트 동반 (●연결됨 / ○미연결).
+6. **터치 타깃 44px** — 버튼·탭·입력의 시각 높이 40~44px + 패딩으로 히트영역 보장.
+
+## 레이아웃
+
+```
+┌─ header (sticky, --z-sticky) ─────────────────────────────┐
+│  로고 · 도구 탭(7) ................... [브리지칩] [테마]  │
+├───────────────────────────────────────────────────────────┤
+│  main (max-width 1200px, 패딩 --space-5)                  │
+│  ┌─ 도구 패널 (surface 카드) ──────────────────────────┐  │
+│  │  입력 영역 → 실행 버튼 → 진행률 → 결과 로그        │  │
+│  └─────────────────────────────────────────────────────┘  │
+├─ footer ── 버전 · 저장소 링크 · 브리지 다운로드 ──────────┤
+```
+
+- 브레이크포인트: 768px(태블릿) / 1024px(데스크톱). 모바일에서 탭은 가로 스크롤(세로 스택 금지).
+- 모든 도구 패널은 동일 골격: **입력 → 실행 → 진행 → 결과**. 도구가 바뀌어도 사용자의 눈 이동이 같다.
+- 탭 상태는 URL 해시(`#md`·`#eiass`·`#parcel`…)와 동기화 — 딥링크·뒤로가기 보존.
+
+## 컴포넌트 명세
+
+### 버튼
+
+| 속성 | Default | Hover | Active | Disabled | Loading |
+|---|---|---|---|---|---|
+| 배경(primary) | `--btn-primary-bg` | `--btn-primary-bg-hover` | 동일+scale(.98) | `--surface-2` | 유지 |
+| 글자 | `--btn-primary-fg` | 동일 | 동일 | `--text-dim` | 동일+스피너 |
+| 커서 | pointer | pointer | pointer | not-allowed | wait |
+| 기타 | `--shadow-sm` | `--shadow-md` | shadow 제거 | opacity .5 | 클릭 차단·스피너 16px |
+
+Secondary: 배경 `--surface`+테두리 `--border-strong`, hover 시 `--accent-subtle`.
+Danger(삭제·중단): `--fail` 계열 — primary와 시각·공간 분리.
+비동기 실행 버튼은 **반드시 Loading 상태를 거친다** (즉시 완료여도 최소 표시 없이 결과로 전환은 허용).
+
+### 탭
+
+| 속성 | Default | Hover | Active(현재) | Disabled(브리지 미연결) |
+|---|---|---|---|---|
+| 글자 | `--tab-fg` | `--text` | `--tab-fg-active` semibold | `--text-dim` |
+| 인디케이터 | 없음 | 없음 | 하단 2px `--tab-indicator` | 없음 |
+| 부가 | — | — | aria-selected | 🔒 아이콘+툴팁 "브리지 연결 필요" |
+
+Disabled 탭은 **숨기지 않는다** — 왜 비활성인지 설명한다(empty-nav-state 원칙).
+
+### 상태칩 (브리지 연결)
+
+| 상태 | 배경/글자 | 표기 |
+|---|---|---|
+| 연결됨 | `--chip-ok-bg`/`--chip-ok-fg` | ● 브리지 v{버전} |
+| 미연결 | `--chip-fail-bg`/`--chip-fail-fg` | ○ 브리지 미연결 |
+| 확인중 | `--chip-warn-bg`/`--chip-warn-fg` | ◌ 확인 중… |
+
+클릭 시 드롭다운: 재연결 시도 · 토큰 입력 · 브리지 다운로드 링크. `/ping` 폴링 15초 간격.
+
+### 입력 (텍스트·파일)
+
+- 라벨은 항상 표시(placeholder 단독 금지). 필수는 `*`. 도움말은 입력 아래 상시(`--text-dim`).
+- 검증은 blur 시점. 오류는 해당 필드 바로 아래 `--fail` + 아이콘, 복구 방법 포함
+  ("잘못된 입력" 금지 → "FILE_SEQ는 숫자 7자리입니다. 예: 3228100").
+- 파일 드롭존: 점선 `--border-strong`, dragover 시 `--accent`+`--accent-subtle`. 클릭 대체 경로 필수.
+- API 키 입력: password 타입+표시 토글, localStorage 저장 여부 체크박스 명시.
+
+### 진행률
+
+- 확정 진행(N/M건): 바(`--progress-*`) + 우측 탭ular 숫자(`font-variant-numeric: tabular-nums`).
+- 불확정(브리지 대기): 300ms 초과 시 스켈레톤/스피너. 1초 초과 장기작업은 단계 텍스트 병기
+  ("3/12 변환 중 — 파일명.pdf").
+- 취소 버튼은 진행 중에만 노출(Danger secondary).
+
+### 결과 로그
+
+- `--log-bg`·`--log-font`·`--log-size`, 높이 제한+내부 스크롤(`overflow-x: auto`).
+- 행 구조: 시각 · 상태아이콘(✓ ✗ ⚠ — 색+기호 동반) · 메시지. 실패 행에 재시도 액션.
+- [전체 복사]·[로그 저장] 제공. `aria-live="polite"`.
+
+### 토스트
+
+- 우하단, 3~5초 자동 소멸, `--z-toast`, 포커스 탈취 금지, `aria-live="polite"`.
+- 파괴적 동작 완료 시 실행취소 제공(가능한 경우).
+
+## 접근성 체크리스트 (배포 전 매 단계)
+
+- [ ] 본문 대비 4.5:1 — 라이트/다크 각각 검증
+- [ ] 키보드: 탭 순서=시각 순서, 포커스링 `--focus-ring` 제거 금지, 모달 ESC 닫기
+- [ ] 아이콘 단독 버튼에 aria-label
+- [ ] 색+기호 병행 (상태칩·판정·로그)
+- [ ] reduced-motion 동작 확인
+- [ ] 375px 가로 스크롤 없음
+
+## 폰트 배포
+
+`vendor/pretendard/` 에 PretendardVariable.woff2 동봉(`font-display: swap`), 실패 시 Malgun Gothic 폴백.
+아이콘은 `shared/icons.svg` 스프라이트(`<use href>`) — 개별 요청·CDN 없음.
