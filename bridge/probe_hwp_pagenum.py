@@ -44,31 +44,40 @@ def log(msg=""):
     OUT_LINES.append(str(msg))
 
 
+def open_doc(hwp, path: Path):
+    """확장자에 맞는 형식 인자로 문서를 연다. (성공여부, 사용인자) 반환.
+
+    ⚠ hwpx에 "HWP" 인자를 주면 한컴이 **예외 없이** 빈 문서 상태가 될 수 있다.
+    (2026-07-20 실사고: 쓰기 검증이 67쪽 문서 대신 빈 문서에서 수행돼 결과가 무효화됐다.)
+    그래서 여는 곳은 반드시 이 함수를 거친다."""
+    ext = path.suffix.lower()
+    candidates = ([("HWPX", "forceopen:true"), ("HWP", "forceopen:true"), (None, None)]
+                  if ext == ".hwpx" else
+                  [("HWP", "forceopen:true"), (None, None)])
+    for fmt, arg in candidates:
+        try:
+            ok = hwp.Open(str(path)) if fmt is None else hwp.Open(str(path), fmt, arg)
+            if ok is False:      # 한컴은 실패 시 예외 대신 False를 주기도 한다
+                continue
+            return True, ("자동판별" if fmt is None else f'"{fmt}"')
+        except Exception:
+            continue
+    return False, None
+
+
+def doc_pages(hwp) -> int:
+    hwp.MovePos(3)
+    return int(hwp.KeyIndicator()[3])
+
+
 def probe_file(hwp, path: Path):
     log(f"\n{'─' * 66}")
     log(f"■ {path.name}   [{path.suffix.lower().lstrip('.')}]")
     log(f"{'─' * 66}")
 
-    # 열기 — hwpx는 형식 인자가 다를 수 있어 후보를 순차 시도하고 성공한 것을 기록한다
-    # (학습데이터 추측 금지 — 어떤 인자가 통하는지 실측으로 남긴다)
-    ext = path.suffix.lower()
-    candidates = ([("HWPX", "forceopen:true"), ("HWP", "forceopen:true"), (None, None)]
-                  if ext == ".hwpx" else
-                  [("HWP", "forceopen:true"), (None, None)])
-    opened_with = None
-    for fmt, arg in candidates:
-        try:
-            if fmt is None:
-                hwp.Open(str(path))          # 형식 자동판별
-                opened_with = "자동판별"
-            else:
-                hwp.Open(str(path), fmt, arg)
-                opened_with = f'"{fmt}"'
-            break
-        except Exception as e:
-            last = e
-    if opened_with is None:
-        log(f"  ✗ 열기 실패(모든 형식 인자 시도): {last}")
+    ok, opened_with = open_doc(hwp, path)
+    if not ok:
+        log("  ✗ 열기 실패(모든 형식 인자 시도)")
         return
     log(f"  열기 성공 — 형식 인자: {opened_with}")
 
@@ -226,15 +235,29 @@ def write_test(hwp, src: Path):
         return
     log(f"  사본: {dst}")
 
-    try:
-        hwp.Open(str(dst), "HWP", "forceopen:true")
-    except Exception as e:
-        log(f"  ✗ 사본 열기 실패: {e}")
+    # 원본 쪽수를 먼저 확보해 사본과 대조한다 — 열기 실패를 성공으로 오독하지 않기 위한 게이트
+    ok, _ = open_doc(hwp, src)
+    if not ok:
+        log("  ✗ 원본 열기 실패 — 쓰기 검증 중단")
         return
+    origin_pages = doc_pages(hwp)
+    hwp.XHwpDocuments.Item(0).Close(isDirty=False)
 
-    hwp.MovePos(3)
-    before = int(hwp.KeyIndicator()[3])
-    log(f"  변경 전 총쪽수: {before}쪽")
+    ok, used = open_doc(hwp, dst)
+    if not ok:
+        log("  ✗ 사본 열기 실패 — 쓰기 검증 중단")
+        return
+    before = doc_pages(hwp)
+    log(f"  사본 열기 — 형식 인자: {used}, 총쪽수: {before}쪽 (원본 {origin_pages}쪽)")
+
+    # ⚠ 무결성 게이트: 사본이 원본과 다른 쪽수면 제대로 안 열린 것이다.
+    #   이 검사가 없어 빈 문서(1쪽)에서 실험하고 "성공"으로 보고한 사고가 있었다(2026-07-20).
+    if before != origin_pages:
+        log(f"  ✗ 사본 쪽수가 원본과 불일치({before}≠{origin_pages}) — 문서가 제대로 열리지 않았습니다.")
+        log("     쓰기 검증을 중단합니다(무효한 결과를 성공으로 보고하지 않기 위함).")
+        try: hwp.XHwpDocuments.Item(0).Close(isDirty=False)
+        except Exception: pass
+        return
 
     # (1) 공란 페이지 삽입 — 장 전환 시 짝수 맞춤에 필요
     try:
@@ -281,15 +304,18 @@ def write_test(hwp, src: Path):
     try:
         hwp.Save()
         hwp.XHwpDocuments.Item(0).Close(isDirty=False)
-        hwp.Open(str(dst), "HWP", "forceopen:true")
+        ok, _ = open_doc(hwp, dst)
+        if not ok:
+            log("  4) ✗ 저장본 재열기 실패")
+            return
         ctrls = {}
         c = hwp.HeadCtrl
         while c is not None:
             ctrls[c.CtrlID] = ctrls.get(c.CtrlID, 0) + 1
             c = c.Next
-        hwp.MovePos(3)
-        final = int(hwp.KeyIndicator()[3])
-        log(f"  4) 저장·재열기 검증: 총 {final}쪽, "
+        final = doc_pages(hwp)
+        verdict = "✓ 반영됨" if final > origin_pages else "⚠ 쪽수 증가 없음"
+        log(f"  4) 저장·재열기 검증({verdict}): 총 {final}쪽(원본 {origin_pages}), "
             f"nwno={ctrls.get('nwno', 0)}개 pghd={ctrls.get('pghd', 0)}개")
         log(f"     → 사본을 직접 열어 확인해보세요: {dst}")
         hwp.XHwpDocuments.Item(0).Close(isDirty=False)
