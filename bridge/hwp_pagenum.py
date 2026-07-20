@@ -239,7 +239,9 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
 #   nwno : 새 쪽번호(시작번호 지정) — NewNumber 액션으로 재부여 검증 완료 ✓
 # ⚠ pgnp/pgct는 쪽번호 **표시 서식**(위치·모양)으로 추정되며, 지우면 되돌릴 방법이
 #   검증되지 않았다. 잘못 지우면 쪽번호가 아예 사라지거나 서식이 바뀐다.
-#   → 기본 삭제 대상에서 제외하고, extra_clear로 명시 요청할 때만 지운다.
+#   → **기본 삭제 대상에서 제외 확정**(2026-07-20 사용자: "nwno만 삭제").
+#     반복 실행 시 혼선은 nwno 초기화만으로 해소되며, 표시 서식은 문서 자산이므로 보존한다.
+#     extra_clear는 향후 검증이 끝나면 열 수 있도록 남겨둔 비활성 옵션이다.
 PAGENUM_CTRLS = ("nwno",)
 PAGENUM_CTRLS_RISKY = ("pgnp", "pgct")
 

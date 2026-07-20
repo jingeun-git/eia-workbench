@@ -38,10 +38,17 @@ export function init(section, { bridge, toast }, kind) {
         <p class="help">파일은 PC 안에서만 처리됩니다 — 웹으로 전송되지 않습니다.</p>
       </div>
       ${kind === "pagenum" ? `
-      <div class="field" style="max-width:220px">
-        <label for="hw-start">시작 쪽번호 <span class="req">*</span></label>
-        <input type="number" id="hw-start" value="1" min="1" step="1">
-      </div>` : ""}
+      <div class="field" style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end">
+        <div style="max-width:180px">
+          <label for="hw-start">시작 쪽번호 <span class="req">*</span></label>
+          <input type="number" id="hw-start" value="1" min="1" step="1">
+        </div>
+        <label style="font-size:var(--text-sm);display:flex;align-items:center;gap:6px;height:40px">
+          <input type="checkbox" id="hw-divider"> 장별 간지 포함
+        </label>
+      </div>
+      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>의 앞 2면(간지+공백)을 감추기 처리합니다.
+        간지를 별도 인쇄하신다면 체크하지 마세요.</p>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
         <label>PDF 저장 폴더 (비우면 원본 옆에 저장)</label>
@@ -50,10 +57,26 @@ export function init(section, { bridge, toast }, kind) {
           <button class="btn btn-secondary" id="hw-pick-out" type="button">폴더 선택</button>
         </div>
       </div>` : ""}
-      <div style="display:flex;gap:var(--space-2);align-items:center">
-        <button class="btn btn-primary" id="hw-run">실행</button>
+      <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+        ${kind === "pagenum"
+          ? `<button class="btn btn-primary" id="hw-scan">1. 스캔</button>
+             <button class="btn btn-primary" id="hw-run" disabled>2. 쪽번호 적용</button>`
+          : `<button class="btn btn-primary" id="hw-run">실행</button>`}
         <button class="btn btn-secondary" id="hw-reset">초기화</button>
       </div>
+      ${kind === "pagenum" ? `
+      <div class="result-table-wrap" id="hw-tblwrap" style="margin-top:var(--space-4)">
+        <table class="result-table">
+          <thead><tr>
+            <th>파일</th><th>장</th><th>물리 쪽수</th><th>A3</th>
+            <th>쪽번호</th><th>공란</th><th>처리</th>
+          </tr></thead>
+          <tbody id="hw-tbody"></tbody>
+        </table>
+      </div>
+      <p class="help" id="hw-warn" style="display:none;color:var(--fail);margin-top:var(--space-3)">
+        ⚠ <b>원본 문서를 직접 수정합니다.</b> 실행 전 폴더를 백업해두세요.
+        기존 새 쪽번호(nwno)는 삭제 후 재부여되며, 쪽번호 표시 서식은 보존됩니다.</p>` : ""}
       <div class="progress-wrap" id="hw-prog">
         <div class="progress-head"><span class="stage" id="hw-stage"></span><span class="count" id="hw-count"></span></div>
         <div class="progress-track"><div class="progress-fill" id="hw-fill"></div></div>
@@ -132,7 +155,31 @@ export function init(section, { bridge, toast }, kind) {
     if (kind === "pagenum") $("#hw-start").value = "1";
     $("#hw-log").textContent = ""; $("#hw-log").classList.remove("active");
     $("#hw-prog").classList.remove("active"); $("#hw-fill").style.width = "0%";
+    if (kind === "pagenum") {
+      scanned = null;
+      $("#hw-tbody").innerHTML = "";
+      $("#hw-tblwrap").classList.remove("active");
+      $("#hw-warn").style.display = "none";
+      $("#hw-run").disabled = true;
+      $("#hw-divider").checked = false;
+    }
   });
+
+  /* 입력이 바뀌면 스캔 결과가 낡는다 — 적용을 막고 재스캔을 요구한다
+     (낡은 계획으로 원본을 고치는 사고 방지) */
+  if (kind === "pagenum") {
+    for (const sel of ["#hw-start", "#hw-divider", "#hw-dir"]) {
+      const el = $(sel);
+      el?.addEventListener("change", () => {
+        if (!scanned) return;
+        scanned = null;
+        $("#hw-run").disabled = true;
+        $("#hw-tblwrap").classList.remove("active");
+        $("#hw-warn").style.display = "none";
+        toast("설정이 바뀌었습니다 — 다시 스캔해주세요", "warn");
+      });
+    }
+  }
 
   /* ── COM 기능 검증 (쪽번호 탭 전용, SYS-31 1단계) ─────────────────── */
   if (kind === "pagenum") {
@@ -194,10 +241,90 @@ export function init(section, { bridge, toast }, kind) {
     });
   }
 
+  /* ── 쪽번호: 스캔 → 표 확인 → 적용 (SYS-31) ─────────────────────── */
+  let scanned = null;                       // 스캔 결과(계획) — 적용 시 그대로 전달
+
+  function renderPlan(rows) {
+    const tb = $("#hw-tbody");
+    tb.innerHTML = "";
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      const rng = r.skip ? "—" : `${r.start}~${r.end}`;
+      const act = r.skip ? "번호 제외"
+        : [r.is_chapter_head ? "장 시작" : "",
+           r.pad ? "공란 +1" : "",
+           r.divider ? "간지 감추기" : "",
+           (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
+          .filter(Boolean).join(" · ") || "연속";
+      tr.innerHTML = `
+        <td>${r.error ? "⚠ " : ""}${r.name}</td>
+        <td class="num">${r.chapter ?? "-"}</td>
+        <td class="num">${r.phys_pages ?? "-"}</td>
+        <td class="num">${r.a3_count || ""}</td>
+        <td class="num">${rng}</td>
+        <td class="num">${r.pad || ""}</td>
+        <td style="color:var(--text-muted)">${r.error || act}</td>`;
+      if (r.skip) tr.style.color = "var(--text-dim)";
+      tb.appendChild(tr);
+    }
+    $("#hw-tblwrap").classList.add("active");
+    $("#hw-warn").style.display = "";
+    $("#hw-run").disabled = false;
+  }
+
+  if (kind === "pagenum") {
+    $("#hw-scan").addEventListener("click", async () => {
+      if (running) return;
+      const dir = $("#hw-dir").value.trim();
+      if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
+      running = true;
+      const btn = $("#hw-scan");
+      btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> 스캔 중…`;
+      $("#hw-prog").classList.add("active");
+      $("#hw-log").classList.add("active");
+      $("#hw-log").textContent = "";
+      try {
+        const job = await bridge.call("/jobs", {
+          method: "POST",
+          body: { type: "pagenum_scan", folder: dir,
+                  start_num: parseInt($("#hw-start").value, 10) || 1,
+                  divider: $("#hw-divider").checked },
+        });
+        const done = await bridge.pollJob(job.job_id, {
+          onLog: (l) => log(l),
+          onProgress: (p) => {
+            if (!p) return;
+            if (p.stage) $("#hw-stage").textContent = p.stage;
+            if (p.total) {
+              $("#hw-count").textContent = `${p.done}/${p.total}`;
+              $("#hw-fill").style.width = `${(p.done / p.total) * 100}%`;
+            }
+          },
+        });
+        scanned = done.result || [];
+        renderPlan(scanned);
+        toast(`스캔 완료 — 표를 확인한 뒤 [2. 쪽번호 적용]을 누르세요`, "ok");
+      } catch (e) {
+        log(`✗ ${e.message}`, "fail");
+        toast(e.message, "fail");
+      } finally {
+        running = false;
+        btn.disabled = false; btn.textContent = "1. 스캔";
+      }
+    });
+  }
+
   $("#hw-run").addEventListener("click", async () => {
     if (running) return;
     const dir = $("#hw-dir").value.trim();
     if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
+    if (kind === "pagenum") {
+      if (!scanned) { toast("먼저 [1. 스캔]을 실행하세요", "fail"); return; }
+      const n = scanned.filter((r) => !r.skip).length;
+      if (!confirm(`원본 문서 ${n}개를 수정합니다.\n\n`
+        + `· 기존 새 쪽번호(nwno)는 삭제 후 재부여됩니다\n`
+        + `· 되돌리기가 어려우니 폴더를 백업했는지 확인하세요\n\n계속할까요?`)) return;
+    }
     running = true;
     $("#hw-run").disabled = true;
     $("#hw-run").innerHTML = `<span class="spinner"></span> 실행 중…`;
@@ -207,8 +334,8 @@ export function init(section, { bridge, toast }, kind) {
     try {
       const body = kind === "pdf"
         ? { type: "hwp2pdf", paths: [dir], out_dir: $("#hw-outdir").value.trim() || null }
-        : { type: "hwptool", tool: kind, folder: dir,
-            ...(kind === "pagenum" ? { start_num: parseInt($("#hw-start").value, 10) || 1 } : {}) };
+        : { type: "pagenum_apply", folder: dir, files: scanned,
+            start_num: parseInt($("#hw-start").value, 10) || 1 };
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => log(line),
