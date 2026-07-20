@@ -38,11 +38,16 @@ export class BridgeClient extends EventTarget {
       ? [this.base, ...all.filter((b) => b !== this.base)]
       : all;
 
+    let stubFound = false;
     for (const base of candidates) {
       try {
         const res = await this._fetch(`${base}/ping`, { timeoutMs: 1500 });
         if (res && res.ok) {
           const info = await res.json();
+          // features가 없으면 진짜 브리지가 아니라 PoC 진단 스텁이다 —
+          // 실사고(2026-07-20): 스텁이 8765를 점유한 채 살아있어 칩은 "연결됨"인데
+          // 모든 기능 호출이 Failed to fetch로 죽는 혼동 발생. 명시 구분한다.
+          if (!info.features) { stubFound = true; continue; }
           const changed = this.state !== "ok" || this.base !== base;
           this.base = base;
           this.info = info;
@@ -53,7 +58,7 @@ export class BridgeClient extends EventTarget {
     }
     this.base = null;
     this.info = null;
-    this._setState("off");
+    this._setState(stubFound ? "stub" : "off");
   }
 
   _setState(s, force = false) {

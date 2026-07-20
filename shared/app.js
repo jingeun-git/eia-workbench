@@ -88,10 +88,13 @@ function initBridgeChip() {
   const chip = $("#bridge-chip");
   const render = () => {
     const s = bridge.state;
-    chip.className = "chip " + (s === "ok" ? "ok" : s === "off" ? "fail" : "warn");
-    chip.textContent = s === "ok"
-      ? `● 브리지 v${bridge.info?.bridge_version ?? "?"}`
-      : s === "off" ? "○ 브리지 미연결" : "◌ 확인 중…";
+    chip.className = "chip " + (s === "ok" ? "ok" : s === "checking" ? "warn" : "fail");
+    chip.textContent =
+      s === "ok"   ? `● 브리지 v${bridge.info?.bridge_version ?? "?"}` :
+      s === "stub" ? "⚠ 진단 스텁 감지 — 클릭" :
+      s === "off"  ? "○ 브리지 미연결" : "◌ 확인 중…";
+    if (s === "stub")
+      chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 run_bridge.bat를 실행하세요";
     // 브리지 필요 탭 잠금/해제 — 숨기지 않고 이유를 남긴다(empty-nav-state)
     $$(".tab[data-needs-bridge]").forEach((b) => {
       b.disabled = s !== "ok";
