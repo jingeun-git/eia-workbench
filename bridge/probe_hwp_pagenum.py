@@ -275,6 +275,70 @@ def probe_file(hwp, path: Path):
         pass
 
 
+def dump_paramsets(hwp):
+    """HParameterSet에서 실제로 존재하는 파라미터셋·속성 이름을 **열거**한다.
+
+    액션명과 파라미터셋 이름은 1:1이 아니다(FindDlg 액션 → HFindReplace 객체).
+    추측 대신 COM 타입정보를 직접 읽어 감추기용 객체·필드를 확정한다."""
+    log(f"\n{'=' * 66}")
+    log("■ HParameterSet 실제 이름 열거")
+    log(f"{'=' * 66}")
+
+    def names_of(obj):
+        out = set()
+        try:
+            out |= {n for n in dir(obj) if not n.startswith("_")}
+        except Exception:
+            pass
+        for attr in ("_prop_map_get_", "_prop_map_put_"):
+            try:
+                out |= set(getattr(obj, attr).keys())
+            except Exception:
+                pass
+        return sorted(out)
+
+    try:
+        ps = hwp.HParameterSet
+    except Exception as e:
+        log(f"  ✗ HParameterSet 접근 실패: {e}")
+        return
+
+    all_names = names_of(ps)
+    log(f"  파라미터셋 총 {len(all_names)}종")
+    cand = [n for n in all_names
+            if any(k in n.lower() for k in ("hid", "page", "pg", "sec", "num"))]
+    log(f"  감추기/쪽 관련 후보: {cand}")
+
+    # 후보 각각의 속성에서 Hide 계열 찾기
+    for name in cand[:12]:
+        try:
+            obj = getattr(ps, name)
+        except Exception:
+            continue
+        fields = [f for f in names_of(obj) if "hide" in f.lower() or "num" in f.lower()]
+        if fields:
+            log(f"    {name}: {fields[:20]}")
+
+    # PageHiding 액션의 파라미터셋을 GetDefault로 채운 뒤 값 읽기
+    for name in ("HPageHiding", "HPageHide", "HSecDef", "HPageSetup", "HPageNumPos"):
+        if name not in all_names:
+            continue
+        try:
+            obj = getattr(ps, name)
+            ret = hwp.HAction.GetDefault("PageHiding", obj.HSet)
+            vals = []
+            for f in names_of(obj):
+                if "hide" not in f.lower():
+                    continue
+                try:
+                    vals.append(f"{f}={getattr(obj, f)}")
+                except Exception:
+                    pass
+            log(f"    [{name}] GetDefault('PageHiding')={ret} → {vals[:20] or '값 없음'}")
+        except Exception as e:
+            log(f"    [{name}] ✗ {type(e).__name__}: {str(e)[:70]}")
+
+
 def hide_key_sweep(hwp, path: Path):
     """감추기 키 역추적 — 문서의 secd에서 **값이 설정된 키를 전부** 훑는다.
 
@@ -587,6 +651,7 @@ def _run(target: Path, max_files: int = 5):
         hide_key_sweep(hwp, marked[0])
     elif picked:
         hide_key_sweep(hwp, picked[0])
+    dump_paramsets(hwp)
 
     # 쓰기 검증 — 감추기 조사가 목적이므로 **pghd가 실재하는 문서를 우선** 고른다
     if picked:
