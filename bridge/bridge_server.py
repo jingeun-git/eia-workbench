@@ -168,49 +168,72 @@ def run_convert(job, params):
     job_log(job, f"─── 변환 완료: 성공 {ok} / 실패 {err} → {out_dir}")
 
 def run_eiass_dl(job, params):
-    """선택 파일 다운로드 (+옵션 zip 번들) — eiass_doc_resolver를 import 참조."""
+    """선택 파일 다운로드 (+옵션 zip 번들) — eiass_doc_resolver를 import 참조.
+    사후(after)는 회차(rounds) 단위 선택 — 회차별 하위폴더 {연도}_{seq}에 저장."""
     import eiass_doc_resolver as edr
     code = params["code"].strip().upper()
-    seqs = set(map(str, params.get("seqs", [])))
-    if not seqs:
-        raise RuntimeError("다운로드할 파일을 선택하세요")
     out_root = Path(params["out_dir"])
     if not path_allowed(out_root):
         raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
 
     r = edr.EIASSDocResolver()
-    docs = r.resolve(code, params.get("gubn", "auto"))
-    targets = [d for d in docs if str(d.file_seq) in seqs]
-    if not targets:
-        raise RuntimeError("선택한 FILE_SEQ가 현재 목록과 일치하지 않습니다 — 다시 조회하세요")
+    base_dir = out_root / edr._safe_filename(code)
+    saved = []          # (Path, zip 내 상대경로)
+    ok = fail = 0
 
-    out_dir = out_root / edr._safe_filename(code)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    total = len(targets)
-    ok = 0
-    saved = []
-    for i, d in enumerate(targets, 1):
-        job["progress"] = {"done": i - 1, "total": total, "stage": d.filename}
+    def dl(doc, dest, arc_prefix):
+        nonlocal ok, fail
         try:
-            path = r.download(d, str(out_dir), overwrite=False)
-            saved.append(Path(path))
+            path = r.download(doc, str(dest), overwrite=False)
+            saved.append((Path(path), f"{arc_prefix}{os.path.basename(path)}"))
             size = os.path.getsize(path)
             sz = f"{size >> 20} MB" if size >= 1 << 20 else f"{size >> 10} KB"
-            job_log(job, f"  ✓ [{d.stage_label or '-'}] {os.path.basename(path)} ({sz})")
+            job_log(job, f"  ✓ {os.path.basename(path)} ({sz})")
             ok += 1
         except Exception as e:
-            job_log(job, f"  ✗ {d.filename}: {e}")
+            job_log(job, f"  ✗ {doc.filename}: {e}")
+            fail += 1
         time.sleep(0.3)
-    job["progress"] = {"done": total, "total": total, "stage": "완료"}
 
+    if params.get("gubn") == "after":
+        rounds = params.get("rounds", [])
+        if not rounds:
+            raise RuntimeError("다운로드할 조사회차를 선택하세요")
+        for ri, rd in enumerate(rounds, 1):
+            seq, year = str(rd["seq"]), str(rd.get("year") or "회차")
+            job_log(job, f"[{ri}/{len(rounds)}] {year}년 조사 (회차 {seq}) 파일목록 조회…")
+            docs = r.resolve(code, "after", seq=seq)
+            if not docs:
+                job_log(job, f"  ⚠ 회차 {seq}: 파일 없음", )
+                continue
+            sub = base_dir / edr._safe_filename(f"{year}_{seq}")
+            sub.mkdir(parents=True, exist_ok=True)
+            for di, d in enumerate(docs, 1):
+                job["progress"] = {"done": di - 1, "total": len(docs),
+                                   "stage": f"{year}년 — {d.filename}"}
+                dl(d, sub, f"{code}/{year}_{seq}/")
+    else:
+        seqs = set(map(str, params.get("seqs", [])))
+        if not seqs:
+            raise RuntimeError("다운로드할 파일을 선택하세요")
+        docs = r.resolve(code, params.get("gubn", "auto"))
+        targets = [d for d in docs if str(d.file_seq) in seqs]
+        if not targets:
+            raise RuntimeError("선택한 FILE_SEQ가 현재 목록과 일치하지 않습니다 — 다시 조회하세요")
+        base_dir.mkdir(parents=True, exist_ok=True)
+        for i, d in enumerate(targets, 1):
+            job["progress"] = {"done": i - 1, "total": len(targets), "stage": d.filename}
+            dl(d, base_dir, f"{code}/")
+
+    job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
     if params.get("zip") and saved:
         import zipfile
         zip_path = out_root / f"{edr._safe_filename(code)}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            for p in saved:
-                z.write(p, arcname=f"{code}/{p.name}")
+            for p, arc in saved:
+                z.write(p, arcname=arc)
         job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건)")
-    job_log(job, f"─── 다운로드 완료: {ok}/{total}건 → {out_dir}")
+    job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
 
 def run_hwp2pdf(job, params):
     """convert_batch는 진행 dict를 yield하는 **제너레이터**다 — 순회해야 실행된다.
@@ -370,14 +393,25 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path == "/eiass/resolve":
             # 동기 조회 — 사업코드 → 원문 파일목록 (절차단계·장코드·파일명)
+            # 사후(after): 회차 목록(연도별)을 먼저 반환 (DAT-17)
             try:
                 import eiass_doc_resolver as edr
                 code = (body.get("code") or "").strip().upper()
                 if not code:
                     self._json({"ok": False, "error": "사업코드를 입력하세요"}, 400)
                     return
-                docs = edr.EIASSDocResolver().resolve(code, body.get("gubn", "auto"))
-                self._json({"ok": True, "code": code,
+                r = edr.EIASSDocResolver()
+                gubn = body.get("gubn", "auto")
+                if gubn == "after":
+                    rounds = r.list_after_rounds(code)
+                    if not rounds:
+                        self._json({"ok": False,
+                                    "error": "사후 조사회차를 찾지 못했습니다 — 코드를 확인하세요"}, 404)
+                        return
+                    self._json({"ok": True, "code": code, "mode": "rounds", "rounds": rounds})
+                    return
+                docs = r.resolve(code, gubn)
+                self._json({"ok": True, "code": code, "mode": "docs",
                             "docs": [d.as_dict() for d in docs]})
             except Exception as e:
                 self._json({"ok": False, "error": str(e)}, 500)

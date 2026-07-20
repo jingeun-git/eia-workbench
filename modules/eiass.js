@@ -207,19 +207,52 @@ export function init(section, { bridge, toast }) {
   $("#ec-search").addEventListener("click", async () => {
     const code = $("#ec-code").value.trim();
     if (!code) { toast("사업코드를 입력하세요 (예: WJ20260098)", "fail"); return; }
-    if ($("#ec-gubn").value === "after") {
-      // EIASS는 사후를 (EIA_CD + AES_SEQ) 쌍으로만 조회한다 — 같은 코드에 연도별
-      // 회차가 여럿이라 회차 목록 API가 먼저 필요(resolver 확장 과제 DAT-14).
-      toast("사후환경영향조사는 연도(조사회차) 목록 기능 확장 후 지원 예정입니다 — 당분간 FILE_SEQ 직접 방식을 사용하세요", "warn");
-      return;
-    }
     const btn = $("#ec-search");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> 조회 중…`;
     try {
       const r = await bridge.call("/eiass/resolve", {
-        method: "POST", body: { code, gubn: gubnValue() }, timeoutMs: 60000,
+        method: "POST", body: { code, gubn: gubnValue() }, timeoutMs: 90000,
       });
+
+      /* 사후: 회차 목록 — 연도가 소제목, 행=회차(노선·기간·상태). 회차 단위 선택 */
+      if (r.mode === "rounds") {
+        const rounds = r.rounds || [];
+        $("#ec-listtitle").textContent = `${r.code} — 사후 조사회차 ${rounds.length}건 (연도별)`;
+        const tb = $("#ec-tbody");
+        tb.innerHTML = "";
+        const years = [...new Set(rounds.map((x) => x.year || "연도미상"))];
+        for (const y of years) {
+          const items = rounds.filter((x) => (x.year || "연도미상") === y);
+          const gid = `ecy-${y}`;
+          const head = document.createElement("tr");
+          head.innerHTML = `
+            <td style="background:var(--surface-2)">
+              <input type="checkbox" id="${gid}" class="ec-gchk" checked aria-label="${y}년 전체 선택"></td>
+            <td colspan="3" style="background:var(--surface-2);font-weight:var(--weight-semibold)">
+              ${y}년 조사 <span style="color:var(--text-dim);font-weight:400">(${items.length}회차)</span></td>`;
+          head.querySelector(".ec-gchk").addEventListener("change", (e) => {
+            tb.querySelectorAll(`[data-group="${gid}"]`).forEach((c) => { c.checked = e.target.checked; });
+          });
+          tb.appendChild(head);
+          for (const x of items) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><input type="checkbox" class="ec-chk" data-kind="round" data-group="${gid}"
+                   value="${x.aes_seq}" data-year="${x.year}" checked
+                   aria-label="${x.year}년 회차 ${x.aes_seq} 선택"></td>
+              <td style="white-space:nowrap;color:var(--text-dim)">${x.status || "-"}</td>
+              <td style="white-space:nowrap">${x.period || "-"}</td>
+              <td>${x.biz_nm || "(사업명 없음)"} <span style="color:var(--text-dim)">· 회차 ${x.aes_seq}</span></td>`;
+            tb.appendChild(tr);
+          }
+        }
+        $("#ec-selall").checked = true;
+        $("#ec-listwrap").style.display = "";
+        toast("회차를 선택하면 해당 연도 보고서 전체가 연도별 폴더로 저장됩니다", "ok");
+        return;
+      }
+
       const docs = r.docs || [];
       if (!docs.length) {
         toast("원문 목록이 비어 있습니다 — 코드·유형을 확인하세요 (비공개/미공개 사업일 수 있음)", "warn");
@@ -299,19 +332,20 @@ export function init(section, { bridge, toast }) {
     if (ecRunning) return;
     const code = $("#ec-code").value.trim();
     const dir = $("#ec-dir").value.trim();
-    const seqs = [...section.querySelectorAll(".ec-chk:checked")].map((c) => c.value);
-    if (!seqs.length) { toast("다운로드할 파일을 선택하세요", "fail"); return; }
+    const checked = [...section.querySelectorAll(".ec-chk:checked")];
+    if (!checked.length) { toast("다운로드할 항목을 선택하세요", "fail"); return; }
     if (!dir) { toast("저장 폴더를 먼저 선택하세요", "fail"); return; }
+    const isRounds = checked[0].dataset.kind === "round";
+    const body = { type: "eiass_dl", code, gubn: gubnValue(),
+                   out_dir: dir, zip: $("#ec-zip").checked };
+    if (isRounds) body.rounds = checked.map((c) => ({ seq: c.value, year: c.dataset.year }));
+    else body.seqs = checked.map((c) => c.value);
     ecRunning = true;
     $("#ec-run").disabled = true;
     $("#ec-prog").classList.add("active");
     $("#ec-log").classList.add("active");
     try {
-      const job = await bridge.call("/jobs", {
-        method: "POST",
-        body: { type: "eiass_dl", code, gubn: gubnValue(), seqs,
-                out_dir: dir, zip: $("#ec-zip").checked },
-      });
+      const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => ecLog(line),
         onProgress: (p) => {
@@ -324,7 +358,7 @@ export function init(section, { bridge, toast }) {
         },
       });
       ecLog("─── 완료", "ok");
-      toast(`다운로드 완료 (${seqs.length}건 선택) — 폴더를 확인하세요`, "ok");
+      toast(`다운로드 완료 (${checked.length}건 선택) — 폴더를 확인하세요`, "ok");
     } catch (e) {
       ecLog(`✗ ${e.message}`, "fail");
       toast(e.message, "fail");
