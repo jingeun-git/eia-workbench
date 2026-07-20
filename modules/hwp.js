@@ -58,6 +58,17 @@ export function init(section, { bridge, toast }, kind) {
             <option value="blank">물리 공백 페이지 있음</option>
           </select>
         </div>
+        <div class="field" style="margin-bottom:0;flex:0 0 100%">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
+            <input type="checkbox" id="hw-hide">
+            간지·여백면에 <b>감추기</b> 적용 (머리말·꼬리말·쪽번호·바탕쪽·테두리·배경)
+          </label>
+          <p class="help" style="margin-top:4px">
+            쪽번호를 <b>머리말 안에</b> 넣는 문서는 간지에 번호가 아예 안 나오므로 <b>불필요</b>합니다.
+            「쪽 번호 매기기」로 문서 전체에 거는 문서에서만 켜세요.
+            대상 — 간지 1면 / 간지 2장이면 뒷 여백면까지 / A3 여백면.
+          </p>
+        </div>
       </div>
       <p class="help" style="margin-top:-8px">
         양면 인쇄에서 <b>간지 뒷면</b>과 <b>A3 뒷면</b>은 비워 둡니다. 이때 작성 방식이 둘로 갈립니다 —
@@ -152,7 +163,7 @@ export function init(section, { bridge, toast }, kind) {
     if (running) { toast("실행 중입니다 — 완료 후 초기화하세요", "warn"); return; }
     $("#hw-dir").value = "";
     if (kind === "pdf") $("#hw-outdir").value = "";
-    if (kind === "pagenum") $("#hw-start").value = "1";
+    if (kind === "pagenum") { $("#hw-start").value = "1"; $("#hw-hide").checked = false; }
     $("#hw-log").textContent = ""; $("#hw-log").classList.remove("active");
     $("#hw-prog").classList.remove("active"); $("#hw-fill").style.width = "0%";
     if (kind === "pagenum") {
@@ -168,7 +179,7 @@ export function init(section, { bridge, toast }, kind) {
   /* 입력이 바뀌면 스캔 결과가 낡는다 — 적용을 막고 재스캔을 요구한다
      (낡은 계획으로 원본을 고치는 사고 방지) */
   if (kind === "pagenum") {
-    for (const sel of ["#hw-start", "#hw-divider", "#hw-a3back", "#hw-dir"]) {
+    for (const sel of ["#hw-start", "#hw-divider", "#hw-a3back", "#hw-hide", "#hw-dir"]) {
       const el = $(sel);
       el?.addEventListener("change", () => {
         if (!scanned) return;
@@ -305,7 +316,8 @@ export function init(section, { bridge, toast }, kind) {
             // 스캔과 **동일한 옵션**을 반드시 함께 보낸다 — 빠지면 브리지가
             // 기본값으로 계획을 다시 세워 스캔 표와 다른 번호가 찍힌다(2026-07-20)
             divider: $("#hw-divider").value,
-            a3_back: $("#hw-a3back").value };
+            a3_back: $("#hw-a3back").value,
+            do_hide: $("#hw-hide").checked };
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => log(line),

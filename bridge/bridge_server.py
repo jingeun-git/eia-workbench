@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.5.0"
+BRIDGE_VERSION = "3.6.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -400,6 +400,7 @@ def run_pagenum_scan(job, params):
         #   (2026-07-20: 스캔은 정상인데 UI만 비어 원인을 한참 헤맸다)
         "start_page": f.get("start_page"), "end_page": f.get("end_page"),
         "hide_pages": f.get("hide_pages") or [],
+        "hide_targets": f.get("hide_targets") or [],
         "gap_count": f.get("gap_count", 0),
         # 적용 단계가 웹 파라미터에 의존하지 않도록 계획 조건을 결과에 실어 보낸다.
         # (웹이 구버전이라 옵션을 안 보내면 브리지가 기본값으로 다시 계산해
@@ -463,6 +464,7 @@ def run_pagenum_apply(job, params):
         progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
         dry_run=bool(params.get("dry_run")),
         extra_clear=bool(params.get("extra_clear")),
+        do_hide=bool(params.get("do_hide")),
     )
 
 
