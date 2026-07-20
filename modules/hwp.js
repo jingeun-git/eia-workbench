@@ -59,9 +59,23 @@ export function init(section, { bridge, toast }, kind) {
           </select>
         </div>
       </div>
-      <p class="help" style="margin-top:-8px">각 장 <b>첫 파일</b>의 앞머리를 어떻게 세는지 지정합니다. <b>간지 1장</b>이면 뒷면 몫으로 번호를 하나 건너뛰어
-        본문이 홀수에서 시작하고, <b>간지 2장</b>이면 공백이 이미 페이지로 있으므로 그대로 셉니다.
-        어느 쪽이든 <b>빈 페이지를 만들지 않으며 문서 구조는 바뀌지 않습니다</b>.</p>` : ""}
+      <p class="help" style="margin-top:-8px">
+        <b>이 두 옵션은 문서를 고치지 않습니다 — 쪽번호를 계산하는 조건일 뿐입니다.</b>
+        같은 인쇄 결과를 내는 두 가지 작성 방식(빈 페이지를 실제로 넣었는가 / 넣지 않고 번호만 건너뛰었는가)
+        중 <u>이 보고서가 어느 쪽인지</u>를 알려주는 값입니다. 잘못 고르면 번호가 한 칸씩 어긋납니다.
+      </p>
+      <details class="help" style="margin-top:-4px">
+        <summary style="cursor:pointer">도구가 문서에 실제로 하는 일 (3가지)</summary>
+        <ol style="margin:8px 0 0 18px;line-height:1.7">
+          <li><b>기존 쪽번호 조판부호 삭제</b> — 새 쪽번호·쪽 번호 제어를 모두 지웁니다</li>
+          <li><b>새 쪽번호 부여</b> — 계산된 번호를 필요한 쪽에 넣습니다</li>
+          <li><b>간지 감추기</b> — 간지가 있는 장의 첫 쪽만 (머리말·꼬리말·쪽번호)</li>
+        </ol>
+        <p style="margin:8px 0 0">
+          <b>하지 않는 것:</b> 페이지 삽입·삭제, 빈 페이지 생성·제거, 머리말/꼬리말 내용 변경,
+          용지 방향·크기 변경, 본문 내용 수정. 쪽수는 실행 전후가 같아야 정상입니다.
+        </p>
+      </details>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
         <label>PDF 저장 폴더 (비우면 원본 옆에 저장)</label>
