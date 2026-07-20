@@ -338,6 +338,22 @@ def _hide_divider_pages(hwp, log=lambda *_: None):
     return (1 if applied else 0), applied
 
 
+def _hide_last_section_first_page(hwp):
+    """마지막 구역의 첫 쪽을 감춘다 — 장 끝 공란 전용.
+
+    ⚠ 문서 **끝**에서 BreakSection 하는 것은 안전하다. 본문은 기존 구역에 그대로
+      남고 새 구역에는 공란만 들어가므로, 2026-07-20의 머리말 소실(본문이 새 구역으로
+      넘어가 머리말을 잃은 사고)이 발생하지 않는다. 오히려 새 구역이 머리말을
+      상속하지 않는 성질이 여기서는 목적에 부합한다(공란에 머리말이 찍히면 안 됨).
+    """
+    last, c = None, hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "secd":
+            last = c
+        c = c.Next
+    return _hide_section_first_page(last) if last is not None else []
+
+
 def _count_hidden(hwp):
     """문서에 이미 설정된 감추기(pghd) 개수 — 사용자가 직접 걸어둔 것을 존중하기 위해 센다."""
     n, c = 0, hwp.HeadCtrl
@@ -374,6 +390,15 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"  {p.name}: 기존 조판부호 제거 — "
                         + ", ".join(f"{k} {v}개" for k, v in rm.items()))
 
+                # 스캔 시점과 실제 쪽수가 다르면 계획 전체가 어긋난다
+                # (이미 적용된 폴더를 재스캔 없이 다시 돌리는 경우가 대표적 —
+                #  공란이 이중 삽입되거나, 반대로 필요한 공란이 빠진다)
+                _now = _phys_pages(hwp) or 0
+                _planned = f.get("phys_pages") or 0
+                if _now and _planned and _now != _planned:
+                    log(f"    ⚠ 쪽수 불일치: 스캔 {_planned}쪽 → 현재 {_now}쪽. "
+                        f"이미 적용된 파일일 수 있습니다 — 원본 사본으로 다시 스캔하세요")
+
                 for phys, num in f["marks"]:
                     _goto_page(hwp, phys)
                     _set_number(hwp, num)
@@ -381,9 +406,17 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     + (f" (NewNumber {len(f['marks'])}곳)" if len(f["marks"]) > 1 else ""))
 
                 if f.get("pad"):
+                    before = (_phys_pages(hwp) or 0)
                     hwp.MovePos(3)
-                    hwp.HAction.Run("BreakPage")
-                    log(f"    · 장 끝 짝수 맞춤 — 공란 1쪽 삽입")
+                    # BreakPage가 아니라 BreakSection — 공란을 '구역 첫 쪽'으로 만들어야
+                    # 감추기를 걸 수 있다(구역 중간 쪽은 COM으로 감출 수 없음)
+                    hwp.HAction.Run("BreakSection")
+                    after = (_phys_pages(hwp) or 0)
+                    hidden = _hide_last_section_first_page(hwp)
+                    log(f"    · 장 끝 짝수 맞춤 — 공란 1쪽 삽입"
+                        + (f" ({before}→{after}쪽)" if after else "")
+                        + (f" · 감추기 {', '.join(hidden)}" if hidden
+                           else " · ⚠ 감추기 실패 — 한글에서 직접 확인 필요"))
 
                 if f.get("divider"):
                     existing = _count_hidden(hwp)
