@@ -554,6 +554,50 @@ def _hide_page(hwp, phys: int):
     return bool(act.Execute("PageHiding", pset.HSet))
 
 
+def _count_pgct(hwp):
+    n, c = 0, hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "pgct":
+            n += 1
+        c = c.Next
+    return n
+
+
+# 「새 번호로 시작」의 '항상 홀수 쪽으로'에 해당하는 AutoNumType 이름 후보.
+# 한컴 답변(2026-07-21): [쪽 번호 제어]는 한글 97 이후 빠진 기능이고,
+# '새 번호로 시작 - 항상 홀수 쪽으로'로 넣으면 이 조판부호가 입력된다.
+# 정확한 상수명을 모르므로 추측을 박지 않고, 후보를 실제로 걸어본 뒤
+# pgct가 생겼는지로 판정한다. 성공한 이름은 그 실행 동안 재사용한다.
+_PGCT_CANDIDATES = ("PageOdd", "Odd", "AlwaysOdd", "OddPage", "PageAlwaysOdd")
+_pgct_type = None
+
+
+def _set_pgct(hwp, phys: int, log=lambda *_: None):
+    """지정한 쪽에 [쪽 번호 제어](직후 홀수 강제)를 삽입한다.
+
+    성공 판정은 반환값이 아니라 **pgct 개수 증가**로 한다 — Execute가 True를
+    돌려주면서 아무 일도 하지 않는 사례를 이미 두 번 겪었다.
+    """
+    global _pgct_type
+    for name in ((_pgct_type,) if _pgct_type else _PGCT_CANDIDATES):
+        try:
+            _goto_page(hwp, phys)
+            before = _count_pgct(hwp)
+            act = hwp.HAction
+            pset = hwp.HParameterSet.HAutoNum
+            act.GetDefault("NewNumber", pset.HSet)
+            pset.NumType = hwp.AutoNumType(name)
+            act.Execute("NewNumber", pset.HSet)
+            if _count_pgct(hwp) > before:
+                if _pgct_type != name:
+                    _pgct_type = name
+                    log(f'    · 쪽번호제어 상수 확인: AutoNumType("{name}")')
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _count_hidden(hwp):
     """문서에 이미 설정된 감추기(pghd) 개수 — 사용자가 직접 걸어둔 것을 존중하기 위해 센다."""
     n, c = 0, hwp.HeadCtrl
@@ -626,11 +670,18 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
 
                 # 홀수 강제는 새 쪽번호가 아니라 [쪽 번호 제어]로 건다(사용자 지시)
                 if f.get("force_odd"):
-                    ok_p = [ph for ph in f["force_odd"] if _set_pgct(hwp, ph)]
+                    ok_p = [ph for ph in f["force_odd"] if _set_pgct(hwp, ph, log)]
                     miss = [ph for ph in f["force_odd"] if ph not in ok_p]
-                    log(f"    · 쪽번호제어 {len(ok_p)}/{len(f['force_odd'])}쪽"
-                        + (f" 적용 {ok_p}" if ok_p else "")
-                        + (f" · ✗ 미구현 {miss} — 한글에서 직접 삽입 필요" if miss else ""))
+                    # 제거된 기능이라 삽입이 안 될 수 있다 — 그 경우 홀수 값을
+                    # 새 쪽번호로 직접 박아 결과는 맞춘다(폴백).
+                    for ph in miss:
+                        num = next((nm for p2, nm, _ in f["pages"] if p2 == ph), None)
+                        if num is not None:
+                            _goto_page(hwp, ph)
+                            _set_number(hwp, num)
+                    log(f"    · 홀수 강제 {len(f['force_odd'])}쪽"
+                        + (f" · 쪽번호제어 {ok_p}" if ok_p else "")
+                        + (f" · 새쪽번호 대체 {miss}" if miss else ""))
 
                 if do_hide and f.get("hide_targets"):
                     before = _count_hidden(hwp)
