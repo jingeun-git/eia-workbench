@@ -39,9 +39,11 @@ _CODE_RE = re.compile(r"^\s*(\d{4})")
 COVER_CHAPTER = "00"          # 표지·옆표지·목차 — 번호 부여 제외(R0)
 
 # 감추기에 쓰는 구역 속성 키 (실측으로 존재 확인된 것만)
-# 감추기 필드 — 한글 대화상자 6항목에 대응(쪽번호는 HidePageNumPos, 2026-07-20 실측 발견)
-HIDE_FIELDS = ("HideHeader", "HideFooter", "HideBorder", "HideFill",
-               "HideMasterPage", "HidePageNumPos")
+# 감추기 필드 — PageHiding 액션의 파라미터셋 **HSecDef**에서 실명 열거로 확정(2026-07-20).
+# 전체 7종: HideHeader/HideFooter/HideBorder/HideFill/HideMasterPage/HidePageNumPos/HideEmptyLine
+# 사용자 요구("머릿말·꼬릿말·쪽번호 모두 숨김")에 맞춰 기본 3종만 켠다 — 간지의
+# 테두리·배경까지 지우면 디자인이 바뀔 수 있어 문서 원안을 존중한다.
+HIDE_FIELDS = ("HideHeader", "HideFooter", "HidePageNumPos")
 
 
 # ── 파일명 → 장/절 판별 ────────────────────────────────────────────────
@@ -287,13 +289,12 @@ def _goto_page(hwp, phys: int):
 def _hide_current_page(hwp):
     """현재 커서 위치에 감추기를 적용한다(머리말·꼬리말·테두리·배경·바탕쪽·쪽번호).
 
-    ⚠ COM 호출 패턴 주의: `hwp.HParameterSet.H{액션}.HSet` + 파이썬 속성 대입이 정석이다
-      (기존 승인 코드 hwpContent1.1.py가 쓰던 방식). `act.CreateSet()+SetItem`으로는
-      파라미터가 초기화되지 않아 전부 None이 되고 Execute가 True를 반환해도 무동작이다
-      (2026-07-20 실사고). 쪽번호 필드명은 HidePageNumPos.
+    ⚠ 파라미터셋 이름이 액션명과 다르다: PageHiding 액션 → **HSecDef** 객체.
+      (FindDlg 액션 → HFindReplace 와 같은 어긋남. HPageHiding은 필드가 없는 빈 객체라
+       setattr이 전부 실패한다 — 2026-07-20 실명 열거로 확정)
     반환: (성공여부, 적용된 필드 목록)"""
     try:
-        pset = hwp.HParameterSet.HPageHiding
+        pset = hwp.HParameterSet.HSecDef
         hwp.HAction.GetDefault("PageHiding", pset.HSet)
         applied = []
         for f in HIDE_FIELDS:
