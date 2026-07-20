@@ -6,47 +6,22 @@
  *  - merge   : 한컴 매크로(.Egg)라 자동화 불가 — 수동 실행 안내만 제공
  */
 
+/* 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제 */
 const META = {
   pdf: {
     title: "HWP → PDF 일괄 변환",
     desc: "선택한 폴더(하위 포함)의 HWP·HWPX를 PDF로 일괄 변환합니다. 모아찍기 무시·단면, 텍스트 보존(이미지화 안 함).",
     feature: "hwp2pdf",
   },
-  toc: {
-    title: "차례 만들기",
-    desc: "폴더 안 모든 .hwp에서 제목 스타일(경동2팀 명명 규격)을 추출해 「차례출력.hwp」를 생성합니다.",
-    feature: "toc",
-  },
   pagenum: {
     title: "쪽번호 일괄 부여",
     desc: "폴더 안 모든 .hwp의 쪽번호를 시작번호부터 연속 재부여하고, 필요 시 파일명의 쪽 표기도 갱신합니다.",
     feature: "pagenum",
   },
-  merge: {
-    title: "한글문서 끼워넣기",
-    desc: "",
-    feature: "merge",
-  },
 };
 
 export function init(section, { bridge, toast }, kind) {
   const m = META[kind];
-
-  /* merge — 자동화 불가 안내 전용 */
-  if (kind === "merge") {
-    section.innerHTML = `
-    <div class="panel">
-      <h2>${m.title}</h2>
-      <p class="desc">이 도구는 한컴오피스 <b>매크로(.Egg)</b>로 만들어져 있어 브리지가 자동 실행할 수 없습니다.
-        아래 절차로 한글에서 직접 실행해주세요.</p>
-      <div class="placeholder" style="text-align:left;line-height:2">
-        ① 한글 실행 → 도구 → 매크로 → <b>매크로 정의/실행</b><br>
-        ② 매크로 파일 위치: <code>99.Tools/배포용/한글문서 끼워넣기/한글문서 끼워넣기 자동화.Egg</code><br>
-        ③ 매크로 불러오기 후 실행
-      </div>
-    </div>`;
-    return;
-  }
 
   section.innerHTML = `
   <div class="panel">

@@ -58,7 +58,7 @@ CONFIG     = BRIDGE_DIR / "bridge_config.json"
 CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
 EIASS_DIR    = TOOLS_DIR / "EIASS"
 HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
-TOC_SCRIPT   = TOOLS_DIR / "배포용/hwpContent1.2/hwpContent1.1.py"
+# 차례(hwpContent)·끼워넣기(.Egg): 2026-07-20 사용자 지시로 기능 삭제
 PAGE_SCRIPT  = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.0.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
@@ -71,7 +71,7 @@ IS_WINDOWS = os.name == "nt"
 # ── 기능 가용성 탐지 (파일 실재·임포트 가능 여부로 판정 — 표기만으로 단정 금지) ──
 def detect_features():
     feats = {"convert": False, "ocr": False, "eiass": False,
-             "hwp2pdf": False, "toc": False, "pagenum": False, "merge": False}
+             "hwp2pdf": False, "pagenum": False}
     try:
         import convert_core  # noqa
         feats["convert"] = True
@@ -85,7 +85,6 @@ def detect_features():
             feats["hwp2pdf"] = True
         except Exception:
             pass
-        feats["toc"] = TOC_SCRIPT.exists()
         feats["pagenum"] = PAGE_SCRIPT.exists()
     return feats
 
@@ -214,28 +213,47 @@ def run_eiass_dl(job, params):
     job_log(job, f"─── 다운로드 완료: {ok}/{total}건 → {out_dir}")
 
 def run_hwp2pdf(job, params):
+    """convert_batch는 진행 dict를 yield하는 **제너레이터**다 — 순회해야 실행된다.
+    (2026-07-20 실사고: 리스트로 취급해 dict에 [0] 인덱싱 → KeyError(0) → 로그 '✗ 0')"""
     import hwp2pdf_core
     paths = [Path(p) for p in params.get("paths", [])]
     files = hwp2pdf_core.collect_files([str(p) for p in paths], recursive=True)
     if not files:
         raise RuntimeError("HWP/HWPX 파일이 없습니다")
-    out_dir = params.get("out_dir")
-    job["progress"] = {"done": 0, "total": len(files), "stage": "한컴 변환 중"}
-    job_log(job, f"HWP→PDF 일괄 변환 {len(files)}건 시작")
-    results = hwp2pdf_core.convert_batch(files, out_dir=out_dir)
-    ok = sum(1 for r in results if r and r[0]) if results else len(files)
-    job_log(job, f"─── 변환 완료 ({ok}건)")
-    job["progress"] = {"done": len(files), "total": len(files), "stage": "완료"}
+    out_dir = params.get("out_dir") or None
+
+    ok = fail = 0
+    for ev in hwp2pdf_core.convert_batch(files, out_dir=out_dir):
+        ph = ev.get("phase")
+        if ph == "start":
+            job["progress"] = {"done": 0, "total": ev["total"], "stage": "한컴 기동 중"}
+            job_log(job, f"HWP→PDF 일괄 변환 {ev['total']}건 시작")
+        elif ph == "engine":
+            job_log(job, f"  엔진: {ev.get('mode')} / PDF 프린터: {ev.get('pdf_printer') or '-'}")
+        elif ph == "item":
+            name = os.path.basename(str(ev.get("src", "")))
+            job["progress"] = {"done": ev["index"], "total": ev["total"], "stage": name}
+            if ev.get("skipped"):
+                job_log(job, f"  · {name} — 이미 존재, 건너뜀")
+            elif ev.get("ok"):
+                ok += 1
+                job_log(job, f"  ✓ {name} → {os.path.basename(str(ev.get('pdf')))} ({ev.get('size')})")
+            else:
+                fail += 1
+                job_log(job, f"  ✗ {name}: {ev.get('error')}")
+        elif ph == "done":
+            job_log(job, f"─── 변환 완료: 성공 {ev['ok']} / 실패 {ev['fail']} / 건너뜀 {ev['skip']}")
+    if fail and not ok:
+        raise RuntimeError("전건 변환 실패 — 한컴오피스 설치·한컴 PDF 프린터를 확인하세요")
 
 def run_hwptool(job, params):
     tool = params["tool"]
     folder = Path(params["folder"])
     if not path_allowed(folder):
         raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다")
-    script = TOC_SCRIPT if tool == "toc" else PAGE_SCRIPT
-    cmd = ["python", str(script)]
-    if tool == "pagenum":
-        cmd.append(str(int(params.get("start_num", 1))))
+    if tool != "pagenum":
+        raise RuntimeError(f"지원하지 않는 도구: {tool}")
+    cmd = ["python", str(PAGE_SCRIPT), str(int(params.get("start_num", 1)))]
     job_log(job, f"[{tool}] 대상 폴더: {folder} — 폴더 내 전체 .hwp 처리")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="cp949", errors="replace",
@@ -433,7 +451,7 @@ def main():
     print(f"  주소   : http://127.0.0.1:{port}")
     print(f"  버전   : {BRIDGE_VERSION}")
     print(f"  기능   : " + ", ".join(k for k, v in feats.items() if v))
-    miss = [k for k, v in feats.items() if not v and k != "merge"]
+    miss = [k for k, v in feats.items() if not v]
     if miss:
         print(f"  비활성 : {', '.join(miss)} (해당 도구 미설치 또는 Windows 아님)")
     print()

@@ -207,6 +207,12 @@ export function init(section, { bridge, toast }) {
   $("#ec-search").addEventListener("click", async () => {
     const code = $("#ec-code").value.trim();
     if (!code) { toast("사업코드를 입력하세요 (예: WJ20260098)", "fail"); return; }
+    if ($("#ec-gubn").value === "after") {
+      // EIASS는 사후를 (EIA_CD + AES_SEQ) 쌍으로만 조회한다 — 같은 코드에 연도별
+      // 회차가 여럿이라 회차 목록 API가 먼저 필요(resolver 확장 과제 DAT-14).
+      toast("사후환경영향조사는 연도(조사회차) 목록 기능 확장 후 지원 예정입니다 — 당분간 FILE_SEQ 직접 방식을 사용하세요", "warn");
+      return;
+    }
     const btn = $("#ec-search");
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> 조회 중…`;
@@ -220,17 +226,43 @@ export function init(section, { bridge, toast }) {
         return;
       }
       $("#ec-listtitle").textContent = `${r.code} — ${docs.length}건 (유형: ${docs[0].gubn})`;
+
+      /* 절차단계(stage_label)별 그룹 소제목 — EIASS 아코디언 원문 순서 유지.
+         '연계' 문서 그룹은 기본 체크 해제(다른 절차의 참조 문서 — 필요 시만 선택). */
+      const groups = [];
+      const byStage = new Map();
+      for (const d of docs) {
+        const key = d.stage_label || "기타";
+        if (!byStage.has(key)) { byStage.set(key, []); groups.push(key); }
+        byStage.get(key).push(d);
+      }
       const tb = $("#ec-tbody");
       tb.innerHTML = "";
-      for (const d of docs) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><input type="checkbox" class="ec-chk" value="${d.file_seq}" checked
-               aria-label="${d.filename} 선택"></td>
-          <td style="white-space:nowrap">${d.stage_label || "-"}</td>
-          <td style="white-space:nowrap">${d.chapter_code || "-"}</td>
-          <td>${d.filename}</td>`;
-        tb.appendChild(tr);
+      for (const g of groups) {
+        const items = byStage.get(g);
+        const linked = g.includes("연계");
+        const gid = `ecg-${groups.indexOf(g)}`;
+        const head = document.createElement("tr");
+        head.innerHTML = `
+          <td style="background:var(--surface-2)">
+            <input type="checkbox" id="${gid}" class="ec-gchk" ${linked ? "" : "checked"}
+                   aria-label="${g} 전체 선택"></td>
+          <td colspan="3" style="background:var(--surface-2);font-weight:var(--weight-semibold)">
+            ${g} <span style="color:var(--text-dim);font-weight:400">(${items.length}건${linked ? " — 연계문서, 기본 제외" : ""})</span></td>`;
+        head.querySelector(".ec-gchk").addEventListener("change", (e) => {
+          tb.querySelectorAll(`[data-group="${gid}"]`).forEach((c) => { c.checked = e.target.checked; });
+        });
+        tb.appendChild(head);
+        for (const d of items) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><input type="checkbox" class="ec-chk" data-group="${gid}" value="${d.file_seq}"
+                 ${linked ? "" : "checked"} aria-label="${d.filename} 선택"></td>
+            <td style="white-space:nowrap;color:var(--text-dim)">${g}</td>
+            <td style="white-space:nowrap">${d.chapter_code || "-"}</td>
+            <td>${d.filename}</td>`;
+          tb.appendChild(tr);
+        }
       }
       $("#ec-selall").checked = true;
       $("#ec-listwrap").style.display = "";
@@ -243,7 +275,7 @@ export function init(section, { bridge, toast }) {
   });
 
   $("#ec-selall").addEventListener("change", (e) =>
-    section.querySelectorAll(".ec-chk").forEach((c) => { c.checked = e.target.checked; }));
+    section.querySelectorAll(".ec-chk, .ec-gchk").forEach((c) => { c.checked = e.target.checked; }));
 
   $("#ec-pick").addEventListener("click", async () => {
     try {

@@ -14,12 +14,9 @@ const TOOLS = [
     load: () => import("../modules/eiass.js") },
   { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,
     load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
-  { id: "toc",    label: "차례",       needsBridge: true,
-    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "toc") })) },
   { id: "pagenum",label: "쪽번호",     needsBridge: true,
     load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
-  { id: "merge",  label: "끼워넣기",   needsBridge: true,
-    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "merge") })) },
+  // 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제
 ];
 
 const $ = (s, el = document) => el.querySelector(s);
