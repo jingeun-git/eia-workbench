@@ -66,8 +66,31 @@ def open_doc(hwp, path: Path):
 
 
 def doc_pages(hwp) -> int:
+    """마지막 쪽의 **쪽번호**를 반환한다(물리 쪽 수가 아니다).
+
+    ⚠ KeyIndicator()[3]은 화면에 표시되는 쪽번호다. 새 쪽번호를 7로 지정하면
+    8쪽짜리 문서가 14로 보고된다(2026-07-20 실측: 7쪽 원본 → BreakPage 8쪽 →
+    NewNumber=7 적용 후 '14쪽'). 규칙 판정("장 끝이 짝수인가")에 필요한 값은
+    쪽번호가 맞으므로 이 값을 쓰되, 물리 쪽 수와 혼동하지 않는다."""
     hwp.MovePos(3)
     return int(hwp.KeyIndicator()[3])
+
+
+def phys_pages(hwp):
+    """물리 쪽 수 — PageCount 속성이 있으면 사용(없으면 None)."""
+    for attr in ("PageCount", "XHwpDocuments"):
+        try:
+            if attr == "PageCount":
+                v = hwp.PageCount
+                if v:
+                    return int(v)
+            else:
+                v = hwp.XHwpDocuments.Item(0).XHwpDocumentInfo.PageCount
+                if v:
+                    return int(v)
+        except Exception:
+            continue
+    return None
 
 
 def probe_file(hwp, path: Path):
@@ -86,7 +109,8 @@ def probe_file(hwp, path: Path):
         hwp.MovePos(3)                    # 문서 끝
         ki = hwp.KeyIndicator()
         total_pages = int(ki[3])
-        log(f"  A. 총쪽수: {total_pages}쪽")
+        ph = phys_pages(hwp)
+        log(f"  A. 끝 쪽번호: {total_pages}  / 물리 쪽수: {ph if ph is not None else '조회 불가'}")
     except Exception as e:
         total_pages = None
         log(f"  A. ✗ 총쪽수 읽기 실패: {e}")
@@ -274,7 +298,9 @@ def write_test(hwp, src: Path):
         log("  ✗ 사본 열기 실패 — 쓰기 검증 중단")
         return
     before = doc_pages(hwp)
-    log(f"  사본 열기 — 형식 인자: {used}, 총쪽수: {before}쪽 (원본 {origin_pages}쪽)")
+    ph = phys_pages(hwp)
+    log(f"  사본 열기 — 형식 인자: {used}, 끝 쪽번호: {before} (원본 {origin_pages}) "
+        f"/ 물리 쪽수: {ph if ph is not None else '조회 불가'}")
 
     # ⚠ 무결성 게이트: 사본이 원본과 다른 쪽수면 제대로 안 열린 것이다.
     #   이 검사가 없어 빈 문서(1쪽)에서 실험하고 "성공"으로 보고한 사고가 있었다(2026-07-20).
@@ -333,6 +359,57 @@ def write_test(hwp, src: Path):
             log(f"  2) 감추기 [{name}] ✗ {type(e).__name__}: {str(e)[:80]}")
     if not hide_ok:
         log("     → 액션 경로로는 감추기 생성 실패. 아래 D-2(기존 pghd 속성 덤프) 참고")
+
+    # (2b) 감추기 재시도 — **구역(secd) 속성 경로**
+    #      D-2에서 secd만 Hide*=0으로 실값을 갖고 pghd는 전부 None이었다
+    #      → 감추기는 구역 속성이라는 강한 단서. 액션이 아니라 속성 쓰기로 시도한다.
+    try:
+        c, target_sec = hwp.HeadCtrl, None
+        while c is not None:
+            if c.CtrlID == "secd":
+                target_sec = c
+                break
+            c = c.Next
+        if target_sec is None:
+            log("  2b) 구역(secd) 컨트롤을 찾지 못함")
+        else:
+            st = target_sec.Properties
+            keys = [k for k in ("HideHeader", "HideFooter", "HideBorder",
+                                "HideFill", "HideMasterPage", "HidePageNum")
+                    if _safe_has(st, k) and st.Item(k) is not None]
+            before = {k: st.Item(k) for k in keys}
+            for k in keys:
+                st.SetItem(k, 1)
+            target_sec.Properties = st          # 속성 되돌려 넣기(핵심)
+            # 재조회로 실제 반영 확인
+            st2 = target_sec.Properties
+            after = {k: st2.Item(k) for k in keys}
+            changed = [k for k in keys if before[k] != after[k]]
+            log(f"  2b) 구역 속성 쓰기: 대상키={keys}")
+            log(f"      before={before}")
+            log(f"      after ={after}")
+            log(f"      → {'✓ ' + str(changed) + ' 반영됨' if changed else '✗ 값 변화 없음'}")
+    except Exception as e:
+        log(f"  2b) ✗ 구역 속성 쓰기 실패: {type(e).__name__}: {str(e)[:100]}")
+
+    # (2c) 구역 나누기 — 특정 페이지만 감추려면 그 쪽을 별도 구역으로 떼야 한다
+    try:
+        c, before_sec = hwp.HeadCtrl, 0
+        while c is not None:
+            if c.CtrlID == "secd":
+                before_sec += 1
+            c = c.Next
+        hwp.MovePos(3)
+        hwp.HAction.Run("BreakSection")
+        c, after_sec = hwp.HeadCtrl, 0
+        while c is not None:
+            if c.CtrlID == "secd":
+                after_sec += 1
+            c = c.Next
+        log(f"  2c) 구역 나누기(BreakSection): secd {before_sec}→{after_sec} "
+            f"{'✓ 가능' if after_sec > before_sec else '✗ 변화 없음'}")
+    except Exception as e:
+        log(f"  2c) ✗ 구역 나누기 실패: {e}")
 
     # (3) 새 쪽번호 — 홀수 강제에 필요
     try:
