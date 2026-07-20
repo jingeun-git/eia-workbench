@@ -66,7 +66,7 @@ PAGE_EXE     = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.1.exe"
 PAGE_SCRIPT  = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.0.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
-for p in (CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
+for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
     if p.exists():
         sys.path.insert(0, str(p))
 
@@ -352,7 +352,27 @@ def run_eiass_seq_dl(job, params):
         raise RuntimeError("전건 실패 — FILE_SEQ·네트워크를 확인하세요")
 
 
+def run_hwp_probe(job, params):
+    """SYS-31 선행 COM 검증 — 읽기 전용. 원본을 수정하지 않는다.
+    bat 실행이 반복 실패해(인코딩·괄호·한글 경로) 검증된 브리지 경로로 옮겼다(2026-07-20)."""
+    import probe_hwp_pagenum as probe
+    folder = Path(params["folder"])
+    if not path_allowed(folder):
+        raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+    job["progress"] = {"done": 0, "total": 1, "stage": "한컴 기동·문서 검사 중"}
+    text = probe.run_probe(str(folder), sink=lambda line: job_log(job, line),
+                           max_files=int(params.get("max_files", 5)))
+    try:
+        out = folder / "probe_result.txt"
+        out.write_text(text, encoding="utf-8")
+        job_log(job, f"\n결과 저장: {out}")
+    except Exception as e:
+        job_log(job, f"\n(파일 저장 실패 — 위 로그를 복사해 전달하세요: {e})")
+    job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
+
+
 RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
+           "hwp_probe": run_hwp_probe,
            "eiass_seq_dl": run_eiass_seq_dl,
            "hwp2pdf": run_hwp2pdf, "hwptool": run_hwptool}
 

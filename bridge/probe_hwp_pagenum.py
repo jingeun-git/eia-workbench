@@ -33,10 +33,14 @@ except Exception:
     pass
 
 OUT_LINES = []
+_SINK = None          # 브리지에서 주입하는 로그 콜백
 
 
 def log(msg=""):
-    print(msg, flush=True)
+    if _SINK:
+        _SINK(str(msg))
+    else:
+        print(msg, flush=True)
     OUT_LINES.append(str(msg))
 
 
@@ -186,12 +190,21 @@ def _safe_has(pset, key) -> bool:
         return False
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+def run_probe(target_path, sink=None, max_files: int = 5) -> str:
+    """검증을 수행하고 전체 출력 텍스트를 반환한다.
+    sink: 줄 단위 콜백(브리지 job_log). None이면 stdout 출력.
+    예외는 호출자에게 전파한다 — 브리지가 job 오류로 표시하게."""
+    global _SINK, OUT_LINES
+    _SINK = sink
+    OUT_LINES = []
+    try:
+        _run(Path(target_path), max_files)
+    finally:
+        _SINK = None
+    return "\n".join(OUT_LINES)
 
-    target = Path(sys.argv[1])
+
+def _run(target: Path, max_files: int = 5):
     EXTS = (".hwp", ".hwpx")
     if target.is_dir():
         files = sorted(p for p in target.iterdir()
@@ -199,12 +212,10 @@ def main():
     elif target.suffix.lower() in EXTS:
         files = [target]
     else:
-        print("hwp/hwpx 파일 또는 폴더를 지정하세요.")
-        sys.exit(1)
+        raise RuntimeError("hwp/hwpx 파일 또는 폴더를 지정하세요.")
 
     if not files:
-        print("대상 .hwp / .hwpx 파일이 없습니다.")
-        sys.exit(1)
+        raise RuntimeError("대상 .hwp / .hwpx 파일이 없습니다.")
 
     log("=" * 66)
     log("  SYS-31 한컴 COM 기능 검증 (읽기 전용 — 원본을 수정하지 않습니다)")
@@ -216,23 +227,20 @@ def main():
     try:
         import win32com.client as win32
     except ImportError:
-        log("\n✗ pywin32 미설치 — 설치: pip install pywin32")
-        sys.exit(1)
+        raise RuntimeError("pywin32 미설치 — pip install pywin32")
 
     try:
         hwp = win32.gencache.EnsureDispatch("HWPFrame.HwpObject")
         hwp.RegisterModule("FilePathCheckDLL", "FilePathCheckerModule")
         hwp.XHwpWindows.Item(0).Visible = False
     except Exception as e:
-        log(f"\n✗ 한컴 실행 실패: {e}")
-        log("  한컴오피스가 설치돼 있어야 합니다.")
-        sys.exit(1)
+        raise RuntimeError(f"한컴 실행 실패: {e} — 한컴오피스 설치 필요")
 
-    # 파일이 많으면 앞 5개만 — 검증 목적이라 전수는 불필요
-    for p in files[:5]:
+    # 파일이 많으면 앞 N개만 — 검증 목적이라 전수는 불필요
+    for p in files[:max_files]:
         probe_file(hwp, p)
-    if len(files) > 5:
-        log(f"\n(파일 {len(files)}개 중 앞 5개만 검증 — 구조 파악에 충분)")
+    if len(files) > max_files:
+        log(f"\n(파일 {len(files)}개 중 앞 {max_files}개만 검증 — 구조 파악에 충분)")
 
     try:
         hwp.Quit()
@@ -247,6 +255,17 @@ def main():
         log(f"\n결과 저장 실패: {e}")
 
     log("\n이 출력 전체를 Claude에게 전달해주세요 — 규칙 구현 가능 범위를 판정합니다.")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+    try:
+        run_probe(sys.argv[1])
+    except Exception as e:
+        print(f"\n✗ {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
