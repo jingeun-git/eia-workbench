@@ -286,38 +286,65 @@ def _goto_page(hwp, phys: int):
         hwp.HAction.Run("MovePageDown")
 
 
-def _hide_current_page(hwp):
-    """현재 커서 위치에 감추기를 적용한다(머리말·꼬리말·테두리·배경·바탕쪽·쪽번호).
+def _hide_section_first_page(ctrl):
+    """구역(secd)의 **첫 쪽**을 감춘다. 반환: 적용된 필드 목록.
 
-    ⚠ 파라미터셋 이름이 액션명과 다르다: PageHiding 액션 → **HSecDef** 객체.
-      (FindDlg 액션 → HFindReplace 와 같은 어긋남. HPageHiding은 필드가 없는 빈 객체라
-       setattr이 전부 실패한다 — 2026-07-20 실명 열거로 확정)
-    반환: (성공여부, 적용된 필드 목록)"""
+    ═══ 확정 근거 (2026-07-20, 쓰기 결과 XML 대조) ═══
+    secd 속성을 1로 쓰면 hwpx XML의 secPr/visibility가 이렇게 바뀐다:
+      HideHeader     → hideFirstHeader="1"
+      HideFooter     → hideFirstFooter="1"
+      HidePageNumPos → hideFirstPageNum="1"      ← 쪽번호 감추기
+      HideMasterPage → hideFirstMasterPage="1"
+      HideBorder/HideFill → border/fill="HIDE_FIRST"
+    즉 이 경로는 **구역 첫 쪽 전용**이다. 임의 쪽 감추기는 pghd 컨트롤이 필요한데
+    PageHiding 액션으로는 생성되지 않는다(Execute=True인데 무동작 — 실측 3회).
+    → 간지는 '앞 2면'이므로 구역 분할 + 각 구역 첫 쪽 감추기로 해결한다.
+    """
     try:
-        pset = hwp.HParameterSet.HSecDef
-        hwp.HAction.GetDefault("PageHiding", pset.HSet)
+        st = ctrl.Properties
         applied = []
-        for f in HIDE_FIELDS:
+        for k in HIDE_FIELDS:
             try:
-                setattr(pset, f, 1)
-                applied.append(f)
+                if st.Item(k) is not None:
+                    st.SetItem(k, 1)
+                    applied.append(k)
             except Exception:
                 pass
-        ok = hwp.HAction.Execute("PageHiding", pset.HSet)
-        return bool(ok), applied
+        ctrl.Properties = st
+        return applied
     except Exception:
-        return False, []
+        return []
 
 
-def _hide_divider_pages(hwp, pages: int = 2):
-    """간지 구간(앞 N면)에 감추기를 적용한다. 각 쪽으로 이동해 개별 적용한다."""
-    done = []
-    for phys in range(1, pages + 1):
-        _goto_page(hwp, phys)
-        ok, applied = _hide_current_page(hwp)
-        if ok:
-            done.append(phys)
-    return done, (applied if done else [])
+def _hide_divider_pages(hwp, log=lambda *_: None):
+    """간지 2면(간지+뒷공백)을 감춘다.
+
+    1면은 구역1의 첫 쪽이라 바로 감출 수 있고, 2면은 그 자리에 구역을 나눠
+    새 구역의 첫 쪽으로 만든 뒤 감춘다(BreakSection 동작 검증 완료).
+    3면부터는 같은 구역의 두 번째 쪽 이후라 감춰지지 않는다 — 의도대로다.
+    """
+    before_pages = _end_page(hwp)
+
+    # 2면 시작에 구역 나누기 — 이미 구역 경계면 한컴이 중복 생성하지 않는다
+    _goto_page(hwp, 2)
+    try:
+        hwp.HAction.Run("BreakSection")
+    except Exception as e:
+        log(f"    ⚠ 구역 나누기 실패: {e}")
+
+    after_pages = _end_page(hwp)
+    if after_pages != before_pages:
+        log(f"    ⚠ 구역 나누기로 쪽수가 변했습니다({before_pages}→{after_pages}) — 확인 필요")
+
+    # 앞 두 구역의 첫 쪽을 감춘다
+    applied, done = [], 0
+    c = hwp.HeadCtrl
+    while c is not None and done < 2:
+        if c.CtrlID == "secd":
+            done += 1
+            applied += _hide_section_first_page(c)
+        c = c.Next
+    return done, sorted(set(applied))
 
 
 def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
@@ -358,9 +385,9 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"    · 장 끝 짝수 맞춤 — 공란 1쪽 삽입")
 
                 if f.get("divider"):
-                    done, applied = _hide_divider_pages(hwp, 2)
+                    done, applied = _hide_divider_pages(hwp, log)
                     if done:
-                        log(f"    · 간지 감추기: {len(done)}면({done}) — {', '.join(applied)}")
+                        log(f"    · 간지 감추기: {done}개 구역 첫 쪽 — {', '.join(applied)}")
                     else:
                         log(f"    ⚠ 간지 감추기 실패 — 한글에서 직접 처리해주세요")
 
