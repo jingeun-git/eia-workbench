@@ -65,7 +65,8 @@ def _div_mode(v) -> str:
     return v if v in ("none", "one", "two") else "none"
 
 
-def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = "skip"):
+def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = "skip",
+               do_hide: bool = False):
     """include_divider: "none" | "one" | "two"  (하위호환으로 bool도 받는다)
          none — 간지 없음
          one  — 간지 1장만 (뒷면 공백 없음) → 뒷면 몫으로 번호를 하나 건너뛴다
@@ -94,6 +95,7 @@ def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = 
             "divider": bool(_div_mode(include_divider) != "none" and is_head and not skip),
             "divider_mode": _div_mode(include_divider),
             "a3_back": a3_back if a3_back in ("skip", "blank") else "skip",
+            "do_hide": bool(do_hide),
         })
         if chapter is not None:
             prev_chapter = chapter
@@ -134,28 +136,40 @@ def assign_numbers(plan, start_num: int = 1):
         # 간지 뒷면: "간지 2장"이면 공백이 이미 물리 페이지로 있으므로 결번 불필요.
         # "간지 1장"이면 뒷면 몫으로 번호를 하나 건너뛴다.
         div_skip = 1 if (f.get("divider") and f.get("divider_mode") == "one") else 0
-        pages, marks = [], []
+        pages = []
         n = cur
+        prev_a3_content = False
+        blank_backs = []          # A3 뒷 여백면(물리)
+        force_odd = []            # 홀수 강제가 필요한 쪽 → [쪽 번호 제어] 대상
         for phys in range(1, total + 1):
             if div_skip and phys == 2:
                 n += 1                       # 간지 뒷면 몫으로 번호 하나를 비운다
+
             is_a3 = phys in a3set
-            # R3b②: A3가 짝수 자리에 오면 홀수로 밀어낸다
-            if is_a3 and n % 2 == 0:
+            # A3 판정은 용지 크기 기반이라 **A3 규격의 빈 페이지도 A3로 잡힌다.**
+            # blank 모드에서 A3 바로 뒤의 A3규격 쪽은 내용이 아니라 뒷 여백면이므로
+            # 홀수 강제 대상이 아니다(2026-07-21 실사고: 여백면에 번호가 튀었다).
+            is_a3_back = bool(is_a3 and a3_back == "blank" and prev_a3_content)
+            if is_a3_back:
+                blank_backs.append(phys)
+
+            # R3b: A3 내용면은 홀수에서 시작해야 한다
+            if is_a3 and not is_a3_back and n % 2 == 0:
                 n += 1
-            # 연속이 끊기는 지점에만 NewNumber를 건다(첫 쪽은 항상)
-            if phys == 1 or (pages and n != pages[-1][1] + 1):
-                marks.append((phys, n))
-            pages.append((phys, n, is_a3))
-            # R3: A3는 양면 인쇄에서 뒷면까지 차지하므로 번호를 2개 소비한다.
-            # 단 작성자가 A3 뒤에 물리 빈 페이지를 이미 넣어뒀다면 그 페이지가
-            # 번호를 가져가므로, 여기서 2를 소비하면 이중 계산이 된다.
-            if is_a3:
-                # A3 뒷면이 물리 공백으로 이미 있으면 그 쪽이 번호를 가져가므로 1,
-                # 결번 방식이면 뒷면 몫까지 2를 소비한다
-                n += 1 if a3_back == "blank" else 2
-            else:
-                n += 1
+                force_odd.append(phys)
+            # R1: 간지 다음 본문도 홀수에서 시작한다(결번 방식일 때)
+            elif div_skip and phys == 2:
+                force_odd.append(phys)
+
+            pages.append((phys, n, is_a3 and not is_a3_back))
+            n += 1 if (is_a3 and not is_a3_back and a3_back == "blank") else \
+                 (2 if (is_a3 and not is_a3_back) else 1)
+            prev_a3_content = is_a3 and not is_a3_back
+
+        # 새 쪽번호는 **파일 첫 쪽에만** 넣는다. 파일이 분리돼 있어 시작값은
+        # 절대값으로 줘야 하지만, 그 뒤의 홀수 강제는 [쪽 번호 제어]가 담당한다
+        # (사용자 지시 — 홀수 강제에 새 쪽번호를 쓰지 않는다).
+        marks = [(1, pages[0][1])] if pages else []
 
         end = (pages[-1][1] if pages else cur - 1)
         # A3로 끝나면 그 뒷면은 인쇄상 비는 면이다. 그렇다고 이 파일의 끝 번호를
@@ -189,16 +203,21 @@ def assign_numbers(plan, start_num: int = 1):
             targets.append(1)
             if f.get("divider_mode") == "two":
                 targets.append(2)          # 간지 뒷 여백면
-        if a3_back == "blank":
-            for ph in sorted(a3set):
-                if ph + 1 <= total:
-                    targets.append(ph + 1)  # A3 뒷 여백면
+        targets += blank_backs             # A3 뒷 여백면(루프에서 실측 판정)
         targets = sorted(set(targets))
+
+        # 감추기를 켰을 때만 그 쪽들이 실제로 가려진다. 가려지는 쪽에는 조판부호를
+        # 넣지 않고(사용자 지시), 파일 시작값은 **가려지지 않는 첫 쪽**으로 옮긴다
+        # — 안 그러면 시작값을 줄 자리가 사라진다.
+        if f.get("do_hide") and targets:
+            visible = [p for p in pages if p[0] not in targets]
+            marks = [(visible[0][0], visible[0][1])] if visible else []
+            force_odd = [p for p in force_odd if p not in targets]
 
         out.append({**f, "start": (pages[0][1] if pages else cur),
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
                     "expect_hide": sorted(expect), "stray_hide": stray,
-                    "hide_targets": targets,
+                    "hide_targets": targets, "force_odd": force_odd,
                     "div_skip": div_skip})
         cur = end + 1 + (1 if tail_a3 else 0)
     return out
@@ -534,6 +553,17 @@ def _hide_page(hwp, phys: int, fields=HIDE_FIELDS):
     return bool(act.Execute("PageHiding", pset.HSet))
 
 
+def _set_pgct(hwp, phys: int):
+    """지정한 쪽에 [쪽 번호 제어](직후 홀수 강제)를 삽입한다.
+
+    ⚠ **미구현** — COM 액션 이름을 아직 확정하지 못했다. 한글 매크로 녹화
+      (Shift+Alt+H)로 실제 액션/파라미터셋을 확인한 뒤 여기에 넣는다.
+      추측으로 이름을 넣지 않는다(2026-07-21 — PageHiding을 secd 경로로
+      오인해 감추기가 0/3으로 끝난 전례).
+    """
+    return False
+
+
 def _count_hidden(hwp):
     """문서에 이미 설정된 감추기(pghd) 개수 — 사용자가 직접 걸어둔 것을 존중하기 위해 센다."""
     n, c = 0, hwp.HeadCtrl
@@ -603,6 +633,14 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     + ("" if not bad else
                        f" · ✗ 불일치 {len(bad)}쪽 → " +
                        ", ".join(f"{ph}면 기대{w}/실제{g}" for ph, w, g in bad[:5])))
+
+                # 홀수 강제는 새 쪽번호가 아니라 [쪽 번호 제어]로 건다(사용자 지시)
+                if f.get("force_odd"):
+                    ok_p = [ph for ph in f["force_odd"] if _set_pgct(hwp, ph)]
+                    miss = [ph for ph in f["force_odd"] if ph not in ok_p]
+                    log(f"    · 쪽번호제어 {len(ok_p)}/{len(f['force_odd'])}쪽"
+                        + (f" 적용 {ok_p}" if ok_p else "")
+                        + (f" · ✗ 미구현 {miss} — 한글에서 직접 삽입 필요" if miss else ""))
 
                 if do_hide and f.get("hide_targets"):
                     before = _count_hidden(hwp)

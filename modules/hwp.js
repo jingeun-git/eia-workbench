@@ -218,8 +218,9 @@ export function init(section, { bridge, toast }, kind) {
         : [r.is_chapter_head ? "장 시작" : "",
            r.divider ? (r.div_skip ? "간지 1장(결번)" : "간지 2장") : "",
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
+           r.force_odd?.length ? `쪽번호제어 ${r.force_odd.join(",")}면` : "",
            r.pgct_phys?.length ? `기존 쪽번호제어 ${r.pgct_phys.length}곳(삭제됨)` : "",
-           (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
+           r.marks?.length ? `새쪽번호 ${r.marks[0][0]}면` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `
         <td>${r.error ? "⚠ " : ""}${r.name}</td>
@@ -255,7 +256,8 @@ export function init(section, { bridge, toast }, kind) {
           body: { type: "pagenum_scan", folder: dir,
                   start_num: parseInt($("#hw-start").value, 10) || 1,
                   divider: $("#hw-divider").value,
-                  a3_back: $("#hw-a3back").value },
+                  a3_back: $("#hw-a3back").value,
+                  do_hide: $("#hw-hide").checked },
         });
         const done = await bridge.pollJob(job.job_id, {
           onLog: (l) => log(l),
