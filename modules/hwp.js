@@ -374,7 +374,11 @@ export function init(section, { bridge, toast }, kind) {
       const body = kind === "pdf"
         ? { type: "hwp2pdf", paths: [dir], out_dir: $("#hw-outdir").value.trim() || null }
         : { type: "pagenum_apply", folder: dir, files: scanned,
-            start_num: parseInt($("#hw-start").value, 10) || 1 };
+            start_num: parseInt($("#hw-start").value, 10) || 1,
+            // 스캔과 **동일한 옵션**을 반드시 함께 보낸다 — 빠지면 브리지가
+            // 기본값으로 계획을 다시 세워 스캔 표와 다른 번호가 찍힌다(2026-07-20)
+            divider: $("#hw-divider").value,
+            a3_back: $("#hw-a3back").value };
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => log(line),

@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.3.0"
+BRIDGE_VERSION = "3.3.1"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -420,8 +420,27 @@ def run_pagenum_apply(job, params):
     files = params.get("files")
     if not files:
         raise RuntimeError("적용할 파일 목록이 없습니다 — 먼저 스캔하세요")
-    # 스캔 결과를 그대로 신뢰하지 않고 계획을 재계산한다(사용자가 장 경계를 고쳤을 수 있음)
-    plan = hp.assign_numbers(files, start_num=int(params.get("start_num", 1)))
+    # 계획을 재계산하되 **스캔과 똑같은 경로**(build_plan → assign_numbers)로 만든다.
+    # assign_numbers만 부르면 build_plan이 채우는 divider_mode·a3_back이 비어
+    # 결번이 통째로 빠진다 — 스캔은 9~31인데 실제로는 7~29가 찍히던 원인
+    # (2026-07-20). 같은 결과를 내야 하는 두 경로는 같은 함수를 거쳐야 한다.
+    plan = hp.assign_numbers(
+        hp.build_plan(files,
+                      include_divider=params.get("divider", "none"),
+                      a3_back=params.get("a3_back", "skip")),
+        start_num=int(params.get("start_num", 1)),
+    )
+    # 스캔 표에 보여드린 값과 실제 적용할 계획이 같은지 먼저 대조한다.
+    # 두 경로가 갈라지면 사용자는 표를 보고 승인했는데 다른 번호가 찍힌다.
+    drift = [(f["name"], f.get("start"), g["start"], f.get("end"), g["end"])
+             for f, g in zip(files, plan)
+             if not f.get("skip") and (f.get("start") != g["start"] or f.get("end") != g["end"])]
+    if drift:
+        job_log(job, f"✗ 스캔 표와 계획이 다릅니다 ({len(drift)}건) — 적용을 중단합니다")
+        for n, s1, s2, e1, e2 in drift[:5]:
+            job_log(job, f"   {n}: 표 {s1}~{e1} / 계획 {s2}~{e2}")
+        raise RuntimeError("스캔 표와 적용 계획이 일치하지 않습니다 — 다시 스캔해주세요")
+
     return hp.apply_plan(
         plan,
         log=lambda m: job_log(job, m),
