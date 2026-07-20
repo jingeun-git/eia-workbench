@@ -51,8 +51,12 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── 공통 헤더 ────────────────────────────────────────────────────────
     def _cors(self, with_pna: bool):
-        origin = self.headers.get("Origin", "*")
-        self.send_header("Access-Control-Allow-Origin", origin if ALLOW_ANY_ORIGIN else origin)
+        # PoC는 무조건 "*"로 응답한다 — 오리진 에코 방식은 전송 경로에서 Origin
+        # 헤더가 변조되면(2026-07-20 실측: githack 발신인데 스텁 도달 시점엔
+        # http://127.0.0.1) 그대로 CORS 실패가 된다. 이 PoC는 쿠키·인증을 안 쓰므로
+        # "*"가 스펙상 항상 유효하고, 헤더 변조가 있어도 영향받지 않는다.
+        # (실제 브리지는 토큰 인증을 별도로 두고 "*"를 유지하는 설계로 간다)
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Vary", "Origin")
@@ -97,6 +101,10 @@ class Handler(BaseHTTPRequestHandler):
         # "브라우저가 차단당한 것"과 구분이 안 된다. 이 스텁의 판정 근거가 바로 이 출력이다.
         print(f"  {entry['time']}  {kind:9s} {entry['path']:14s} "
               f"발신페이지={sender}{mark}", flush=True)
+        # 헤더 전문 덤프 — Origin이 발신값(githack)과 다르게 도착하는 변조가
+        # 실측됐으므로(2026-07-20), 경로상 무엇이 바뀌는지 원문으로 남긴다.
+        for k, v in self.headers.items():
+            print(f"        · {k}: {v}", flush=True)
 
     # ── 프리플라이트 ─────────────────────────────────────────────────────
     def do_OPTIONS(self):
