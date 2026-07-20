@@ -112,30 +112,7 @@ export function init(section, { bridge, toast }, kind) {
     </div>
   </div>
 
-  ${kind === "pagenum" ? `
-  <div class="panel" id="hw-probe-panel">
-    <h2>COM 기능 검증 <span style="font-size:var(--text-sm);font-weight:400;color:var(--text-dim)">— SYS-31 선행 조사</span></h2>
-    <p class="desc">쪽번호 규칙(장 짝수끝·홀수시작, A3 홀수 부여, 감추기)을 구현하기 전에
-      한컴이 <b>실제로 무엇을 할 수 있는지</b> 확인합니다. <b>읽기 전용 — 원본을 수정하지 않습니다.</b>
-      hwpx 열기 가능 여부와 잔존 조판부호도 함께 조사합니다.</p>
-    <div class="field">
-      <label>검사할 보고서 폴더 <span class="req">*</span></label>
-      <div class="input-row">
-        <input type="text" id="hw-probe-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
-        <button class="btn btn-secondary" id="hw-probe-pick" type="button">폴더 선택</button>
-      </div>
-      <p class="help">.hwp·.hwpx 앞 5개만 검사합니다. 결과는 그 폴더에 probe_result.txt로도 저장됩니다.</p>
-    </div>
-    <div style="display:flex;gap:var(--space-2);align-items:center">
-      <button class="btn btn-primary" id="hw-probe-run">검증 실행</button>
-      <button class="btn btn-secondary" id="hw-probe-copy">결과 복사</button>
-    </div>
-    <div class="progress-wrap" id="hw-probe-prog">
-      <div class="progress-head"><span class="stage" id="hw-probe-stage"></span><span class="count"></span></div>
-      <div class="progress-track"><div class="progress-fill indeterminate"></div></div>
-    </div>
-    <div class="log" id="hw-probe-log" aria-live="polite"></div>
-  </div>` : ""}`;
+`;
 
   const $ = (s) => section.querySelector(s);
   let running = false;
@@ -153,10 +130,6 @@ export function init(section, { bridge, toast }, kind) {
     const ok = bridge.state === "ok" && feats[m.feature];
     $("#hw-locked").style.display = ok ? "none" : "";
     $("#hw-form").style.display = ok ? "" : "none";
-    // 검증 패널은 pagenum 기능 가용성과 무관하게 브리지만 붙으면 쓸 수 있다
-    // (한컴 COM으로 무엇이 되는지 조사하는 것이 목적이므로)
-    const pp = $("#hw-probe-panel");
-    if (pp) pp.style.display = bridge.state === "ok" ? "" : "none";
     if (!ok) {
       $("#hw-locked").textContent = bridge.state !== "ok"
         ? "○ 브리지 미연결 — 브리지 실행 후 이 탭이 활성화됩니다."
@@ -206,66 +179,6 @@ export function init(section, { bridge, toast }, kind) {
         toast("설정이 바뀌었습니다 — 다시 스캔해주세요", "warn");
       });
     }
-  }
-
-  /* ── COM 기능 검증 (쪽번호 탭 전용, SYS-31 1단계) ─────────────────── */
-  if (kind === "pagenum") {
-    let probeRunning = false;
-    let probeText = "";
-    const plog = (msg, cls = "") => {
-      const el = $("#hw-probe-log");
-      const line = document.createElement("div");
-      if (cls) line.className = cls;
-      line.textContent = msg;
-      el.appendChild(line);
-      el.scrollTop = el.scrollHeight;
-      probeText += msg + "\n";
-    };
-
-    $("#hw-probe-pick").addEventListener("click", async () => {
-      try {
-        const r = await bridge.call("/pick", { method: "POST", body: { kind: "folder" }, timeoutMs: 120000 });
-        if (r.path) $("#hw-probe-dir").value = r.path;
-      } catch (e) { toast(e.message, "fail"); }
-    });
-
-    $("#hw-probe-copy").addEventListener("click", async () => {
-      if (!probeText.trim()) { toast("먼저 검증을 실행하세요", "warn"); return; }
-      try { await navigator.clipboard.writeText(probeText); toast("결과를 복사했습니다 — 그대로 붙여주세요", "ok"); }
-      catch { toast("복사 실패 — 로그를 직접 선택해 복사하세요", "fail"); }
-    });
-
-    $("#hw-probe-run").addEventListener("click", async () => {
-      if (probeRunning) return;
-      const dir = $("#hw-probe-dir").value.trim();
-      if (!dir) { toast("검사할 폴더를 먼저 선택하세요", "fail"); return; }
-      probeRunning = true; probeText = "";
-      const btn = $("#hw-probe-run");
-      btn.disabled = true;
-      btn.innerHTML = `<span class="spinner"></span> 검증 중…`;
-      $("#hw-probe-prog").classList.add("active");
-      $("#hw-probe-log").classList.add("active");
-      $("#hw-probe-log").textContent = "";
-      $("#hw-probe-stage").textContent = "한컴 기동 중… (첫 실행은 시간이 걸립니다)";
-      try {
-        const job = await bridge.call("/jobs", {
-          method: "POST", body: { type: "hwp_probe", folder: dir, max_files: 5 },
-        });
-        await bridge.pollJob(job.job_id, {
-          onLog: (line) => plog(line),
-          onProgress: (p) => { if (p?.stage) $("#hw-probe-stage").textContent = p.stage; },
-        });
-        toast("검증 완료 — [결과 복사]로 전체를 복사해 전달해주세요", "ok");
-      } catch (e) {
-        plog(`✗ ${e.message}`, "fail");
-        toast(e.message, "fail");
-      } finally {
-        probeRunning = false;
-        btn.disabled = false;
-        btn.textContent = "검증 실행";
-        $("#hw-probe-prog").classList.remove("active");
-      }
-    });
   }
 
   /* ── 쪽번호: 스캔 → 표 확인 → 적용 (SYS-31) ─────────────────────── */
