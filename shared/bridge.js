@@ -138,7 +138,7 @@ export class BridgeClient extends EventTarget {
       }
       for (const line of j.log || []) { onLog?.(line); logOffset++; }
       onProgress?.(j.progress || null);
-      if (j.status === "done") return j;
+      if (j.status === "done") return j;   // j.result에 스캔 표 데이터가 실려온다
       if (j.status === "error") throw new Error(j.error || "브리지 작업 실패");
       await new Promise((r) => setTimeout(r, intervalMs));
     }

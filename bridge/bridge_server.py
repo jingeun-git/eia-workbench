@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "1.7.0"
+BRIDGE_VERSION = "1.8.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -371,7 +371,56 @@ def run_hwp_probe(job, params):
     job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
 
 
+def run_pagenum_scan(job, params):
+    """SYS-31 사전 스캔 — 파일별 쪽번호/물리쪽수/A3 위치 + 장 경계 판정(읽기 전용)."""
+    import hwp_pagenum as hp
+    folder = Path(params["folder"])
+    if not path_allowed(folder):
+        raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+    files = hp.scan_folder(
+        folder,
+        log=lambda m: job_log(job, m),
+        progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
+    )
+    plan = hp.assign_numbers(
+        hp.build_plan(files, include_divider=bool(params.get("divider"))),
+        start_num=int(params.get("start_num", 1)),
+    )
+    # UI 표에 실을 요약(무거운 pages 배열은 제외)
+    job["result"] = [{
+        "name": f["name"], "path": f["path"], "chapter": f["chapter"],
+        "is_chapter_head": f["is_chapter_head"], "skip": f["skip"],
+        "phys_pages": f.get("phys_pages"), "a3_count": len(f.get("a3_pages") or []),
+        "a3_pages": f.get("a3_pages") or [],
+        "start": f["start"], "end": f["end"], "pad": f["pad"],
+        "marks": f["marks"], "divider": f.get("divider", False),
+        "error": f.get("error"),
+    } for f in plan]
+    job_log(job, f"─── 스캔 완료: {len(files)}개 파일")
+
+
+def run_pagenum_apply(job, params):
+    """계산된 계획을 문서에 적용. 원본을 수정하므로 사전 백업 안내가 UI에 필수."""
+    import hwp_pagenum as hp
+    folder = Path(params["folder"])
+    if not path_allowed(folder):
+        raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다")
+    files = params.get("files")
+    if not files:
+        raise RuntimeError("적용할 파일 목록이 없습니다 — 먼저 스캔하세요")
+    # 스캔 결과를 그대로 신뢰하지 않고 계획을 재계산한다(사용자가 장 경계를 고쳤을 수 있음)
+    plan = hp.assign_numbers(files, start_num=int(params.get("start_num", 1)))
+    return hp.apply_plan(
+        plan,
+        log=lambda m: job_log(job, m),
+        progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
+        dry_run=bool(params.get("dry_run")),
+        extra_clear=bool(params.get("extra_clear")),
+    )
+
+
 RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
+           "pagenum_scan": run_pagenum_scan, "pagenum_apply": run_pagenum_apply,
            "hwp_probe": run_hwp_probe,
            "eiass_seq_dl": run_eiass_seq_dl,
            "hwp2pdf": run_hwp2pdf, "hwptool": run_hwptool}
@@ -451,6 +500,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "status": job["status"],
                         "progress": job.get("progress"),
                         "log": job["log"][log_from:],
+                        "result": job.get("result") if job["status"] == "done" else None,
                         "error": job.get("error")})
             return
         self._json({"ok": False, "error": "unknown endpoint"}, 404)
