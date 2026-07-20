@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.3.1"
+BRIDGE_VERSION = "3.3.2"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -401,6 +401,11 @@ def run_pagenum_scan(job, params):
         "start_page": f.get("start_page"), "end_page": f.get("end_page"),
         "hide_pages": f.get("hide_pages") or [],
         "gap_count": f.get("gap_count", 0),
+        # 적용 단계가 웹 파라미터에 의존하지 않도록 계획 조건을 결과에 실어 보낸다.
+        # (웹이 구버전이라 옵션을 안 보내면 브리지가 기본값으로 다시 계산해
+        #  스캔 표와 다른 번호가 나온다 — 2026-07-20)
+        "divider_mode": f.get("divider_mode", "none"),
+        "a3_back": f.get("a3_back", "skip"),
         "pgct_pages": f.get("pgct_pages") or [],
         "pgct_phys": f.get("pgct_phys") or [],
         "div_skip": f.get("div_skip", 0),
@@ -409,6 +414,14 @@ def run_pagenum_scan(job, params):
         "error": f.get("error"),
     } for f in plan]
     job_log(job, f"─── 스캔 완료: {len(files)}개 파일")
+
+
+def _row_opt(rows, key, default):
+    """스캔 결과 행에 실려 온 계획 조건을 꺼낸다(번호가 부여된 첫 행 기준)."""
+    for r in rows:
+        if not r.get("skip") and r.get(key):
+            return r[key]
+    return default
 
 
 def run_pagenum_apply(job, params):
@@ -425,9 +438,12 @@ def run_pagenum_apply(job, params):
     # 결번이 통째로 빠진다 — 스캔은 9~31인데 실제로는 7~29가 찍히던 원인
     # (2026-07-20). 같은 결과를 내야 하는 두 경로는 같은 함수를 거쳐야 한다.
     plan = hp.assign_numbers(
-        hp.build_plan(files,
-                      include_divider=params.get("divider", "none"),
-                      a3_back=params.get("a3_back", "skip")),
+        hp.build_plan(
+            files,
+            # 파라미터가 없으면 **스캔 결과에 실려 온 조건**을 쓴다.
+            include_divider=params.get("divider") or _row_opt(files, "divider_mode", "none"),
+            a3_back=params.get("a3_back") or _row_opt(files, "a3_back", "skip"),
+        ),
         start_num=int(params.get("start_num", 1)),
     )
     # 스캔 표에 보여드린 값과 실제 적용할 계획이 같은지 먼저 대조한다.
