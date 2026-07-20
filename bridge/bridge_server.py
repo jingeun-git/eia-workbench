@@ -29,12 +29,21 @@ import sys
 import threading
 import time
 import uuid
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-BRIDGE_VERSION = "1.0.0"
+# Windows cmd(cp949)에서 한글·특수문자 출력 크래시 방지
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+BRIDGE_VERSION = "1.1.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
+WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
 # ── 경로 (D:\Claude 표준 배치 기준) ─────────────────────────────────────────
 def _base_dir() -> Path:
@@ -53,7 +62,7 @@ TOC_SCRIPT   = TOOLS_DIR / "배포용/hwpContent1.2/hwpContent1.1.py"
 PAGE_SCRIPT  = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.0.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
-for p in (CONVERT_DIR, HWP2PDF_DIR):
+for p in (CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
     if p.exists():
         sys.path.insert(0, str(p))
 
@@ -159,28 +168,50 @@ def run_convert(job, params):
     job["progress"] = {"done": total, "total": total, "stage": "완료"}
     job_log(job, f"─── 변환 완료: 성공 {ok} / 실패 {err} → {out_dir}")
 
-def run_eiass(job, params):
-    code = params["code"]
-    out_dir = Path(params["out_dir"])
-    if not path_allowed(out_dir):
-        raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다")
-    cmd = [sys.executable if not getattr(sys, "frozen", False) else "python",
-           str(RESOLVER), code, "-o", str(out_dir), "-g", params.get("gubn", "auto")]
-    if params.get("keyword"):
-        cmd += ["-d", params["keyword"]]
-    else:
-        cmd += ["--all"]
-    job_log(job, f"실행: {' '.join(cmd[1:])}")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace",
-                            cwd=str(EIASS_DIR))
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            job_log(job, line)
-    proc.wait()
-    if proc.returncode != 0:
-        raise RuntimeError(f"resolver 종료 코드 {proc.returncode}")
+def run_eiass_dl(job, params):
+    """선택 파일 다운로드 (+옵션 zip 번들) — eiass_doc_resolver를 import 참조."""
+    import eiass_doc_resolver as edr
+    code = params["code"].strip().upper()
+    seqs = set(map(str, params.get("seqs", [])))
+    if not seqs:
+        raise RuntimeError("다운로드할 파일을 선택하세요")
+    out_root = Path(params["out_dir"])
+    if not path_allowed(out_root):
+        raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+
+    r = edr.EIASSDocResolver()
+    docs = r.resolve(code, params.get("gubn", "auto"))
+    targets = [d for d in docs if str(d.file_seq) in seqs]
+    if not targets:
+        raise RuntimeError("선택한 FILE_SEQ가 현재 목록과 일치하지 않습니다 — 다시 조회하세요")
+
+    out_dir = out_root / edr._safe_filename(code)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    total = len(targets)
+    ok = 0
+    saved = []
+    for i, d in enumerate(targets, 1):
+        job["progress"] = {"done": i - 1, "total": total, "stage": d.filename}
+        try:
+            path = r.download(d, str(out_dir), overwrite=False)
+            saved.append(Path(path))
+            size = os.path.getsize(path)
+            sz = f"{size >> 20} MB" if size >= 1 << 20 else f"{size >> 10} KB"
+            job_log(job, f"  ✓ [{d.stage_label or '-'}] {os.path.basename(path)} ({sz})")
+            ok += 1
+        except Exception as e:
+            job_log(job, f"  ✗ {d.filename}: {e}")
+        time.sleep(0.3)
+    job["progress"] = {"done": total, "total": total, "stage": "완료"}
+
+    if params.get("zip") and saved:
+        import zipfile
+        zip_path = out_root / f"{edr._safe_filename(code)}.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            for p in saved:
+                z.write(p, arcname=f"{code}/{p.name}")
+        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건)")
+    job_log(job, f"─── 다운로드 완료: {ok}/{total}건 → {out_dir}")
 
 def run_hwp2pdf(job, params):
     import hwp2pdf_core
@@ -217,7 +248,7 @@ def run_hwptool(job, params):
     if proc.returncode != 0:
         raise RuntimeError(f"{tool} 종료 코드 {proc.returncode}")
 
-RUNNERS = {"convert": run_convert, "eiass": run_eiass,
+RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
            "hwp2pdf": run_hwp2pdf, "hwptool": run_hwptool}
 
 def worker():
@@ -319,6 +350,21 @@ class Handler(BaseHTTPRequestHandler):
                         "paths": paths})
             return
 
+        if url.path == "/eiass/resolve":
+            # 동기 조회 — 사업코드 → 원문 파일목록 (절차단계·장코드·파일명)
+            try:
+                import eiass_doc_resolver as edr
+                code = (body.get("code") or "").strip().upper()
+                if not code:
+                    self._json({"ok": False, "error": "사업코드를 입력하세요"}, 400)
+                    return
+                docs = edr.EIASSDocResolver().resolve(code, body.get("gubn", "auto"))
+                self._json({"ok": True, "code": code,
+                            "docs": [d.as_dict() for d in docs]})
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)}, 500)
+            return
+
         if url.path == "/jobs":
             jtype = body.get("type")
             if jtype not in RUNNERS:
@@ -340,6 +386,8 @@ def main():
     ap = argparse.ArgumentParser(description="EIA Workbench 로컬 브리지")
     ap.add_argument("--allow", action="append", default=[],
                     help="사전 승인 폴더 (테스트·자동화용 — 웹의 [폴더 선택] 없이 접근 허용)")
+    ap.add_argument("--no-browser", action="store_true",
+                    help="시작 시 웹 UI 자동 열기 생략")
     args = ap.parse_args()
     for a in args.allow:
         ALLOWED_ROOTS.append(Path(a).resolve())
@@ -370,11 +418,20 @@ def main():
     if miss:
         print(f"  비활성 : {', '.join(miss)} (해당 도구 미설치 또는 Windows 아님)")
     print()
-    print("  ── 웹 UI 연결 방법 ──────────────────────────────────")
-    print("  1) https://jingeun-git.github.io/eia-workbench/ 접속")
-    print("  2) 우상단 ⚙ 설정 → 브리지 토큰에 아래 값 입력:")
-    print()
-    print(f"     {TOKEN}")
+    if args.no_browser:
+        print("  수동 연결: 웹 UI ⚙ 설정 → 브리지 토큰에 아래 값 입력")
+        print(f"     {TOKEN}")
+    else:
+        # 자동 페어링 — 웹 UI를 열면서 URL 해시로 토큰·포트 전달.
+        # 웹이 해시를 읽어 localStorage에 저장하고 즉시 지운다(주소창·히스토리 잔존 방지).
+        pair_url = f"{WEB_URL}#bt={TOKEN}&bp={port}"
+        print("  브라우저에서 웹 UI를 자동으로 엽니다 — 토큰이 자동 등록됩니다.")
+        print("  (안 열리면 수동 접속: " + WEB_URL + ")")
+        print(f"  수동 등록용 토큰: {TOKEN}")
+        try:
+            webbrowser.open(pair_url)
+        except Exception:
+            pass
     print()
     print("  이 창을 켜 둔 동안에만 브리지 기능이 활성화됩니다. 종료: Ctrl+C")
     print("-" * 64, flush=True)

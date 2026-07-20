@@ -153,8 +153,26 @@ export function toast(msg, kind = "") {
   setTimeout(() => el.remove(), 4500);
 }
 
+/* ── 브리지 자동 페어링 ────────────────────────────────────────────
+   브리지가 시작 시 브라우저를 #bt=토큰&bp=포트 해시로 연다.
+   해시를 읽어 저장하고 즉시 지운다(주소창·히스토리·북마크 잔존 방지). */
+function initPairing() {
+  const h = location.hash.slice(1);
+  if (!h.includes("bt=")) return;
+  const params = new URLSearchParams(h);
+  const token = params.get("bt");
+  const port = params.get("bp");
+  if (token) {
+    bridge.token = token;
+    if (port) localStorage.setItem("eiaw.bridge.port", port);
+    history.replaceState(null, "", location.pathname + location.search);
+    toast("브리지 토큰이 자동 등록됐습니다 — 곧 연결됩니다", "ok");
+  }
+}
+
 /* ── 부트 ─────────────────────────────────────────────────────────── */
 initTheme();
+initPairing();   // bridge.start() 전에 토큰부터 확보
 initTabs();
 initBridgeChip();
 initSettings();

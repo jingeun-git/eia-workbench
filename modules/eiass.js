@@ -67,40 +67,59 @@ export function init(section, { bridge, toast }) {
         ○ 브리지 미연결 — 이 방식은 로컬 브리지가 필요합니다. 우상단 상태칩에서 안내를 확인하세요.
       </div>
       <div id="ec-form">
-        <div class="field">
-          <label for="ec-code">사업코드 <span class="req">*</span></label>
-          <input type="text" id="ec-code" placeholder="예: WJ20260098" spellcheck="false" autocomplete="off">
-          <p class="help">EIASS 관리번호. 유형(소규모/정식/사후)은 자동 판별되며, 아래에서 강제 지정할 수 있습니다.</p>
-        </div>
-        <div class="field" style="display:flex;gap:var(--space-3);flex-wrap:wrap">
-          <div style="flex:1;min-width:140px">
+        <div class="field" style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:2;min-width:200px">
+            <label for="ec-code">사업코드 <span class="req">*</span></label>
+            <input type="text" id="ec-code" placeholder="예: WJ20260098 · GG2021A007" spellcheck="false" autocomplete="off">
+          </div>
+          <div style="flex:1;min-width:150px">
             <label for="ec-gubn">평가 유형</label>
             <select id="ec-gubn">
               <option value="auto" selected>자동 판별</option>
-              <option value="per">소규모(per)</option>
-              <option value="eia">정식(eia)</option>
-              <option value="after">사후(after)</option>
+              <option value="per">소규모</option>
+              <option value="eia">평가</option>
+              <option value="sea">전략</option>
+              <option value="after">사후</option>
             </select>
           </div>
-          <div style="flex:2;min-width:200px">
-            <label for="ec-kw">장 키워드 (비우면 전체 다운로드)</label>
-            <input type="text" id="ec-kw" placeholder="예: 동식물상" spellcheck="false">
+          <button class="btn btn-primary" id="ec-search" type="button">목록 조회</button>
+        </div>
+        <p class="help" style="margin-top:-6px">전략(SEA)은 EIASS가 평가와 같은 엔드포인트를 쓰므로 내부적으로 '평가' 경로로 조회됩니다.
+          자동 판별이 안 되는 코드만 유형을 지정하세요.</p>
+
+        <div id="ec-listwrap" style="display:none">
+          <div style="display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)">
+            <b id="ec-listtitle" style="font-size:var(--text-sm)"></b>
+            <label style="font-size:var(--text-xs);color:var(--text-muted);display:flex;align-items:center;gap:4px">
+              <input type="checkbox" id="ec-selall" checked> 전체 선택
+            </label>
+          </div>
+          <div class="result-table-wrap active" style="max-height:320px;overflow-y:auto">
+            <table class="result-table">
+              <thead><tr><th style="width:36px"></th><th>절차</th><th>장코드</th><th>파일명</th></tr></thead>
+              <tbody id="ec-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="field" style="margin-top:var(--space-4)">
+            <label>저장 폴더 <span class="req">*</span></label>
+            <div class="input-row">
+              <input type="text" id="ec-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
+              <button class="btn btn-secondary" id="ec-pick" type="button">폴더 선택</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary" id="ec-run">선택 다운로드</button>
+            <label style="font-size:var(--text-sm);display:flex;align-items:center;gap:6px">
+              <input type="checkbox" id="ec-zip" checked> ZIP으로 묶기
+            </label>
+            <button class="btn btn-secondary" id="ec-reset">초기화</button>
           </div>
         </div>
-        <div class="field">
-          <label>저장 폴더 <span class="req">*</span></label>
-          <div class="input-row">
-            <input type="text" id="ec-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
-            <button class="btn btn-secondary" id="ec-pick" type="button">폴더 선택</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:var(--space-2);align-items:center">
-          <button class="btn btn-primary" id="ec-run">다운로드 실행</button>
-          <button class="btn btn-secondary" id="ec-reset">초기화</button>
-        </div>
+
         <div class="progress-wrap" id="ec-prog">
-          <div class="progress-head"><span class="stage" id="ec-stage"></span><span class="count"></span></div>
-          <div class="progress-track"><div class="progress-fill indeterminate" id="ec-fill"></div></div>
+          <div class="progress-head"><span class="stage" id="ec-stage"></span><span class="count" id="ec-count"></span></div>
+          <div class="progress-track"><div class="progress-fill" id="ec-fill"></div></div>
         </div>
         <div class="log" id="ec-log" aria-live="polite"></div>
       </div>
@@ -178,53 +197,108 @@ export function init(section, { bridge, toast }) {
   bridge.addEventListener("change", renderBridgeState);
   renderBridgeState();
 
+  /* gubn 매핑 — '전략'은 EIASS가 평가와 동일 엔드포인트(§9.7c) */
+  const gubnValue = () => {
+    const v = $("#ec-gubn").value;
+    return v === "sea" ? "eia" : v;
+  };
+
+  /* 목록 조회 */
+  $("#ec-search").addEventListener("click", async () => {
+    const code = $("#ec-code").value.trim();
+    if (!code) { toast("사업코드를 입력하세요 (예: WJ20260098)", "fail"); return; }
+    const btn = $("#ec-search");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> 조회 중…`;
+    try {
+      const r = await bridge.call("/eiass/resolve", {
+        method: "POST", body: { code, gubn: gubnValue() }, timeoutMs: 60000,
+      });
+      const docs = r.docs || [];
+      if (!docs.length) {
+        toast("원문 목록이 비어 있습니다 — 코드·유형을 확인하세요 (비공개/미공개 사업일 수 있음)", "warn");
+        return;
+      }
+      $("#ec-listtitle").textContent = `${r.code} — ${docs.length}건 (유형: ${docs[0].gubn})`;
+      const tb = $("#ec-tbody");
+      tb.innerHTML = "";
+      for (const d of docs) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="checkbox" class="ec-chk" value="${d.file_seq}" checked
+               aria-label="${d.filename} 선택"></td>
+          <td style="white-space:nowrap">${d.stage_label || "-"}</td>
+          <td style="white-space:nowrap">${d.chapter_code || "-"}</td>
+          <td>${d.filename}</td>`;
+        tb.appendChild(tr);
+      }
+      $("#ec-selall").checked = true;
+      $("#ec-listwrap").style.display = "";
+    } catch (e) {
+      toast(e.message, "fail");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "목록 조회";
+    }
+  });
+
+  $("#ec-selall").addEventListener("change", (e) =>
+    section.querySelectorAll(".ec-chk").forEach((c) => { c.checked = e.target.checked; }));
+
   $("#ec-pick").addEventListener("click", async () => {
     try {
       const r = await bridge.call("/pick", { method: "POST", body: { kind: "folder" }, timeoutMs: 120000 });
       if (r.path) $("#ec-dir").value = r.path;
     } catch (e) { toast(e.message, "fail"); }
   });
+
   $("#ec-reset").addEventListener("click", () => {
     if (ecRunning) { toast("실행 중입니다 — 완료 후 초기화하세요", "warn"); return; }
-    $("#ec-code").value = ""; $("#ec-kw").value = ""; $("#ec-dir").value = "";
+    $("#ec-code").value = ""; $("#ec-dir").value = "";
     $("#ec-gubn").value = "auto";
+    $("#ec-tbody").innerHTML = "";
+    $("#ec-listwrap").style.display = "none";
     $("#ec-log").textContent = ""; $("#ec-log").classList.remove("active");
-    $("#ec-prog").classList.remove("active");
+    $("#ec-prog").classList.remove("active"); $("#ec-fill").style.width = "0%";
   });
+
+  /* 선택 다운로드 */
   $("#ec-run").addEventListener("click", async () => {
     if (ecRunning) return;
     const code = $("#ec-code").value.trim();
     const dir = $("#ec-dir").value.trim();
-    if (!code) { toast("사업코드를 입력하세요 (예: WJ20260098)", "fail"); return; }
+    const seqs = [...section.querySelectorAll(".ec-chk:checked")].map((c) => c.value);
+    if (!seqs.length) { toast("다운로드할 파일을 선택하세요", "fail"); return; }
     if (!dir) { toast("저장 폴더를 먼저 선택하세요", "fail"); return; }
     ecRunning = true;
     $("#ec-run").disabled = true;
     $("#ec-prog").classList.add("active");
     $("#ec-log").classList.add("active");
-    $("#ec-stage").textContent = "브리지에서 실행 중…";
     try {
       const job = await bridge.call("/jobs", {
         method: "POST",
-        body: {
-          type: "eiass",
-          code, gubn: $("#ec-gubn").value,
-          keyword: $("#ec-kw").value.trim() || null,
-          out_dir: dir,
-        },
+        body: { type: "eiass_dl", code, gubn: gubnValue(), seqs,
+                out_dir: dir, zip: $("#ec-zip").checked },
       });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => ecLog(line),
-        onProgress: (p) => { if (p?.stage) $("#ec-stage").textContent = p.stage; },
+        onProgress: (p) => {
+          if (!p) return;
+          if (p.stage) $("#ec-stage").textContent = p.stage;
+          if (p.total) {
+            $("#ec-count").textContent = `${p.done}/${p.total}`;
+            $("#ec-fill").style.width = `${(p.done / p.total) * 100}%`;
+          }
+        },
       });
       ecLog("─── 완료", "ok");
-      toast("다운로드 완료 — 선택한 폴더를 확인하세요", "ok");
+      toast(`다운로드 완료 (${seqs.length}건 선택) — 폴더를 확인하세요`, "ok");
     } catch (e) {
       ecLog(`✗ ${e.message}`, "fail");
       toast(e.message, "fail");
     } finally {
       ecRunning = false;
       $("#ec-run").disabled = false;
-      $("#ec-prog").classList.remove("active");
     }
   });
 }

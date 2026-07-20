@@ -26,10 +26,17 @@ export class BridgeClient extends EventTarget {
   }
 
   async _probe() {
-    // 이미 연결된 포트 우선, 아니면 순차 탐색
+    // 우선순위: 연결 중 포트 → 페어링 힌트 포트 → 순차 탐색
+    const hinted = localStorage.getItem("eiaw.bridge.port");
+    const all = PORTS.map((p) => `http://127.0.0.1:${p}`);
+    if (hinted) {
+      const hb = `http://127.0.0.1:${hinted}`;
+      if (!all.includes(hb)) all.unshift(hb);
+      else all.sort((a, b) => (a === hb ? -1 : b === hb ? 1 : 0));
+    }
     const candidates = this.base
-      ? [this.base, ...PORTS.map((p) => `http://127.0.0.1:${p}`).filter((b) => b !== this.base)]
-      : PORTS.map((p) => `http://127.0.0.1:${p}`);
+      ? [this.base, ...all.filter((b) => b !== this.base)]
+      : all;
 
     for (const base of candidates) {
       try {
