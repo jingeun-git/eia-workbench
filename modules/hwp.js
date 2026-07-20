@@ -318,7 +318,16 @@ export function init(section, { bridge, toast }, kind) {
         });
         scanned = done.result || [];
         renderPlan(scanned);
-        toast(`스캔 완료 — 표를 확인한 뒤 [2. 쪽번호 적용]을 누르세요`, "ok");
+        // 브리지가 구버전이면 '현재 쪽번호'가 전부 비어 나온다 — 웹만 갱신되고
+        // 로컬 브리지는 재시작 전까지 옛 코드로 응답하기 때문(2026-07-20 실사고)
+        const noCur = rows.some((r) => !r.skip) &&
+                      rows.every((r) => r.start_page == null);
+        if (noCur) {
+          toast("현재 쪽번호를 읽지 못했습니다 — 브리지가 구버전입니다. "
+                + "브리지 창을 닫고 run_bridge.bat을 다시 실행한 뒤 스캔해주세요", "fail");
+        } else {
+          toast(`스캔 완료 — 표를 확인한 뒤 [2. 쪽번호 적용]을 누르세요`, "ok");
+        }
       } catch (e) {
         log(`✗ ${e.message}`, "fail");
         toast(e.message, "fail");

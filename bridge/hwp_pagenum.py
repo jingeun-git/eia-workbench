@@ -165,16 +165,24 @@ def _open(hwp, path: Path) -> bool:
     return False
 
 
+# KeyIndicator()의 C 원형은
+#   BOOL KeyIndicator(seccnt, secno, prnpageno, colno, line, pos, over, ctrlname)
+# 이고, win32com은 **반환값(BOOL)을 튜플 맨 앞에 붙여** 돌려준다. 따라서
+#   [0]=BOOL  [1]=구역수  [2]=현재구역  [3]=인쇄 쪽번호  [4]=단  [5]=줄 …
+# → 인쇄 쪽번호는 [3]. (한글 상태표시줄의 "7/6쪽"에서 앞의 7에 해당)
+_KI_PRNPAGE = 3
+
+
 def _end_page(hwp) -> int:
     hwp.MovePos(3)
-    return int(hwp.KeyIndicator()[3])
+    return int(hwp.KeyIndicator()[_KI_PRNPAGE])
 
 
 def _start_page(hwp) -> int | None:
     """1쪽에 실제로 찍히는 인쇄 쪽번호(현재 상태). _end_page와 같은 인덱스를 쓴다."""
     try:
         _goto_page(hwp, 1)
-        return int(hwp.KeyIndicator()[3])
+        return int(hwp.KeyIndicator()[_KI_PRNPAGE])
     except Exception:
         return None
 
@@ -190,7 +198,7 @@ def _hidden_pages(hwp):
         if c.CtrlID == "pghd":
             try:
                 hwp.SetPosBySet(c.GetAnchorPos(0))
-                pages.append(int(hwp.KeyIndicator()[3]))
+                pages.append(int(hwp.KeyIndicator()[_KI_PRNPAGE]))
             except Exception:
                 pages.append(0)          # 위치 특정 실패 — 존재만 보고
         c = c.Next
