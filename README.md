@@ -39,25 +39,22 @@
 (현행 건축물대장 exe의 `load_api_keys()`와 동일한 설계). 이 저장소는 Pages 무료 호스팅 때문에 Public이므로,
 키를 코드에 두면 그대로 노출됩니다. `.gitignore`가 키 파일 계열을 차단합니다.
 
-## 현재 상태 — 1단계 PoC
+## 진행 상태 (SYS-29)
 
-HTTPS 페이지가 로컬 브리지에 접근 가능한지 실증 중입니다. 검증 대상 2가지:
+| 단계 | 상태 |
+|---|---|
+| 1. 브리지 통신 PoC | ✅ 실측 통과 (Chrome 150 — mixed content 면제·PNA 미강제·`targetAddressSpace:'loopback'`) — 진단 페이지 `poc/` |
+| 2. 설계 스펙 | ✅ `tasks/specs/2026-07-20-통합업무도구-웹화-design.md` |
+| 3. 디자인 시스템 | ✅ `shared/tokens.css` + `docs/design-system.md` |
+| 4. 웹 셸 + 건축물대장 | 🔄 구현 완료 — 실브라우저 검증 대기 |
+| 5~8. md·EIASS·브리지·정식 배포 | 예정 |
 
-1. **Mixed Content 예외** — 브라우저가 `127.0.0.1`을 신뢰 오리진으로 취급해 HTTPS→HTTP 차단에서 면제하는지
-2. **Private Network Access** — Chrome이 공개→로컬 요청에 `Access-Control-Allow-Private-Network: true`를 강제하는지
+### 구조
 
-### 실행 방법
-
-```bash
-# 1. 브리지 스텁 기동 (Windows Python 권장 — 브라우저와 같은 쪽이어야 함)
-python poc/bridge_stub.py
-
-# 2. 배포된 Pages URL을 Chrome에서 열고 [전체 검사 실행]
-```
-
-> ⚠️ `file://`이나 `localhost`로 열면 검사가 무의미합니다. PNA는 "공개 주소 → 로컬 주소" 요청에만
-> 적용되므로, 로컬에서 열면 애초에 제한 대상이 아니라 통과해도 실제 환경을 재현하지 못합니다.
-> 페이지가 이 조건을 자동 판별해 경고합니다.
+- `index.html` — 셸 (탭·브리지 상태칩·테마·설정)
+- `shared/` — tokens.css(디자인 토큰) · ui.css(컴포넌트) · app.js(셸) · bridge.js(브리지 클라이언트) · geo.js(기하 판정, node 15케이스 검증)
+- `modules/parcel.js` — 건축물대장 조회 (parcel_engine.py 1:1 이식 — vworld JSONP + data.go.kr fetch + xlsx-js-style)
+- `vendor/` — shpjs·proj4·xlsx-js-style·Pretendard (전부 동봉, 런타임 CDN 없음)
 
 ## 범위 제외
 
