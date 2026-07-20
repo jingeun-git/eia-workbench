@@ -40,23 +40,11 @@
 
   <section id="sec-md" class="tool-section" aria-label="md 변환"></section>
 
-  <section id="sec-eiass" class="tool-section" aria-label="EIASS 다운로더">
-    <div class="placeholder">EIASS 모듈은 6단계에서 탑재됩니다.<br>
-      현재는 기존 <b>eiass_downloader.html</b>을 사용해주세요.</div>
-  </section>
-
-  <section id="sec-hwppdf" class="tool-section" aria-label="HWP를 PDF로 변환">
-    <div class="placeholder">HWP→PDF는 로컬 브리지(7단계)와 함께 제공됩니다.</div>
-  </section>
-  <section id="sec-toc" class="tool-section" aria-label="차례 만들기">
-    <div class="placeholder">차례 만들기는 로컬 브리지(7단계)와 함께 제공됩니다.</div>
-  </section>
-  <section id="sec-pagenum" class="tool-section" aria-label="쪽번호">
-    <div class="placeholder">쪽번호는 로컬 브리지(7단계)와 함께 제공됩니다.</div>
-  </section>
-  <section id="sec-merge" class="tool-section" aria-label="한글문서 끼워넣기">
-    <div class="placeholder">한글문서 끼워넣기는 로컬 브리지(7단계)와 함께 제공됩니다.</div>
-  </section>
+  <section id="sec-eiass" class="tool-section" aria-label="EIASS 다운로더"></section>
+  <section id="sec-hwppdf" class="tool-section" aria-label="HWP를 PDF로 변환"></section>
+  <section id="sec-toc" class="tool-section" aria-label="차례 만들기"></section>
+  <section id="sec-pagenum" class="tool-section" aria-label="쪽번호"></section>
+  <section id="sec-merge" class="tool-section" aria-label="한글문서 끼워넣기"></section>
 </main>
 
 <footer class="shell-footer">
@@ -108,9 +96,11 @@
     <h3 id="bridge-title">로컬 브리지</h3>
     <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
       한컴(HWP) 작업과 md 고품질 변환·EIASS 사업코드 자동탐색은 PC에서 실행되는
-      <b>브리지 프로그램</b>이 담당합니다. 브리지가 켜져 있으면 상태칩이
-      <b style="color:var(--ok)">● 연결됨</b>으로 바뀌고 관련 탭이 활성화됩니다.<br><br>
-      브리지 exe는 7단계 구현 후 배포됩니다.
+      <b>브리지 프로그램</b>이 담당합니다.<br><br>
+      <b>실행 방법</b>: <code>99.Tools/unified_workbench/bridge/실행(사용자용).bat</code> 더블클릭
+      → 콘솔에 표시되는 <b>토큰</b>을 ⚙ 설정에 입력.<br>
+      브리지가 켜져 있으면 상태칩이 <b style="color:var(--ok)">● 연결됨</b>으로 바뀌고
+      관련 탭이 활성화됩니다. 창을 닫으면 비활성화됩니다.
     </p>
     <div class="modal-actions">
       <a class="btn btn-secondary" href="poc/" target="_blank" rel="noopener" style="text-decoration:none">연결 진단</a>

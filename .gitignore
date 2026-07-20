@@ -8,6 +8,8 @@
 secrets.json
 credentials.json
 api_keys.json
+# 브리지 인증 토큰 — 절대 커밋 금지 (gitignore는 줄 끝 주석 미지원 — 별도 줄에 쓸 것)
+bridge_config.json
 resources_index.json
 *_config_local.json
 

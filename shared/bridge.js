@@ -72,6 +72,19 @@ export class BridgeClient extends EventTarget {
     return res.json();
   }
 
+  /** 장시간 작업 폴링 — 새 로그 라인·진행 상태를 콜백으로 전달, 종료 시 resolve */
+  async pollJob(jobId, { onLog, onProgress, intervalMs = 1000 } = {}) {
+    let logOffset = 0;
+    for (;;) {
+      const j = await this.call(`/jobs/${jobId}?log_from=${logOffset}`, { timeoutMs: 15000 });
+      for (const line of j.log || []) { onLog?.(line); logOffset++; }
+      onProgress?.(j.progress || null);
+      if (j.status === "done") return j;
+      if (j.status === "error") throw new Error(j.error || "브리지 작업 실패");
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
   _fetch(url, { timeoutMs = 5000, ...opts } = {}) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);

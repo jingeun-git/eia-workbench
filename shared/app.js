@@ -10,11 +10,16 @@ const TOOLS = [
     load: () => import("../modules/parcel.js") },
   { id: "md",     label: "md 변환",    needsBridge: false,
     load: () => import("../modules/md.js") },
-  { id: "eiass",  label: "EIASS",      needsBridge: false, load: null },   // 6단계
-  { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,  load: null },   // 7단계
-  { id: "toc",    label: "차례",       needsBridge: true,  load: null },
-  { id: "pagenum",label: "쪽번호",     needsBridge: true,  load: null },
-  { id: "merge",  label: "끼워넣기",   needsBridge: true,  load: null },
+  { id: "eiass",  label: "EIASS",      needsBridge: false,
+    load: () => import("../modules/eiass.js") },
+  { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,
+    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
+  { id: "toc",    label: "차례",       needsBridge: true,
+    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "toc") })) },
+  { id: "pagenum",label: "쪽번호",     needsBridge: true,
+    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
+  { id: "merge",  label: "끼워넣기",   needsBridge: true,
+    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "merge") })) },
 ];
 
 const $ = (s, el = document) => el.querySelector(s);

@@ -213,6 +213,33 @@ export function init(section, { bridge, toast }) {
         <button class="btn btn-primary" id="md-saveall">전체 저장</button>
       </div>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>고품질 변환 (브리지)</h2>
+    <p class="desc">HWP·HWPX·스캔 PDF(OCR)·대량 배치는 로컬 브리지의 convert_core 엔진으로 처리합니다
+      — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 선택 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
+    <div id="mb-locked" class="placeholder" style="margin-bottom:var(--space-2)">
+      ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
+    </div>
+    <div id="mb-form" style="display:none">
+      <div class="field">
+        <label>대상 폴더 <span class="req">*</span> (하위 폴더 포함 일괄 변환)</label>
+        <div class="input-row">
+          <input type="text" id="mb-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
+          <button class="btn btn-secondary" id="mb-pick" type="button">폴더 선택</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--space-2);align-items:center">
+        <button class="btn btn-primary" id="mb-run">브리지 변환 실행</button>
+        <button class="btn btn-secondary" id="mb-reset">초기화</button>
+      </div>
+      <div class="progress-wrap" id="mb-prog">
+        <div class="progress-head"><span class="stage" id="mb-stage"></span><span class="count" id="mb-count"></span></div>
+        <div class="progress-track"><div class="progress-fill" id="mb-fill"></div></div>
+      </div>
+      <div class="log" id="mb-log" aria-live="polite"></div>
+    </div>
   </div>`;
 
   const $ = (s) => section.querySelector(s);
@@ -363,6 +390,72 @@ export function init(section, { bridge, toast }) {
     const cur = results[activeTab];
     if (cur) downloadMd(cur.name.replace(/\.[^.]+$/, "") + ".md", cur.md);
   });
+  /* ── 브리지 고품질 경로 ─────────────────────────────────────────── */
+  let mbRunning = false;
+  const mbLog = (msg, cls = "") => {
+    const el = $("#mb-log");
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  };
+  const renderBridge = () => {
+    const ok = bridge.state === "ok" && bridge.info?.features?.convert;
+    $("#mb-locked").style.display = ok ? "none" : "";
+    $("#mb-form").style.display = ok ? "" : "none";
+    if (!ok && bridge.state === "ok")
+      $("#mb-locked").textContent = "⚠ 브리지에 convert_core가 없습니다 — 브리지 설치 구성을 확인하세요.";
+  };
+  bridge.addEventListener("change", renderBridge);
+  renderBridge();
+
+  $("#mb-pick").addEventListener("click", async () => {
+    try {
+      const r = await bridge.call("/pick", { method: "POST", body: { kind: "folder" }, timeoutMs: 120000 });
+      if (r.path) $("#mb-dir").value = r.path;
+    } catch (e) { toast(e.message, "fail"); }
+  });
+  $("#mb-reset").addEventListener("click", () => {
+    if (mbRunning) { toast("변환 중입니다 — 완료 후 초기화하세요", "warn"); return; }
+    $("#mb-dir").value = "";
+    $("#mb-log").textContent = ""; $("#mb-log").classList.remove("active");
+    $("#mb-prog").classList.remove("active"); $("#mb-fill").style.width = "0%";
+  });
+  $("#mb-run").addEventListener("click", async () => {
+    if (mbRunning) return;
+    const dir = $("#mb-dir").value.trim();
+    if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
+    mbRunning = true;
+    $("#mb-run").disabled = true;
+    $("#mb-run").innerHTML = `<span class="spinner"></span> 변환 중…`;
+    $("#mb-prog").classList.add("active");
+    $("#mb-log").classList.add("active");
+    try {
+      const job = await bridge.call("/jobs", { method: "POST", body: { type: "convert", paths: [dir] } });
+      await bridge.pollJob(job.job_id, {
+        onLog: (line) => mbLog(line),
+        onProgress: (p) => {
+          if (!p) return;
+          if (p.stage) $("#mb-stage").textContent = p.stage;
+          if (p.total) {
+            $("#mb-count").textContent = `${p.done}/${p.total}`;
+            $("#mb-fill").style.width = `${(p.done / p.total) * 100}%`;
+          }
+        },
+      });
+      mbLog("─── 완료", "ok");
+      toast("브리지 변환 완료 — markdown_output 폴더를 확인하세요", "ok");
+    } catch (e) {
+      mbLog(`✗ ${e.message}`, "fail");
+      toast(e.message, "fail");
+    } finally {
+      mbRunning = false;
+      $("#mb-run").disabled = false;
+      $("#mb-run").textContent = "브리지 변환 실행";
+    }
+  });
+
   $("#md-saveall").addEventListener("click", async () => {
     const targets = results.filter((r) => !r.md.startsWith("[변환 오류]"));
     if (!targets.length) return;

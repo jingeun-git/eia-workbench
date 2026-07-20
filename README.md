@@ -43,18 +43,24 @@
 
 | 단계 | 상태 |
 |---|---|
-| 1. 브리지 통신 PoC | ✅ 실측 통과 (Chrome 150 — mixed content 면제·PNA 미강제·`targetAddressSpace:'loopback'`) — 진단 페이지 `poc/` |
+| 1. 브리지 통신 PoC | ✅ 실측 통과 — 진단 페이지 `poc/` |
 | 2. 설계 스펙 | ✅ `tasks/specs/2026-07-20-통합업무도구-웹화-design.md` |
 | 3. 디자인 시스템 | ✅ `shared/tokens.css` + `docs/design-system.md` |
-| 4. 웹 셸 + 건축물대장 | 🔄 구현 완료 — 실브라우저 검증 대기 |
-| 5~8. md·EIASS·브리지·정식 배포 | 예정 |
+| 4. 건축물대장 | ✅ 실브라우저 검증 통과 (SHP·주소 모드) |
+| 5. md 변환 | ✅ 웹 경로 검증 통과 + 브리지 고품질 경로 연결 |
+| 6. EIASS | 🔄 구현 완료 — 통합 테스트 대기 |
+| 7. 로컬 브리지 | 🔄 서버 구현·job 파이프라인 검증(실PDF 완주) — Windows 실검증 대기 |
+| 8. 문서 | ✅ `사용법.md` |
 
 ### 구조
 
-- `index.html` — 셸 (탭·브리지 상태칩·테마·설정)
-- `shared/` — tokens.css(디자인 토큰) · ui.css(컴포넌트) · app.js(셸) · bridge.js(브리지 클라이언트) · geo.js(기하 판정, node 15케이스 검증)
-- `modules/parcel.js` — 건축물대장 조회 (parcel_engine.py 1:1 이식 — vworld JSONP + data.go.kr fetch + xlsx-js-style)
-- `vendor/` — shpjs·proj4·xlsx-js-style·Pretendard (전부 동봉, 런타임 CDN 없음)
+- `index.html` — 셸 (탭 7종·브리지 상태칩·테마·설정)
+- `shared/` — tokens.css · ui.css · app.js · bridge.js(pollJob 포함) · geo.js(18케이스 검증)
+- `modules/` — parcel(건축물대장) · md(웹+브리지 2경로) · eiass(FILE_SEQ+사업코드 2경로) · hwp(pdf/toc/pagenum/merge 4종)
+- `bridge/` — bridge_server.py (기존 도구 import/서브프로세스 참조 — 복제 없음) + 실행 bat
+- `vendor/` — shpjs·proj4·xlsx-js-style·pdf.js·mammoth·Pretendard (전부 동봉, 런타임 CDN 없음)
+
+사용법: [사용법.md](사용법.md)
 
 ## 범위 제외
 
