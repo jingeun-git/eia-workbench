@@ -293,7 +293,56 @@ def run_hwptool(job, params):
     if proc.returncode != 0:
         raise RuntimeError(f"{tool} 종료 코드 {proc.returncode}")
 
+def run_eiass_seq_dl(job, params):
+    """FILE_SEQ 직접 다운로드 (SYS-32) — 웹 iframe 경로의 '조용한 누락'을 없애는 검증 가능 경로.
+    브라우저는 저장 성공을 JS에 알려주지 않지만, 여기서는 응답 코드·크기·예외가 전부 남는다."""
+    import eiass_doc_resolver as edr
+    seqs = [str(s).strip() for s in params.get("seqs", []) if str(s).strip().isdigit()]
+    if not seqs:
+        raise RuntimeError("유효한 FILE_SEQ가 없습니다")
+    out_dir = Path(params["out_dir"])
+    if not path_allowed(out_dir):
+        raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    r = edr.EIASSDocResolver()
+    total = len(seqs)
+    ok = fail = 0
+    saved = []
+    for i, seq in enumerate(seqs, 1):
+        job["progress"] = {"done": i - 1, "total": total, "stage": f"FILE_SEQ {seq}"}
+        try:
+            # resolver.download는 DocFile 또는 FILE_SEQ 문자열을 받는다(시그니처 확인됨)
+            path = r.download(seq, str(out_dir), overwrite=False)
+            p = Path(path)
+            size = p.stat().st_size
+            if size == 0:
+                raise RuntimeError("응답 본문이 비어 있음(비공개·삭제된 파일일 수 있음)")
+            sz = f"{size >> 20} MB" if size >= 1 << 20 else f"{size >> 10} KB"
+            job_log(job, f"  ✓ [{seq}] {p.name} ({sz})")
+            saved.append(p)
+            ok += 1
+        except Exception as e:
+            job_log(job, f"  ✗ [{seq}] {e}")
+            fail += 1
+        time.sleep(0.3)
+    job["progress"] = {"done": total, "total": total, "stage": "완료"}
+
+    if params.get("zip") and saved:
+        import zipfile
+        from datetime import datetime
+        zip_path = out_dir / f"EIASS_{datetime.now():%Y%m%d_%H%M}.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            for p in saved:
+                z.write(p, arcname=p.name)
+        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건)")
+    job_log(job, f"─── 완료: 성공 {ok} / 실패 {fail} → {out_dir}")
+    if fail and not ok:
+        raise RuntimeError("전건 실패 — FILE_SEQ·네트워크를 확인하세요")
+
+
 RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
+           "eiass_seq_dl": run_eiass_seq_dl,
            "hwp2pdf": run_hwp2pdf, "hwptool": run_hwptool}
 
 def worker():
