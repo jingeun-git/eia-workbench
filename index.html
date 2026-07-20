@@ -177,7 +177,12 @@ async function probe(id, url, opts) {
   try {
     // 캐시 무력화 2중 장치. 오리진마다 ACAO가 달라지는 응답이라 한 번이라도
     // 캐시되면 낡은 ACAO가 재생돼 "CORS 차단"으로 오진된다(2026-07-20 실제 발생).
-    const bust = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    // 발신 페이지를 쿼리에 새긴다 — 여러 탭이 열려 있을 때 어느 페이지가 보낸
+    // 요청인지 서버 로그만 보고 확정하기 위해서다. Origin 헤더만으로는
+    // "어느 탭에서 눌렀는지"를 사용자와 대조하기 어렵다(2026-07-20 혼선).
+    const bust = url + (url.includes('?') ? '&' : '?')
+               + '_t=' + Date.now()
+               + '&_from=' + encodeURIComponent(location.origin);
     const res = await fetch(bust, Object.assign({ cache: 'no-store' }, opts || {}));
     const ms = Math.round(performance.now() - t0);
     const body = await res.text();

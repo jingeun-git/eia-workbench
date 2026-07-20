@@ -76,19 +76,27 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _record(self, kind: str):
+        # 페이지가 쿼리에 새겨 보낸 발신 오리진을 뽑아낸다(_from).
+        # Origin 헤더와 별개로, 어느 탭이 눌렀는지를 로그만으로 확정하기 위한 것이다.
+        sender = "?"
+        if "_from=" in self.path:
+            from urllib.parse import urlparse, parse_qs
+            sender = (parse_qs(urlparse(self.path).query).get("_from") or ["?"])[0]
+
         entry = {
             "time": datetime.now().strftime("%H:%M:%S"),
             "kind": kind,
-            "path": self.path,
+            "path": self.path.split("?")[0],
             "origin": self.headers.get("Origin", "-"),
+            "sender": sender,
             "pna_request": self.headers.get("Access-Control-Request-Private-Network", "-"),
         }
         _log.append(entry)
-        pna = entry["pna_request"]
-        mark = "  [PNA 요청됨]" if pna == "true" else ""
+        mark = "  [PNA 요청됨]" if entry["pna_request"] == "true" else ""
         # flush 필수 — 버퍼링되면 사용자 터미널에 요청이 실시간으로 안 찍혀
         # "브라우저가 차단당한 것"과 구분이 안 된다. 이 스텁의 판정 근거가 바로 이 출력이다.
-        print(f"  {entry['time']}  {kind:9s} {self.path:14s} origin={entry['origin']}{mark}", flush=True)
+        print(f"  {entry['time']}  {kind:9s} {entry['path']:14s} "
+              f"발신페이지={sender}{mark}", flush=True)
 
     # ── 프리플라이트 ─────────────────────────────────────────────────────
     def do_OPTIONS(self):
