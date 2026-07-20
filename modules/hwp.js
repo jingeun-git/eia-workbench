@@ -69,7 +69,7 @@ export function init(section, { bridge, toast }, kind) {
         <table class="result-table">
           <thead><tr>
             <th>파일</th><th>장</th><th>물리 쪽수</th><th>A3</th>
-            <th>쪽번호</th><th>공란</th><th>처리</th>
+            <th>현재 쪽번호</th><th>→ 적용 후</th><th>공란</th><th>감추기</th><th>처리</th>
           </tr></thead>
           <tbody id="hw-tbody"></tbody>
         </table>
@@ -249,7 +249,20 @@ export function init(section, { bridge, toast }, kind) {
     tb.innerHTML = "";
     for (const r of rows) {
       const tr = document.createElement("tr");
+      // 현재 상태와 적용 후를 나눠 보여준다 — 표의 숫자가 현황인지 예정인지
+      // 구분되지 않는다는 지적(2026-07-20)에 따른 분리
+      const cur = (r.start_page != null && r.end_page != null)
+        ? `${r.start_page}~${r.end_page}` : "—";
       const rng = r.skip ? "—" : `${r.start}~${r.end}`;
+      const same = !r.skip && cur === rng;
+
+      /* 감추기: 도구가 걸 위치와, 사람이 이미 넣어둔 것을 함께 보여준다.
+         예상 밖 위치의 감추기는 오기입일 수 있으므로 경고로 띄운다. */
+      const stray = r.stray_hide || [];
+      const hideCell = [
+        r.expect_hide?.length ? `${r.expect_hide.join(",")}면` : "",
+        stray.length ? `<span class="warn-mark" title="도구가 의도하지 않은 위치입니다 — 오기입 여부를 확인하세요">⚠ ${stray.join(",")}면</span>` : "",
+      ].filter(Boolean).join(" ") || (r.hide_pages?.length ? `${r.hide_pages.join(",")}면` : "");
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
            r.pad ? "공란 +1" : "",
@@ -261,8 +274,10 @@ export function init(section, { bridge, toast }, kind) {
         <td class="num">${r.chapter ?? "-"}</td>
         <td class="num">${r.phys_pages ?? "-"}</td>
         <td class="num">${r.a3_count || ""}</td>
-        <td class="num">${rng}</td>
+        <td class="num" style="color:var(--text-dim)">${cur}</td>
+        <td class="num"${same ? ' style="color:var(--text-dim)"' : ' style="font-weight:600"'}>${rng}${same ? " (동일)" : ""}</td>
         <td class="num">${r.pad || ""}</td>
+        <td class="num">${hideCell}</td>
         <td style="color:var(--text-muted)">${r.error || act}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
       tb.appendChild(tr);

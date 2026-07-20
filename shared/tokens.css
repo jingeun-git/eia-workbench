@@ -221,3 +221,6 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 스캔 표 — 오기입 의심 감추기 표시 (SYS-31) */
+.warn-mark { color: var(--warn-fg, #B45309); font-weight: 600; cursor: help; }

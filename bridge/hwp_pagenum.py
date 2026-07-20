@@ -131,8 +131,19 @@ def assign_numbers(plan, start_num: int = 1):
             pad = 1
             end += 1
 
+        # 기존 감추기가 도구가 의도한 위치와 다르면 표시한다.
+        # 도구가 감추는 곳: 간지 1·2면(장 첫 파일) + 장 끝 공란.
+        # 그 밖의 감추기는 사람이 잘못 넣었을 가능성이 있으므로 사용자에게 알린다.
+        expect = set()
+        if f.get("divider"):
+            expect |= {1, 2}
+        if pad:
+            expect.add((f.get("phys_pages") or 0) + 1)
+        stray = [h for h in (f.get("hide_pages") or []) if h and h not in expect]
+
         out.append({**f, "start": (pages[0][1] if pages else cur),
-                    "end": end, "pages": pages, "marks": marks, "pad": pad})
+                    "end": end, "pages": pages, "marks": marks, "pad": pad,
+                    "expect_hide": sorted(expect), "stray_hide": stray})
         cur = end + 1
     return out
 
@@ -157,6 +168,33 @@ def _open(hwp, path: Path) -> bool:
 def _end_page(hwp) -> int:
     hwp.MovePos(3)
     return int(hwp.KeyIndicator()[3])
+
+
+def _start_page(hwp) -> int | None:
+    """1쪽에 실제로 찍히는 인쇄 쪽번호(현재 상태). _end_page와 같은 인덱스를 쓴다."""
+    try:
+        _goto_page(hwp, 1)
+        return int(hwp.KeyIndicator()[3])
+    except Exception:
+        return None
+
+
+def _hidden_pages(hwp):
+    """감추기(pghd)가 걸린 물리 쪽 목록.
+
+    사람이 손으로 넣은 감추기는 엉뚱한 쪽에 있을 수 있으므로(2026-07-20 사용자 지적)
+    도구는 이를 신뢰하지 않고 **위치를 그대로 보여준다.** 판단은 사용자 몫이다.
+    """
+    pages, c = [], hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "pghd":
+            try:
+                hwp.SetPosBySet(c.GetAnchorPos(0))
+                pages.append(int(hwp.KeyIndicator()[3]))
+            except Exception:
+                pages.append(0)          # 위치 특정 실패 — 존재만 보고
+        c = c.Next
+    return sorted(set(pages))
 
 
 def _phys_pages(hwp):
@@ -222,8 +260,13 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
             end = _end_page(hwp)
             phys = _phys_pages(hwp)
             a3 = _a3_pages(hwp, phys or 0)
-            log(f"  {p.name} — 끝번호 {end} / 물리 {phys}쪽" + (f" / A3 {len(a3)}쪽 {a3}" if a3 else ""))
+            start = _start_page(hwp)
+            hides = _hidden_pages(hwp)
+            log(f"  {p.name} — 현재 쪽번호 {start}~{end} / 물리 {phys}쪽"
+                + (f" / A3 {len(a3)}쪽 {a3}" if a3 else "")
+                + (f" / 기존 감추기 {hides}" if hides else ""))
             out.append({"name": p.name, "path": str(p), "end_page": end,
+                        "start_page": start, "hide_pages": hides,
                         "phys_pages": phys, "a3_pages": a3})
             try:
                 hwp.XHwpDocuments.Item(0).Close(isDirty=False)
