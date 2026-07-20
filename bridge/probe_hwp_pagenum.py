@@ -224,11 +224,19 @@ def probe_file(hwp, path: Path):
     # ── D-2. 감추기 단서 — 기존 pghd·secd 속성을 넓은 키 목록으로 덤프 ──
     #    감추기가 별도 컨트롤(pghd)인지 구역(secd) 속성인지 판별하기 위한 조사.
     try:
-        WIDE = ("HideHeader", "HideFooter", "HidePageNum", "HideBorder", "HideFill",
-                "HideMasterPage", "HideAll", "Hide", "ShowHeader", "ShowFooter",
-                "ShowPageNum", "HeadType", "FootType", "PageStartsOn", "StartNum",
-                "SectionType", "TextDirection", "HideFirstHeader", "HideFirstFooter",
-                "HideFirstPageNum", "HideFirstBorder", "HideFirstFill")
+        # 한글 감추기 대화상자 항목은 6개(머리말·꼬리말·바탕쪽·테두리·배경·쪽번호).
+        # 5개는 Hide*로 찾았는데 **쪽번호만 이름을 못 찾았다** → 후보를 넓게 훑는다.
+        WIDE = ("HideHeader", "HideFooter", "HideBorder", "HideFill", "HideMasterPage",
+                # ── 쪽번호 감추기 후보 (이름 미확인, 2026-07-20) ──
+                "HidePageNum", "HidePageNumber", "HidePageNo", "HidePgNum", "HidePgNo",
+                "HidePageNumPos", "HidePageNumber2", "HideNumber", "HidePageNumbering",
+                "PageNumHide", "PageNumberHide", "HidePagenum", "HidePageno",
+                "ShowPageNum", "ShowPageNumber", "PageNumVisible", "VisiblePageNum",
+                # ── 기타 구역 속성 ──
+                "HideAll", "Hide", "ShowHeader", "ShowFooter", "HeadType", "FootType",
+                "PageStartsOn", "StartNum", "SectionType", "TextDirection",
+                "HideFirstHeader", "HideFirstFooter", "HideFirstPageNum",
+                "HideFirstBorder", "HideFirstFill", "HideFirstMasterPage")
         found_any = False
         c = hwp.HeadCtrl
         while c is not None:
@@ -265,6 +273,54 @@ def probe_file(hwp, path: Path):
         hwp.XHwpDocuments.Item(0).Close(isDirty=False)
     except Exception:
         pass
+
+
+def hide_key_sweep(hwp, path: Path):
+    """감추기 키 역추적 — 문서의 secd에서 **값이 설정된 키를 전부** 훑는다.
+
+    사용법: 사용자가 한글에서 [쪽]→감추기→'쪽 번호'만 체크해 저장한 파일을 지정하면,
+    1로 켜진 키가 곧 쪽번호 감추기의 정확한 속성명이다(무차별 대입보다 확실).
+    """
+    log(f"\n{'=' * 66}")
+    log("■ 감추기 키 역추적")
+    log(f"{'=' * 66}")
+    ok, _ = open_doc(hwp, path)
+    if not ok:
+        log("  ✗ 열기 실패")
+        return
+    # ParameterSet에서 키를 직접 열거할 수 없으므로 후보를 넓게 시도한다
+    CAND = [f"Hide{w}" for w in ("Header", "Footer", "Border", "Fill", "MasterPage",
+                                 "PageNum", "PageNumber", "PageNo", "PgNum", "PgNo",
+                                 "Number", "Numbering", "PageNumPos", "Pagenum",
+                                 "FirstHeader", "FirstFooter", "FirstPageNum", "All")]
+    CAND += ["PageNumHide", "PageNumberHide", "ShowPageNum", "ShowPageNumber",
+             "PageNumVisible", "VisiblePageNum", "PageStartsOn", "StartNum"]
+    idx = 0
+    c = hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "secd":
+            idx += 1
+            try:
+                st = c.Properties
+                on, off = [], []
+                for k in CAND:
+                    try:
+                        v = st.Item(k)
+                    except Exception:
+                        continue
+                    if v is None:
+                        continue
+                    (on if v else off).append(f"{k}={v}")
+                log(f"  구역{idx} — 켜짐(0아님): {on or '없음'}")
+                log(f"           꺼짐(0)    : {off or '없음'}")
+            except Exception as e:
+                log(f"  구역{idx} ✗ {e}")
+        c = c.Next
+    try:
+        hwp.XHwpDocuments.Item(0).Close(isDirty=False)
+    except Exception:
+        pass
+    log("  → '켜짐'에 쪽번호 관련 키가 보이면 그것이 정답입니다.")
 
 
 def write_test(hwp, src: Path):
@@ -512,6 +568,14 @@ def _run(target: Path, max_files: int = 5):
 
     for p in picked:
         probe_file(hwp, p)
+
+    # 감추기 키 역추적 — 파일명에 HIDE가 들어간 파일이 있으면 그것을 우선 대상으로
+    marked = [p for p in files if "HIDE" in p.stem.upper()]
+    if marked:
+        log(f"\n  (감추기 표본 발견: {marked[0].name})")
+        hide_key_sweep(hwp, marked[0])
+    elif picked:
+        hide_key_sweep(hwp, picked[0])
 
     # 쓰기 검증 — 감추기 조사가 목적이므로 **pghd가 실재하는 문서를 우선** 고른다
     if picked:
