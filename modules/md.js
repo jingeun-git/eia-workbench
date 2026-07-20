@@ -92,12 +92,14 @@ function promoteHeading(text, size, bodySize) {
   return "#".repeat(level) + " " + title.trim();
 }
 
-async function convertPdf(buf) {
+async function convertPdf(buf, onPage) {
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(buf), useWorkerFetch: false, isEvalSupported: false,
   }).promise;
   const pages = [];
+  try {
   for (let p = 1; p <= pdf.numPages; p++) {
+    onPage?.(p, pdf.numPages);
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
     const rawLines = [];
@@ -131,8 +133,14 @@ async function convertPdf(buf) {
       deduped.push(line);
     }
     pages.push(`<!-- 페이지 ${p} -->\n${deduped.join("\n")}`);
+    // 페이지 단위 자원 해제 — 대용량 PDF에서 페이지 객체가 누적되면 탭이 죽는다(SYS-32)
+    page.cleanup();
   }
   return pages.join("\n\n---\n\n");
+  } finally {
+    // 문서 자원·워커 참조 해제. 없으면 다수 파일 연속 변환 시 메모리가 단조 증가한다.
+    try { await pdf.destroy(); } catch (_) {}
+  }
 }
 
 async function convertDocx(buf) {
@@ -189,6 +197,7 @@ export function init(section, { bridge, toast }) {
     </div>
 
     <div id="md-list" class="md-list"></div>
+    <p class="help" id="md-heavy" style="display:none;color:var(--warn);margin-top:var(--space-2)"></p>
 
     <div style="display:flex;gap:var(--space-2);align-items:center;margin-top:var(--space-4)">
       <button class="btn btn-primary" id="md-run" disabled>변환 실행</button>
@@ -267,12 +276,33 @@ export function init(section, { bridge, toast }) {
       list.appendChild(row);
     });
     list.querySelectorAll("[data-rm]").forEach((b) =>
-      b.addEventListener("click", () => { files.splice(+b.dataset.rm, 1); renderList(); updateUI(); }));
+      b.addEventListener("click", () => { files.splice(+b.dataset.rm, 1); renderList(); updateUI(); warnIfHeavy(); }));
   }
   function updateUI() {
     $("#md-run").disabled = running ||
       !files.some((f) => !BRIDGE_EXTS.includes(f.ext));
   }
+  /* 브라우저 경로는 파일 전체를 메모리에 올린다 — 임계를 넘으면 탭이 죽을 수 있어
+     브리지 경로를 권한다(SYS-32). 막지는 않는다: 실제 한계는 PC마다 다르다. */
+  const BIG_FILE_MB = 80;      // 단일 파일
+  const BIG_TOTAL_MB = 200;    // 합계
+  const BIG_COUNT = 20;        // 건수
+
+  function warnIfHeavy() {
+    const webTargets = files.filter((f) => !BRIDGE_EXTS.includes(f.ext));
+    const totalMB = webTargets.reduce((s, f) => s + f.file.size, 0) / 1024 / 1024;
+    const biggest = webTargets.reduce((m, f) => Math.max(m, f.file.size), 0) / 1024 / 1024;
+    const reasons = [];
+    if (biggest > BIG_FILE_MB) reasons.push(`단일 파일 ${biggest.toFixed(0)}MB`);
+    if (totalMB > BIG_TOTAL_MB) reasons.push(`합계 ${totalMB.toFixed(0)}MB`);
+    if (webTargets.length > BIG_COUNT) reasons.push(`${webTargets.length}건`);
+    const el = $("#md-heavy");
+    if (!reasons.length) { el.style.display = "none"; return; }
+    el.style.display = "";
+    el.innerHTML = `⚠ <b>${reasons.join(" · ")}</b> — 브라우저 변환은 파일을 메모리에 올려 처리하므로
+      탭이 멈추거나 종료될 수 있습니다. 아래 <b>고품질 변환(브리지)</b>으로 폴더째 처리하시길 권합니다.`;
+  }
+
   function addFiles(newFiles) {
     let bridgeCnt = 0;
     for (const f of newFiles) {
@@ -282,8 +312,8 @@ export function init(section, { bridge, toast }) {
       if (BRIDGE_EXTS.includes(e)) bridgeCnt++;
     }
     if (bridgeCnt)
-      toast(`HWP·HWPX ${bridgeCnt}건은 로컬 브리지 연결 시 변환됩니다 (7단계 배포 예정)`, "warn");
-    renderList(); updateUI();
+      toast(`HWP·HWPX ${bridgeCnt}건은 브리지 연결 시 아래 고품질 변환에서 처리됩니다`, "warn");
+    renderList(); updateUI(); warnIfHeavy();
   }
 
   /* 드롭존 */
@@ -318,7 +348,7 @@ export function init(section, { bridge, toast }) {
   $("#md-reset").addEventListener("click", () => {
     if (running) { toast("변환 중입니다 — 완료 후 초기화하세요", "warn"); return; }
     files.length = 0; results.length = 0; activeTab = 0;
-    renderList(); renderTabs(); updateUI();
+    renderList(); renderTabs(); updateUI(); warnIfHeavy();
     $("#md-prog").classList.remove("active");
     $("#md-fill").style.width = "0%";
   });
@@ -344,12 +374,17 @@ export function init(section, { bridge, toast }) {
         $("#md-stage").textContent = item.name;
         $("#md-count").textContent = `${done + 1}/${targets.length}`;
         try {
-          const buf = await item.file.arrayBuffer();
+          let buf = await item.file.arrayBuffer();
           let md;
-          if (item.ext === "pdf") md = await convertPdf(buf);
-          else if (item.ext === "docx" || item.ext === "doc") md = await convertDocx(buf);
+          if (item.ext === "pdf") {
+            // 페이지 진행 표시 — 수백 쪽 PDF에서 "멈춘 것처럼" 보이는 구간 제거
+            md = await convertPdf(buf, (p, total) => {
+              $("#md-stage").textContent = `${item.name} — ${p}/${total}쪽`;
+            });
+          } else if (item.ext === "docx" || item.ext === "doc") md = await convertDocx(buf);
           else if (item.ext === "xlsx" || item.ext === "xls") md = convertXlsx(buf);
           else throw new Error("지원하지 않는 형식입니다");
+          buf = null;   // 원본 버퍼 참조 해제 — 다음 파일 처리 전 회수 가능하게
           results.push({ name: item.name, md });
           item.status = "ok"; ok++;
         } catch (e) {
@@ -359,6 +394,8 @@ export function init(section, { bridge, toast }) {
         done++;
         $("#md-fill").style.width = `${(done / targets.length) * 100}%`;
         renderList();
+        // 이벤트 루프 양보 — 연속 변환 중 UI가 얼어붙지 않게 하고 GC 기회를 준다
+        await new Promise((r) => setTimeout(r, 0));
       }
       renderTabs();
       toast(err ? `완료 ${ok}건 / 오류 ${err}건` : `변환 완료 — ${ok}건`, err ? "warn" : "ok");

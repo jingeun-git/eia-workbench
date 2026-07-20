@@ -90,11 +90,26 @@ export class BridgeClient extends EventTarget {
     return res.json();
   }
 
-  /** 장시간 작업 폴링 — 새 로그 라인·진행 상태를 콜백으로 전달, 종료 시 resolve */
-  async pollJob(jobId, { onLog, onProgress, intervalMs = 1000 } = {}) {
+  /** 장시간 작업 폴링 — 새 로그 라인·진행 상태를 콜백으로 전달, 종료 시 resolve.
+   *  일시적 통신 오류는 재시도하되(OCR 등 수십 분 작업 중 한 번 끊겼다고 죽이지 않는다),
+   *  연속 실패가 누적되면 중단한다. 브리지 재시작으로 작업 정보가 사라진 경우는 즉시 구분. */
+  async pollJob(jobId, { onLog, onProgress, intervalMs = 1000, maxRetries = 15 } = {}) {
     let logOffset = 0;
+    let fails = 0;
     for (;;) {
-      const j = await this.call(`/jobs/${jobId}?log_from=${logOffset}`, { timeoutMs: 15000 });
+      let j;
+      try {
+        j = await this.call(`/jobs/${jobId}?log_from=${logOffset}`, { timeoutMs: 15000 });
+        fails = 0;
+      } catch (e) {
+        if (/HTTP 404|job not found/i.test(e.message))
+          throw new Error("브리지가 재시작되어 작업 정보가 사라졌습니다 — 다시 실행해주세요");
+        if (++fails > maxRetries)
+          throw new Error(`브리지 응답 없음 (${fails}회 연속) — 브리지 창이 닫혔는지 확인하세요`);
+        onLog?.(`⚠ 브리지 응답 지연 — 재시도 ${fails}/${maxRetries}`);
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
       for (const line of j.log || []) { onLog?.(line); logOffset++; }
       onProgress?.(j.progress || null);
       if (j.status === "done") return j;
