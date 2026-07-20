@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.1.0"
+BRIDGE_VERSION = "3.1.1"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -392,8 +392,18 @@ def run_pagenum_scan(job, params):
         "is_chapter_head": f["is_chapter_head"], "skip": f["skip"],
         "phys_pages": f.get("phys_pages"), "a3_count": len(f.get("a3_pages") or []),
         "a3_pages": f.get("a3_pages") or [],
-        "start": f["start"], "end": f["end"], "pad": f["pad"],
+        "start": f["start"], "end": f["end"],
         "marks": f["marks"], "divider": f.get("divider", False),
+        # ↓ 표가 '현재 상태'를 보여주는 데 쓰는 값들.
+        #   화이트리스트 직렬화라 여기에 안 적으면 조용히 사라진다
+        #   (2026-07-20: 스캔은 정상인데 UI만 비어 원인을 한참 헤맸다)
+        "start_page": f.get("start_page"), "end_page": f.get("end_page"),
+        "hide_pages": f.get("hide_pages") or [],
+        "gap_count": f.get("gap_count", 0),
+        "blank_pages": f.get("blank_pages") or [],
+        "div_skip": f.get("div_skip", 0),
+        "expect_hide": f.get("expect_hide") or [],
+        "stray_hide": f.get("stray_hide") or [],
         "error": f.get("error"),
     } for f in plan]
     job_log(job, f"─── 스캔 완료: {len(files)}개 파일")
