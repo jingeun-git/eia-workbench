@@ -47,8 +47,8 @@ export function init(section, { bridge, toast }, kind) {
           <input type="checkbox" id="hw-divider"> 장별 간지 포함
         </label>
       </div>
-      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>은 간지를 1면으로 보고 <b>2번을 결번</b> 처리해 본문이 3면(홀수)에서 시작하게 합니다
-        — 빈 페이지를 물리적으로 넣지 않고 쪽번호로 제어하므로, 이미 그렇게 작성된 문서는 변경 없이 그대로 유지됩니다.
+      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>은 간지를 1면으로 보고 <b>2번을 결번</b> 처리해 본문이 3면(홀수)에서 시작하게 합니다.
+        빈 페이지를 만들지 않고 쪽번호로만 제어하므로 <b>문서 구조는 바뀌지 않습니다</b> — 이미 그렇게 작성된 문서는 변경 없이 유지됩니다.
         간지를 별도 인쇄하신다면 체크하지 마세요.</p>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
@@ -70,7 +70,7 @@ export function init(section, { bridge, toast }, kind) {
         <table class="result-table">
           <thead><tr>
             <th>파일</th><th>장</th><th>물리 쪽수</th><th>A3</th>
-            <th>현재 쪽번호</th><th>→ 적용 후</th><th>공란</th><th>감추기</th><th>처리</th>
+            <th>현재 쪽번호</th><th>→ 적용 후</th><th>감추기</th><th>처리</th>
           </tr></thead>
           <tbody id="hw-tbody"></tbody>
         </table>
@@ -266,7 +266,6 @@ export function init(section, { bridge, toast }, kind) {
       ].filter(Boolean).join(" ") || (r.hide_pages?.length ? `${r.hide_pages.join(",")}면` : "");
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
-           r.pad ? "공란 +1" : "",
            r.div_skip ? "간지 결번" : "",
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
            r.blank_pages?.length ? `빈쪽 ${r.blank_pages.join(",")}` : "",
@@ -279,7 +278,6 @@ export function init(section, { bridge, toast }, kind) {
         <td class="num">${r.a3_count || ""}</td>
         <td class="num" style="color:var(--text-dim)">${cur}</td>
         <td class="num"${same ? ' style="color:var(--text-dim)"' : ' style="font-weight:600"'}>${rng}${same ? " (동일)" : ""}</td>
-        <td class="num">${r.pad || ""}</td>
         <td class="num">${hideCell}</td>
         <td style="color:var(--text-muted)">${r.error || act}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
