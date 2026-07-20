@@ -49,13 +49,21 @@ function makeParcel(pnu, addr, bbox) {
   };
 }
 
-/* ── vworld req/data — bbox 내 연속지적도 (페이징) ─────────────────── */
-async function fetchParcelsInBox(bounds, vkey, log, checkCancel) {
-  const [x0, y0, x1, y1] = bounds;
-  const geomFilter = `BOX(${x0},${y0},${x1},${y1})`;
-  const seen = new Map();
-  let page = 1, pageTotal = 1;
+/* ── vworld req/data — bbox 내 연속지적도 ──────────────────────────────
+   ⚠ req/data BOX는 요청면적 10km² 상한이 있다(2026-07-20 실측 — 11.04km² 거부).
+   상한 초과 bbox는 3km 격자 타일로 분할 조회 후 pnu로 중복 제거한다.
+   (원본 엔진의 WFS 쿼드트리는 "1000건 상한" 대응이었고, 이쪽은 "면적 상한" 대응) */
 
+function bboxKm([x0, y0, x1, y1]) {
+  const midLat = ((y0 + y1) / 2) * Math.PI / 180;
+  const kx = (x1 - x0) * 111.320 * Math.cos(midLat);
+  const ky = (y1 - y0) * 110.574;
+  return { kx, ky, area: kx * ky };
+}
+
+async function fetchTileInto(seen, bounds, vkey, log, checkCancel) {
+  const geomFilter = `BOX(${bounds.join(",")})`;
+  let page = 1, pageTotal = 1;
   do {
     checkCancel();
     const url = `${VWORLD_DATA}?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN` +
@@ -63,27 +71,56 @@ async function fetchParcelsInBox(bounds, vkey, log, checkCancel) {
       `&geomFilter=${encodeURIComponent(geomFilter)}&size=${PAGE_SIZE}&page=${page}`;
     const j = await jsonp(url);
     const resp = j?.response || {};
+    if (resp.status === "NOT_FOUND") return;   // 빈 타일(바다 등) — 정상
     if (resp.status !== "OK") {
-      if (page === 1) {
-        const err = resp?.error?.text || resp.status || "알 수 없는 오류";
-        throw new Error(`vworld 필지 조회 실패: ${err} — API 키·범위를 확인하세요`);
-      }
-      break; // 뒤 페이지가 NOT_FOUND면 수집분으로 진행
+      const err = resp?.error?.text || resp.status || "알 수 없는 오류";
+      if (page === 1) throw new Error(`vworld 필지 조회 실패: ${err} — API 키·범위를 확인하세요`);
+      return; // 뒤 페이지 이상은 수집분으로 진행
     }
     pageTotal = parseInt(resp.page?.total || "1", 10);
     for (const f of resp.result?.featureCollection?.features || []) {
       const p = makeParcel(f.properties?.pnu, f.properties?.addr, bboxOfGeometry(f.geometry));
       if (p) seen.set(p.pnu, p);
     }
-    log(`  필지 수신: ${seen.size}건 (페이지 ${page}/${pageTotal})`);
     if (page >= MAX_PAGES) {
-      log(`⚠ 필지 ${MAX_PAGES * PAGE_SIZE}건 상한 도달 — 사업지구 범위를 나눠 실행하세요`, "warn");
-      break;
+      log(`⚠ 타일당 ${MAX_PAGES * PAGE_SIZE}건 상한 도달 — 일부 필지가 누락될 수 있습니다`, "warn");
+      return;
     }
     page++;
     await sleep(120);
   } while (page <= pageTotal);
+}
 
+async function fetchParcelsInBox(bounds, vkey, log, checkCancel) {
+  const seen = new Map();
+  const { kx, ky, area } = bboxKm(bounds);
+
+  if (area <= 9) {   // 10km² 상한에 여유 1km²
+    await fetchTileInto(seen, bounds, vkey, log, checkCancel);
+    return [...seen.values()];
+  }
+
+  const nx = Math.ceil(kx / 3), ny = Math.ceil(ky / 3);   // 3km 격자 ≈ 9km²/타일
+  const tiles = nx * ny;
+  if (tiles > 120)
+    throw new Error(`범위가 너무 넓습니다 (약 ${area.toFixed(1)}km², 타일 ${tiles}개) — 사업지구를 나눠 실행하세요`);
+  log(`  범위 약 ${area.toFixed(1)}km² → ${nx}×${ny} 타일 분할 조회 (vworld 면적 10km² 제한)`);
+
+  const dx = (bounds[2] - bounds[0]) / nx, dy = (bounds[3] - bounds[1]) / ny;
+  let t = 0;
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      t++;
+      checkCancel();
+      const tile = [
+        bounds[0] + dx * i, bounds[1] + dy * j,
+        bounds[0] + dx * (i + 1), bounds[1] + dy * (j + 1),
+      ];
+      await fetchTileInto(seen, tile, vkey, log, checkCancel);
+      log(`  타일 ${t}/${tiles} — 누적 ${seen.size}필지`);
+      await sleep(120);
+    }
+  }
   return [...seen.values()];
 }
 
@@ -225,35 +262,85 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
   return results;
 }
 
-/* ── SHP 읽기 (shpjs — zip 또는 shp+dbf+prj 개별 파일) ──────────────── */
+/* ── SHP 읽기 + 좌표계 정규화 ──────────────────────────────────────────
+   ⚠ shp.parseShp(buf, prj문자열)은 재투영을 하지 않는다(2026-07-20 실측 —
+   prj를 줘도 미터 좌표 그대로). ZIP 경로(shp())만 내부 재투영한다.
+   → 어느 경로든 읽은 뒤 bounds가 한국 위경도 범위가 아니면 proj4로 직접 변환.
+   후보: SHP의 prj WKT → 5186(중부) → 5187(동부) → 5185(서부) → 5174(구 Bessel 중부)
+   순으로 시도하고, 변환 결과가 한국 범위에 들어오는 첫 후보를 채택·로그 명시. */
+
+const KOREA = ([x0, y0, x1, y1]) =>
+  x0 >= 122 && x1 <= 134 && y0 >= 31 && y1 <= 41 && x1 >= x0 && y1 >= y0;
+
+const CRS_CANDIDATES = [
+  ["EPSG:5186 (TM중부)", EPSG5186],
+  ["EPSG:5187 (TM동부)", "+proj=tmerc +lat_0=38 +lon_0=129 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"],
+  ["EPSG:5185 (TM서부)", "+proj=tmerc +lat_0=38 +lon_0=125 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"],
+  ["EPSG:5174 (구 Bessel 중부)", "+proj=tmerc +lat_0=38 +lon_0=127.0028902777778 +k=1 +x_0=200000 +y_0=500000 +ellps=bessel +units=m +no_defs +towgs84=-115.80,474.99,674.11,1.16,-2.31,-1.63,6.43"],
+];
+
+function txCoords(coords, fwd) {
+  if (typeof coords[0] === "number") {
+    const [X, Y] = fwd([coords[0], coords[1]]);
+    coords[0] = X; coords[1] = Y;
+    return;
+  }
+  for (const c of coords) txCoords(c, fwd);
+}
+
+function normalizeCrs(fc, prjText, log) {
+  const feats = (fc.features || []).filter((f) => f.geometry);
+  if (!feats.length) return fc;
+  let b = boundsOfFeatures(feats);
+  if (KOREA(b)) return fc;   // 이미 위경도
+
+  const candidates = [...(prjText ? [["SHP 동봉 prj", prjText]] : []), ...CRS_CANDIDATES];
+  for (const [label, def] of candidates) {
+    try {
+      const conv = proj4(def, "EPSG:4326");
+      // bounds 모서리 2점으로 사전 판정 (전체 변환 전 가늠)
+      const p0 = conv.forward([b[0], b[1]]), p1 = conv.forward([b[2], b[3]]);
+      const test = [Math.min(p0[0], p1[0]), Math.min(p0[1], p1[1]),
+                    Math.max(p0[0], p1[0]), Math.max(p0[1], p1[1])];
+      if (!KOREA(test) || !test.every(Number.isFinite)) continue;
+      for (const f of feats) txCoords(f.geometry.coordinates, conv.forward);
+      log(`  좌표계 변환: ${label} → WGS84`);
+      return fc;
+    } catch (_) { /* 다음 후보 */ }
+  }
+  throw new Error("좌표계를 판별하지 못했습니다 — prj 파일을 함께 선택하거나 QGIS에서 EPSG:4326으로 변환 후 시도하세요");
+}
+
 async function readShpFiles(files, log) {
   const byExt = {};
   for (const f of files) {
     const ext = f.name.toLowerCase().split(".").pop();
     byExt[ext] = f;
   }
+
+  let fc, prjText = null;
   if (byExt.zip) {
     log("  ZIP에서 SHP 세트 읽는 중…");
-    return await shp(await byExt.zip.arrayBuffer());
+    let out = await shp(await byExt.zip.arrayBuffer());
+    if (Array.isArray(out)) {   // 다중 레이어 zip → 피처 병합
+      fc = { type: "FeatureCollection", features: out.flatMap((o) => o.features || []) };
+    } else fc = out;
+  } else {
+    if (!byExt.shp) throw new Error(".shp 파일이 없습니다 — shp·dbf(·prj) 또는 zip을 선택하세요");
+    if (byExt.prj) prjText = await byExt.prj.text();
+    else log("  ※ prj 미제공 → 좌표 범위로 좌표계 자동 판별", "warn");
+    const geoms = shp.parseShp(await byExt.shp.arrayBuffer());   // 원좌표 그대로
+    let props = null;
+    if (byExt.dbf) {
+      const cpg = byExt.cpg ? await byExt.cpg.text() : undefined;
+      props = shp.parseDbf(await byExt.dbf.arrayBuffer(), cpg);
+    }
+    fc = {
+      type: "FeatureCollection",
+      features: geoms.map((g, i) => ({ type: "Feature", geometry: g, properties: props ? props[i] : {} })),
+    };
   }
-  if (!byExt.shp) throw new Error(".shp 파일이 없습니다 — shp·dbf(·prj) 또는 zip을 선택하세요");
-  const shpBuf = await byExt.shp.arrayBuffer();
-  let prj = null;
-  if (byExt.prj) prj = await byExt.prj.text();
-  else {
-    prj = EPSG5186;
-    log("  ※ prj 미제공 → EPSG:5186 (TM중부) 가정", "warn");
-  }
-  const geoms = shp.parseShp(shpBuf, prj);
-  let props = null;
-  if (byExt.dbf) {
-    const cpg = byExt.cpg ? await byExt.cpg.text() : undefined;
-    props = shp.parseDbf(await byExt.dbf.arrayBuffer(), cpg);
-  }
-  const features = geoms.map((g, i) => ({
-    type: "Feature", geometry: g, properties: props ? props[i] : {},
-  }));
-  return { type: "FeatureCollection", features };
+  return normalizeCrs(fc, prjText, log);
 }
 
 /* ── Excel 입출력 ──────────────────────────────────────────────────── */
