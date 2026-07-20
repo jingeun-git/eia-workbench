@@ -56,7 +56,20 @@ def parse_code(name: str):
     return code, code[:2]
 
 
-def build_plan(files, include_divider: bool = False, start_num: int = 1):
+def _div_mode(v) -> str:
+    if v is True:  return "one"          # 구버전 웹이 보내는 bool
+    if v is False or v is None: return "none"
+    return v if v in ("none", "one", "two") else "none"
+
+
+def build_plan(files, include_divider=False, start_num: int = 1):
+    """include_divider: "none" | "one" | "two"  (하위호환으로 bool도 받는다)
+         none — 간지 없음
+         one  — 간지 1장만 (뒷면 공백 없음) → 뒷면 몫으로 번호를 하나 건너뛴다
+         two  — 간지 2장 (뒷면 공백까지 물리 페이지로 존재) → 결번 불필요
+
+       빈 쪽 유무를 문단 수로 추정하던 것을 사용자 선택으로 바꿨다(2026-07-20).
+       한 보고서는 한 관행으로 작성되므로 추정보다 명시가 정확하다."""
     """파일 목록 → 처리 계획. 한컴 없이도 계산 가능한 부분(장 경계·제외 여부)만 만든다.
 
     files: [{"name":…, "path":…, "end_page":int|None, "phys_pages":int|None,
@@ -75,7 +88,8 @@ def build_plan(files, include_divider: bool = False, start_num: int = 1):
             "chapter": chapter,
             "is_chapter_head": bool(is_head and not skip),
             "skip": skip,
-            "divider": bool(include_divider and is_head and not skip),
+            "divider": bool(_div_mode(include_divider) != "none" and is_head and not skip),
+            "divider_mode": _div_mode(include_divider),
         })
         if chapter is not None:
             prev_chapter = chapter
@@ -114,8 +128,9 @@ def assign_numbers(plan, start_num: int = 1):
         # (2026-07-20 사용자 지적).
         blanks = set(f.get("blank_pages") or [])
 
-        # 간지 뒷면: 이미 물리 빈 페이지(2면)가 있으면 결번을 넣지 않는다
-        div_skip = 1 if (f.get("divider") and 2 not in blanks) else 0
+        # 간지 뒷면: "간지 2장"이면 공백이 이미 물리 페이지로 있으므로 결번 불필요.
+        # "간지 1장"이면 뒷면 몫으로 번호를 하나 건너뛴다.
+        div_skip = 1 if (f.get("divider") and f.get("divider_mode") == "one") else 0
         pages, marks = [], []
         n = cur
         for phys in range(1, total + 1):

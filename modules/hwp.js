@@ -43,13 +43,18 @@ export function init(section, { bridge, toast }, kind) {
           <label for="hw-start">시작 쪽번호 <span class="req">*</span></label>
           <input type="number" id="hw-start" value="1" min="1" step="1">
         </div>
-        <label style="font-size:var(--text-sm);display:flex;align-items:center;gap:6px;height:40px">
-          <input type="checkbox" id="hw-divider"> 장별 간지 포함
-        </label>
+        <div class="field">
+          <label for="hw-divider">장별 간지</label>
+          <select id="hw-divider">
+            <option value="none">없음 — 간지를 별도 인쇄</option>
+            <option value="one">간지 1장 — 뒷면 공백 없음</option>
+            <option value="two">간지 2장 — 뒷면 공백 페이지 포함</option>
+          </select>
+        </div>
       </div>
-      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>은 간지를 1면으로 보고 <b>2번을 결번</b> 처리해 본문이 3면(홀수)에서 시작하게 합니다.
-        빈 페이지를 만들지 않고 쪽번호로만 제어하므로 <b>문서 구조는 바뀌지 않습니다</b> — 이미 그렇게 작성된 문서는 변경 없이 유지됩니다.
-        간지를 별도 인쇄하신다면 체크하지 마세요.</p>` : ""}
+      <p class="help" style="margin-top:-8px">각 장 <b>첫 파일</b>의 앞머리를 어떻게 세는지 지정합니다. <b>간지 1장</b>이면 뒷면 몫으로 번호를 하나 건너뛰어
+        본문이 홀수에서 시작하고, <b>간지 2장</b>이면 공백이 이미 페이지로 있으므로 그대로 셉니다.
+        어느 쪽이든 <b>빈 페이지를 만들지 않으며 문서 구조는 바뀌지 않습니다</b>.</p>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
         <label>PDF 저장 폴더 (비우면 원본 옆에 저장)</label>
@@ -162,7 +167,7 @@ export function init(section, { bridge, toast }, kind) {
       $("#hw-tblwrap").classList.remove("active");
       $("#hw-warn").style.display = "none";
       $("#hw-run").disabled = true;
-      $("#hw-divider").checked = false;
+      $("#hw-divider").value = "none";
     }
   });
 
@@ -266,7 +271,7 @@ export function init(section, { bridge, toast }, kind) {
       ].filter(Boolean).join(" ") || (r.hide_pages?.length ? `${r.hide_pages.join(",")}면` : "");
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
-           r.div_skip ? "간지 결번" : "",
+           r.divider ? (r.div_skip ? "간지 1장(결번)" : "간지 2장") : "",
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
            r.blank_pages?.length ? `빈쪽 ${r.blank_pages.join(",")}` : "",
            (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
@@ -304,7 +309,7 @@ export function init(section, { bridge, toast }, kind) {
           method: "POST",
           body: { type: "pagenum_scan", folder: dir,
                   start_num: parseInt($("#hw-start").value, 10) || 1,
-                  divider: $("#hw-divider").checked },
+                  divider: $("#hw-divider").value },
         });
         const done = await bridge.pollJob(job.job_id, {
           onLog: (l) => log(l),

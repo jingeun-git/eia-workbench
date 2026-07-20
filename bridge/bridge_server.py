@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.0.0"
+BRIDGE_VERSION = "3.1.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -383,7 +383,7 @@ def run_pagenum_scan(job, params):
         progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
     )
     plan = hp.assign_numbers(
-        hp.build_plan(files, include_divider=bool(params.get("divider"))),
+        hp.build_plan(files, include_divider=params.get("divider", "none")),
         start_num=int(params.get("start_num", 1)),
     )
     # UI 표에 실을 요약(무거운 pages 배열은 제외)
