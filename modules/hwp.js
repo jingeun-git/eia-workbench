@@ -47,7 +47,8 @@ export function init(section, { bridge, toast }, kind) {
           <input type="checkbox" id="hw-divider"> 장별 간지 포함
         </label>
       </div>
-      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>의 앞 2면(간지+공백)을 감추기 처리합니다.
+      <p class="help" style="margin-top:-8px">간지 포함 시 각 장 <b>첫 파일</b>은 간지를 1면으로 보고 <b>2번을 결번</b> 처리해 본문이 3면(홀수)에서 시작하게 합니다
+        — 빈 페이지를 물리적으로 넣지 않고 쪽번호로 제어하므로, 이미 그렇게 작성된 문서는 변경 없이 그대로 유지됩니다.
         간지를 별도 인쇄하신다면 체크하지 마세요.</p>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
@@ -266,7 +267,7 @@ export function init(section, { bridge, toast }, kind) {
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
            r.pad ? "공란 +1" : "",
-           r.divider ? "간지 감추기" : "",
+           r.div_skip ? "간지(2번 결번)" : "",
            (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `

@@ -105,9 +105,18 @@ def assign_numbers(plan, start_num: int = 1):
 
         total = f.get("phys_pages") or 0
         a3set = set(f.get("a3_pages") or [])
+
+        # 간지 모드: 간지 뒷면(공백)은 **물리 페이지를 만들지 않고 번호만 건너뛴다**
+        # (사용자 확정 규칙 — 공백면은 번호만 건너뜀).
+        #   간지 = 1면,  2번은 결번,  본문은 3부터
+        # 원호리 0100이 정확히 이 방식으로 작성돼 있다: 물리 6쪽 / 인쇄 1,3,4,5,6,7.
+        # 물리 삽입과 번호 제어는 결과가 같으므로 이미 이렇게 된 문서는 정상이다.
+        div_skip = 1 if f.get("divider") else 0
         pages, marks = [], []
         n = cur
         for phys in range(1, total + 1):
+            if div_skip and phys == 2:
+                n += 1                       # 간지 뒷면 몫으로 번호 하나를 비운다
             is_a3 = phys in a3set
             # R3b②: A3가 짝수 자리에 오면 홀수로 밀어낸다
             if is_a3 and n % 2 == 0:
@@ -138,12 +147,13 @@ def assign_numbers(plan, start_num: int = 1):
         if f.get("divider"):
             expect |= {1, 2}
         if pad:
-            expect.add((f.get("phys_pages") or 0) + 1)
+            expect.add(total + 1)
         stray = [h for h in (f.get("hide_pages") or []) if h and h not in expect]
 
         out.append({**f, "start": (pages[0][1] if pages else cur),
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
-                    "expect_hide": sorted(expect), "stray_hide": stray})
+                    "expect_hide": sorted(expect), "stray_hide": stray,
+                    "div_skip": div_skip})
         cur = end + 1
     return out
 
