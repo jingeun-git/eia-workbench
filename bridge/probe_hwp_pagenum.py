@@ -99,6 +99,29 @@ def probe_file(hwp, path: Path):
         log(f"  A-2. 구역 {len(sects)}개 — A3 {a3}개 / A4 {len(sects) - a3}개")
         for i, (k, w, h) in enumerate(sects[:12], 1):
             log(f"        구역{i}: {k} ({w}×{h}mm)")
+
+        # A3 "페이지 수" — 구역 수가 아니라 실제 쪽 수를 세려면 페이지를 순회해야 한다
+        # (기존 hwpPageNum2.0.print_A3_page2 로직). 사용자 요구 "A3 장수"가 이 값이다.
+        if a3 and total_pages:
+            try:
+                hwp.MovePos(2)
+                pi = hwp.KeyIndicator()
+                a3_pages, seen_pages = [], 0
+                while seen_pages <= total_pages + 2:
+                    seen_pages += 1
+                    sec_idx = pi[2] - 1
+                    if 0 <= sec_idx < len(sects) and sects[sec_idx][0] == "A3":
+                        a3_pages.append(pi[3])
+                    if pi[3] >= total_pages:
+                        break
+                    hwp.HAction.Run("MovePageDown")
+                    nxt = hwp.KeyIndicator()
+                    if nxt[3] == pi[3]:
+                        break
+                    pi = nxt
+                log(f"  A-3. A3 페이지: {len(a3_pages)}쪽 {a3_pages[:20]}")
+            except Exception as e:
+                log(f"  A-3. ✗ A3 페이지 순회 실패: {e}")
     except Exception as e:
         log(f"  A-2. ✗ 구역 읽기 실패: {e}")
 
@@ -124,8 +147,11 @@ def probe_file(hwp, path: Path):
                 attrs = ""
                 try:
                     st = ctrl.Properties
-                    attrs = " | ".join(str(st.Item(k)) for k in ("NumType", "NewNumber")
-                                       if _safe_has(st, k))
+                    probe_keys = ("NumType", "NewNumber", "HideHeader", "HideFooter",
+                                  "HidePageNum", "HideBorder", "HideFill", "HideMasterPage",
+                                  "SideType", "ApplyTo", "ApplyClass")
+                    got = [f"{k}={st.Item(k)}" for k in probe_keys if _safe_has(st, k)]
+                    attrs = " | ".join(got)
                 except Exception:
                     pass
                 details.append(f"      - {cid} @ {where} {('[' + attrs + ']') if attrs else ''}")
@@ -182,6 +208,95 @@ def probe_file(hwp, path: Path):
         pass
 
 
+def write_test(hwp, src: Path):
+    """쓰기 가능 여부 검증 — **원본이 아닌 사본**에서만 수행한다.
+    규칙 구현에 필요한 3가지가 실제로 먹는지 확인: 공란 삽입·감추기·새 쪽번호."""
+    import tempfile, shutil
+    log(f"\n{'=' * 66}")
+    log("■ 쓰기 검증 (사본에서 수행 — 원본 안전)")
+    log(f"{'=' * 66}")
+
+    tmpdir = Path(tempfile.gettempdir()) / "eiaw_probe"
+    tmpdir.mkdir(exist_ok=True)
+    dst = tmpdir / ("WRITETEST_" + src.name)
+    try:
+        shutil.copy2(src, dst)
+    except Exception as e:
+        log(f"  ✗ 사본 생성 실패: {e}")
+        return
+    log(f"  사본: {dst}")
+
+    try:
+        hwp.Open(str(dst), "HWP", "forceopen:true")
+    except Exception as e:
+        log(f"  ✗ 사본 열기 실패: {e}")
+        return
+
+    hwp.MovePos(3)
+    before = int(hwp.KeyIndicator()[3])
+    log(f"  변경 전 총쪽수: {before}쪽")
+
+    # (1) 공란 페이지 삽입 — 장 전환 시 짝수 맞춤에 필요
+    try:
+        hwp.MovePos(3)
+        hwp.HAction.Run("BreakPage")
+        hwp.MovePos(3)
+        after = int(hwp.KeyIndicator()[3])
+        log(f"  1) 공란 페이지 삽입(BreakPage): {'✓ 가능' if after > before else '✗ 쪽수 변화 없음'} "
+            f"({before}→{after}쪽)")
+    except Exception as e:
+        log(f"  1) ✗ 공란 삽입 실패: {e}")
+
+    # (2) 감추기 — 머리말·꼬리말·쪽번호 숨김
+    try:
+        hwp.MovePos(3)
+        act = hwp.CreateAction("PageHiding")
+        st = act.CreateSet()
+        act.GetDefault(st)
+        applied = []
+        for k in ("HideHeader", "HideFooter", "HidePageNum"):
+            if _safe_has(st, k):
+                st.SetItem(k, 1)
+                applied.append(k)
+        ok = act.Execute(st)
+        log(f"  2) 감추기(PageHiding {','.join(applied) or '항목없음'}): "
+            f"{'✓ Execute 성공' if ok else '✗ Execute 반환 False'}")
+    except Exception as e:
+        log(f"  2) ✗ 감추기 실패: {e}")
+
+    # (3) 새 쪽번호 — 홀수 강제에 필요
+    try:
+        hwp.MovePos(2)
+        act = hwp.CreateAction("NewNumber")
+        st = act.CreateSet()
+        act.GetDefault(st)
+        st.SetItem("NumType", hwp.AutoNumType("Page"))
+        st.SetItem("NewNumber", 7)
+        ok = act.Execute(st)
+        log(f"  3) 새 쪽번호 지정(NewNumber=7): {'✓ Execute 성공' if ok else '✗ Execute 반환 False'}")
+    except Exception as e:
+        log(f"  3) ✗ 새 쪽번호 실패: {e}")
+
+    # 저장 후 재열기로 실제 반영 확인
+    try:
+        hwp.Save()
+        hwp.XHwpDocuments.Item(0).Close(isDirty=False)
+        hwp.Open(str(dst), "HWP", "forceopen:true")
+        ctrls = {}
+        c = hwp.HeadCtrl
+        while c is not None:
+            ctrls[c.CtrlID] = ctrls.get(c.CtrlID, 0) + 1
+            c = c.Next
+        hwp.MovePos(3)
+        final = int(hwp.KeyIndicator()[3])
+        log(f"  4) 저장·재열기 검증: 총 {final}쪽, "
+            f"nwno={ctrls.get('nwno', 0)}개 pghd={ctrls.get('pghd', 0)}개")
+        log(f"     → 사본을 직접 열어 확인해보세요: {dst}")
+        hwp.XHwpDocuments.Item(0).Close(isDirty=False)
+    except Exception as e:
+        log(f"  4) ✗ 저장·재검증 실패: {e}")
+
+
 def _safe_has(pset, key) -> bool:
     try:
         pset.Item(key)
@@ -236,11 +351,26 @@ def _run(target: Path, max_files: int = 5):
     except Exception as e:
         raise RuntimeError(f"한컴 실행 실패: {e} — 한컴오피스 설치 필요")
 
-    # 파일이 많으면 앞 N개만 — 검증 목적이라 전수는 불필요
-    for p in files[:max_files]:
+    # 샘플링 — hwpx가 있으면 **반드시 포함**한다(포맷 지원 여부가 핵심 미지수).
+    hwpx = [p for p in files if p.suffix.lower() == ".hwpx"]
+    hwps = [p for p in files if p.suffix.lower() == ".hwp"]
+    picked = (hwpx[:2] + hwps[:max(0, max_files - len(hwpx[:2]))])[:max_files]
+    if hwpx:
+        log(f"  (hwpx {len(hwpx)}개 발견 — 우선 검사)")
+    else:
+        log("  ⚠ 이 폴더에 hwpx가 없습니다 — hwpx 지원 여부는 미검증으로 남습니다")
+
+    for p in picked:
         probe_file(hwp, p)
-    if len(files) > max_files:
-        log(f"\n(파일 {len(files)}개 중 앞 {max_files}개만 검증 — 구조 파악에 충분)")
+
+    # 쓰기 검증 — 사본에서, 첫 파일 하나로만
+    if picked:
+        try:
+            write_test(hwp, picked[0])
+        except Exception as e:
+            log(f"\n■ 쓰기 검증 ✗ 예외: {e}")
+    if len(files) > len(picked):
+        log(f"\n(파일 {len(files)}개 중 {len(picked)}개만 검증 — 구조 파악에 충분)")
 
     try:
         hwp.Quit()
