@@ -267,7 +267,9 @@ export function init(section, { bridge, toast }, kind) {
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
            r.pad ? "공란 +1" : "",
-           r.div_skip ? "간지(2번 결번)" : "",
+           r.div_skip ? "간지 결번" : "",
+           r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
+           r.blank_pages?.length ? `빈쪽 ${r.blank_pages.join(",")}` : "",
            (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `

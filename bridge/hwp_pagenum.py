@@ -106,12 +106,16 @@ def assign_numbers(plan, start_num: int = 1):
         total = f.get("phys_pages") or 0
         a3set = set(f.get("a3_pages") or [])
 
-        # 간지 모드: 간지 뒷면(공백)은 **물리 페이지를 만들지 않고 번호만 건너뛴다**
-        # (사용자 확정 규칙 — 공백면은 번호만 건너뜀).
-        #   간지 = 1면,  2번은 결번,  본문은 3부터
-        # 원호리 0100이 정확히 이 방식으로 작성돼 있다: 물리 6쪽 / 인쇄 1,3,4,5,6,7.
-        # 물리 삽입과 번호 제어는 결과가 같으므로 이미 이렇게 된 문서는 정상이다.
-        div_skip = 1 if f.get("divider") else 0
+        # ── 공백면은 두 가지 방식으로 표현된다 (인쇄 결과는 동일) ──────────
+        #   ⓐ 물리 빈 페이지를 넣는다        → 그 페이지가 번호를 가져간다
+        #   ⓑ 페이지 없이 번호만 건너뛴다     → 결번이 생긴다
+        # 작성자가 어느 쪽을 썼는지는 문서마다 다르므로 **가정하지 않고 스캔 결과로
+        # 판별한다.** 규약을 가정했다가 시나리오 2·3을 못 맞춘 사례가 있다
+        # (2026-07-20 사용자 지적).
+        blanks = set(f.get("blank_pages") or [])
+
+        # 간지 뒷면: 이미 물리 빈 페이지(2면)가 있으면 결번을 넣지 않는다
+        div_skip = 1 if (f.get("divider") and 2 not in blanks) else 0
         pages, marks = [], []
         n = cur
         for phys in range(1, total + 1):
@@ -125,7 +129,13 @@ def assign_numbers(plan, start_num: int = 1):
             if phys == 1 or (pages and n != pages[-1][1] + 1):
                 marks.append((phys, n))
             pages.append((phys, n, is_a3))
-            n += 2 if is_a3 else 1      # R3: A3는 번호 2 소비
+            # R3: A3는 양면 인쇄에서 뒷면까지 차지하므로 번호를 2개 소비한다.
+            # 단 작성자가 A3 뒤에 물리 빈 페이지를 이미 넣어뒀다면 그 페이지가
+            # 번호를 가져가므로, 여기서 2를 소비하면 이중 계산이 된다.
+            if is_a3:
+                n += 1 if (phys + 1) in blanks else 2
+            else:
+                n += 1
 
         end = (pages[-1][1] if pages else cur - 1)
         # A3로 끝나면 그 뒷면(짝수)까지 차지한 것으로 본다 — 다음은 홀수에서 시작
@@ -188,16 +198,42 @@ def _end_page(hwp) -> int:
     return int(hwp.KeyIndicator()[_KI_PRNPAGE])
 
 
-def _start_page(hwp) -> int | None:
-    """1쪽에 실제로 찍히는 인쇄 쪽번호(현재 상태). _end_page와 같은 인덱스를 쓴다."""
+def _page_map(hwp, total: int, log=lambda *_: None):
+    """문서를 한 번만 훑어 **쪽마다 실제로 찍히는 인쇄 쪽번호와 문단 위치**를 읽는다.
+
+    이 한 장의 지도로 문서가 어떤 방식으로 작성됐는지가 전부 드러난다:
+      · 번호가 건너뛴 자리(결번) → 작성자가 '번호 제어'로 공백면을 표현한 것
+      · 번호가 연속인데 물리 쪽이 있는 자리 → 실제 빈 페이지를 넣은 것
+    두 방식은 인쇄 결과가 같으므로, 어느 쪽이든 이미 규칙을 만족하면 건드리지 않는다.
+
+    반환: [{"phys":1, "num":1, "para":0, "blank":False}, …]
+    ※ 쪽마다 처음부터 이동하면 O(n²)이라 211쪽짜리에서 멈춘다 — 순차 1회 통과.
+    """
+    out = []
     try:
-        _goto_page(hwp, 1)
-        return int(hwp.KeyIndicator()[_KI_PRNPAGE])
-    except Exception:
-        return None
+        hwp.MovePos(2)
+        for phys in range(1, (total or 0) + 1):
+            num = para = None
+            try:
+                num = int(hwp.KeyIndicator()[_KI_PRNPAGE])
+                para = int(hwp.GetPos()[1])
+            except Exception as e:
+                log(f"    ⚠ {phys}쪽 위치 읽기 실패: {type(e).__name__} {e}")
+            out.append({"phys": phys, "num": num, "para": para})
+            if phys < (total or 0):
+                hwp.HAction.Run("MovePageDown")
+    except Exception as e:
+        log(f"    ⚠ 쪽 지도 작성 중단: {type(e).__name__} {e}")
+
+    # 빈 쪽 추정: 문단이 1개 이하로만 걸친 쪽 (간지 뒷면·A3 사이 공백 판정용)
+    for i, r in enumerate(out):
+        nxt = out[i + 1]["para"] if i + 1 < len(out) else None
+        r["blank"] = (r["para"] is not None and nxt is not None
+                      and nxt - r["para"] <= 1)
+    return out
 
 
-def _hidden_pages(hwp):
+def _hidden_pages(hwp, log=lambda *_: None):
     """감추기(pghd)가 걸린 물리 쪽 목록.
 
     사람이 손으로 넣은 감추기는 엉뚱한 쪽에 있을 수 있으므로(2026-07-20 사용자 지적)
@@ -209,8 +245,9 @@ def _hidden_pages(hwp):
             try:
                 hwp.SetPosBySet(c.GetAnchorPos(0))
                 pages.append(int(hwp.KeyIndicator()[_KI_PRNPAGE]))
-            except Exception:
-                pages.append(0)          # 위치 특정 실패 — 존재만 보고
+            except Exception as e:
+                log(f"    ⚠ 감추기 위치 특정 실패: {type(e).__name__} {e}")
+                pages.append(0)          # 존재만 보고
         c = c.Next
     return sorted(set(pages))
 
@@ -278,13 +315,24 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
             end = _end_page(hwp)
             phys = _phys_pages(hwp)
             a3 = _a3_pages(hwp, phys or 0)
-            start = _start_page(hwp)
-            hides = _hidden_pages(hwp)
+            pmap = _page_map(hwp, phys or 0, log)
+            hides = _hidden_pages(hwp, log)
+            nums = [r["num"] for r in pmap if r["num"] is not None]
+            start = nums[0] if nums else None
+            # 결번 = 번호는 소비했으나 물리 쪽이 없는 자리
+            #   (작성자가 '빈 페이지 대신 번호 제어'로 공백면을 표현한 흔적)
+            gaps = [pmap[i + 1]["num"] for i in range(len(pmap) - 1)
+                    if pmap[i]["num"] is not None and pmap[i + 1]["num"] is not None
+                    and pmap[i + 1]["num"] != pmap[i]["num"] + 1]
+            blanks = [r["phys"] for r in pmap if r.get("blank")]
             log(f"  {p.name} — 현재 쪽번호 {start}~{end} / 물리 {phys}쪽"
                 + (f" / A3 {len(a3)}쪽 {a3}" if a3 else "")
+                + (f" / 결번 {len(gaps)}곳" if gaps else "")
+                + (f" / 빈쪽 추정 {blanks}" if blanks else "")
                 + (f" / 기존 감추기 {hides}" if hides else ""))
             out.append({"name": p.name, "path": str(p), "end_page": end,
                         "start_page": start, "hide_pages": hides,
+                        "gap_count": len(gaps), "blank_pages": blanks,
                         "phys_pages": phys, "a3_pages": a3})
             try:
                 hwp.XHwpDocuments.Item(0).Close(isDirty=False)
