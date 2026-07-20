@@ -23,17 +23,16 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const inited = new Set();
 
-/* ── 테마 ─────────────────────────────────────────────────────────── */
-function applyTheme(mode) {              // mode: light | dark | null(시스템)
-  if (mode) document.documentElement.dataset.theme = mode;
-  else delete document.documentElement.dataset.theme;
+/* ── 테마 ───────────────────────────────────────────────────────────
+   라이트가 기본이다(2026-07-20 사용자 확정). OS 설정을 자동 추종하지 않고,
+   사용자가 토글로 고른 값만 기억한다. */
+function applyTheme(mode) {              // "light" | "dark"
+  document.documentElement.dataset.theme = mode === "dark" ? "dark" : "light";
 }
 function initTheme() {
-  applyTheme(localStorage.getItem("eiaw.theme") || null);
+  applyTheme(localStorage.getItem("eiaw.theme") || "light");
   $("#theme-toggle").addEventListener("click", () => {
-    const cur = document.documentElement.dataset.theme ||
-      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    const next = cur === "dark" ? "light" : "dark";
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     localStorage.setItem("eiaw.theme", next);
     applyTheme(next);
   });

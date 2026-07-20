@@ -2,7 +2,8 @@
    EIA Workbench 디자인 토큰 (SYS-29 · 3단계)
    3계층 구조: Primitive(원시값) → Semantic(용도) → Component(부품)
    - 컴포넌트 CSS는 Semantic/Component 계층만 참조한다. Primitive 직접 참조 금지.
-   - 라이트/다크: prefers-color-scheme 기본 + [data-theme] 수동 오버라이드.
+   - 라이트가 기본. 다크는 사용자가 토글로 명시 선택할 때만([data-theme="dark"]) 적용된다
+     (2026-07-20 사용자 확정 — OS 설정 자동 추종 안 함).
    - 폰트: Pretendard 자체 호스팅(vendor/) — CDN 금지(사내망 대비). 미로드 시
      Malgun Gothic 폴백.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -30,30 +31,20 @@
   --slate-800: #1E293B;
   --slate-900: #0F172A;
 
-  /* 다크 전용 심층 배경 (PoC 페이지 팔레트 계승) */
-  --navy-850: #18202F;
-  --navy-900: #0F1420;
-  --navy-950: #0B0F18;
-
-  /* blue (액션) */
-  --blue-500: #3B82F6;
-  --blue-600: #2563EB;
-  --blue-700: #1D4ED8;
-  --blue-300: #93C5FD;
-  --blue-light: #5B8DEF;   /* 다크 모드 액션 (채도 완화) */
-
   /* 상태색 — 라이트/다크 톤 분리 (다크는 채도·명도 완화 변형, 반전 아님) */
   --green-600: #16A34A;  --green-300: #34D399;
   --amber-600: #D97706;  --amber-300: #FBBF24;
   --red-600:   #DC2626;  --red-300:   #F87171;
 
-  /* 간격 — 4/8 리듬, 고밀도(density 8) 스케일 */
+  /* 간격 — 4/8 리듬. 2026-07-20 재정의: 고밀도 대시보드 → 여백 있는 문서형
+     (레퍼런스 sunjin.co.kr — 흰 배경·넉넉한 여백의 기업 톤). 상위 단계를 넓혔다. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
+  --space-4: 20px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --space-7: 72px;
 
   /* 타이포 스케일 */
   --text-xs:   12px;
@@ -78,10 +69,11 @@
   --radius-lg: 12px;
   --radius-full: 999px;
 
-  /* 그림자 (elevation 스케일 — 임의값 금지) */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
-  --shadow-md: 0 2px 8px rgba(15, 23, 42, .10);
-  --shadow-lg: 0 8px 24px rgba(15, 23, 42, .16);
+  /* 그림자 — 문서형 톤에 맞춰 최소화. 카드는 그림자 대신 얇은 경계선으로 구분한다
+     (그림자를 겹겹이 쓰는 대시보드 인상이 'AI티'의 큰 축이었다 — 2026-07-20 사용자 지적) */
+  --shadow-sm: none;
+  --shadow-md: 0 1px 3px rgba(26, 29, 33, .07);
+  --shadow-lg: 0 8px 28px rgba(26, 29, 33, .12);
 
   /* z-index 스케일 */
   --z-base: 0;
@@ -90,29 +82,33 @@
   --z-modal: 100;
   --z-toast: 1000;
 
-  /* 모션 — 절제(motion 2). 의미 전달용만, 장식 금지 */
+  /* 모션 — "과하지 않게 있으면 좋겠다"(2026-07-20). 의미 전달용만, 장식 금지.
+     진입(패널 전환)·상태 변화에만 쓰고 반복 요소에는 쓰지 않는다. */
   --motion-fast: 120ms;
-  --motion-base: 200ms;
+  --motion-base: 220ms;
+  --motion-enter: 320ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
-/* ── 2. Semantic — 라이트 (기본) ──────────────────────────────────────── */
+/* ── 2. Semantic — 라이트 (기본) ──────────────────────────────────────
+   레퍼런스 톤: 흰 배경 위 얇은 회색 경계, 채도 낮은 강조, 그림자 최소.
+   대시보드형 회색 배경(slate-50)을 버리고 문서형 순백 배경으로 전환한다. */
 :root {
-  --bg: var(--slate-50);
+  --bg: #FFFFFF;
   --surface: #FFFFFF;
-  --surface-2: var(--slate-100);
-  --border: var(--slate-200);
-  --border-strong: var(--slate-300);
+  --surface-2: #F7F8FA;
+  --border: #E8EAED;
+  --border-strong: #D2D6DC;
 
-  --text: var(--slate-900);
-  --text-muted: var(--slate-600);   /* 본문 보조 — 4.5:1 이상 유지 */
-  --text-dim: var(--slate-500);     /* 캡션 전용 — 본문 사용 금지 */
+  --text: #1A1D21;                  /* 순검정 아님 — 장시간 열람 피로 완화 */
+  --text-muted: #5A6270;            /* 본문 보조 — 4.5:1 이상 유지 */
+  --text-dim: #6E7684;              /* 캡션·도움말 — 4.58:1 실측(WCAG AA 충족) */
   --text-invert: #FFFFFF;
 
-  --accent: var(--blue-600);
-  --accent-hover: var(--blue-700);
-  --accent-subtle: #EFF6FF;
+  --accent: #1B4C8C;                /* 채도 낮은 남색 — 기업/공공 문서 톤 */
+  --accent-hover: #14396A;
+  --accent-subtle: #F0F4FA;
 
   --ok: var(--green-600);
   --warn: var(--amber-600);
@@ -125,59 +121,29 @@
   --scrim: rgba(15, 23, 42, .5);
 }
 
-/* ── 2. Semantic — 다크 ───────────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: var(--navy-900);
-    --surface: var(--navy-850);
-    --surface-2: #1F2937;
-    --border: #2B3648;
-    --border-strong: #3B4A63;
-
-    --text: #E8EDF5;
-    --text-muted: #94A3B8;
-    --text-dim: #5B6B83;
-    --text-invert: var(--slate-900);
-
-    --accent: var(--blue-light);
-    --accent-hover: var(--blue-300);
-    --accent-subtle: rgba(91, 141, 239, .14);
-
-    --ok: var(--green-300);
-    --warn: var(--amber-300);
-    --fail: var(--red-300);
-    --ok-subtle:   rgba(52, 211, 153, .14);
-    --warn-subtle: rgba(251, 191, 36, .14);
-    --fail-subtle: rgba(248, 113, 113, .14);
-
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
-    --shadow-md: 0 2px 8px rgba(0, 0, 0, .4);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, .5);
-    --scrim: rgba(0, 0, 0, .6);
-  }
-}
+/* ── 2. Semantic — 다크 (명시 선택 시에만) ──────────────────────────────── */
 :root[data-theme="dark"] {
-  --bg: var(--navy-900);
-  --surface: var(--navy-850);
-  --surface-2: #1F2937;
-  --border: #2B3648;
-  --border-strong: #3B4A63;
-  --text: #E8EDF5;
-  --text-muted: #94A3B8;
-  --text-dim: #5B6B83;
-  --text-invert: var(--slate-900);
-  --accent: var(--blue-light);
-  --accent-hover: var(--blue-300);
-  --accent-subtle: rgba(91, 141, 239, .14);
+  --bg: #14171C;
+  --surface: #1B1F26;
+  --surface-2: #232830;
+  --border: #2C323C;
+  --border-strong: #3D4550;
+  --text: #E9ECF0;
+  --text-muted: #A2AAB6;
+  --text-dim: #858E9C;              /* 4.99:1 실측 */
+  --text-invert: #14171C;
+  --accent: #7BA7DB;
+  --accent-hover: #9CBFE8;
+  --accent-subtle: rgba(123, 167, 219, .14);
   --ok: var(--green-300);
   --warn: var(--amber-300);
   --fail: var(--red-300);
   --ok-subtle:   rgba(52, 211, 153, .14);
   --warn-subtle: rgba(251, 191, 36, .14);
   --fail-subtle: rgba(248, 113, 113, .14);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, .4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, .5);
+  --shadow-sm: none;
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, .5);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, .6);
   --scrim: rgba(0, 0, 0, .6);
 }
 
@@ -188,7 +154,9 @@
   --btn-radius: var(--radius-md);
   --btn-primary-bg: var(--accent);
   --btn-primary-bg-hover: var(--accent-hover);
-  --btn-primary-fg: #FFFFFF;
+  /* 테마별 대비 확보: 라이트=흰 글자 on 남색(8.54:1), 다크=짙은 글자 on 밝은 파랑(7.18:1).
+     흰 글자로 고정하면 다크에서 2.50:1로 WCAG 미달이 된다(2026-07-20 실측). */
+  --btn-primary-fg: var(--text-invert);
 
   /* 탭 (상단 도구 전환) */
   --tab-height: 44px;
@@ -234,6 +202,16 @@ body {
 /* 모바일: 본문 16px 승격 (iOS 자동 줌 방지) */
 @media (max-width: 767px) {
   :root { --text-base: 16px; }
+}
+
+/* 진입 모션 — 절제된 수준으로 "있긴 있게"(2026-07-20 사용자 요구).
+   패널이 바뀔 때만 짧게 올라오며 나타난다. 반복 요소·목록 행에는 쓰지 않는다. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.tool-section.active > * {
+  animation: rise var(--motion-enter) var(--ease-out) both;
 }
 
 /* 모션 축소 존중 */
