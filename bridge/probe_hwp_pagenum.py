@@ -389,32 +389,43 @@ def write_test(hwp, src: Path):
             c = c.Next
         return n
 
-    ACTIONS = ["PageHiding", "PageHide", "HideProperty", "HideHeaderFooter", "PageNumberHide"]
+    def _count(cid):
+        n, c = 0, hwp.HeadCtrl
+        while c is not None:
+            if c.CtrlID == cid:
+                n += 1
+            c = c.Next
+        return n
+
+    # ⚠ 올바른 COM 패턴: hwp.HParameterSet.H{액션}.HSet + 파이썬 속성 직접 대입.
+    #   기존 승인 코드(hwpContent1.1.py hwp_find_action)가 이 패턴을 쓰고 있었는데
+    #   act.CreateSet()+SetItem 방식으로 잘못 호출해 파라미터가 전부 None이었다(2026-07-20).
+    #   쪽번호 키는 secd 덤프에서 발견된 **HidePageNumPos**가 유력하다.
+    HIDE_FIELDS = ["HideHeader", "HideFooter", "HideBorder", "HideFill",
+                   "HideMasterPage", "HidePageNumPos"]
     hide_ok = None
-    for name in ACTIONS:
-        try:
-            hwp.MovePos(3)
-            before_pghd = _count("pghd")
-            act = hwp.CreateAction(name)
-            st = act.CreateSet()
-            act.GetDefault(st)
-            keys = [k for k in ("HideHeader", "HideFooter", "HidePageNum", "HideBorder",
-                                "HideFill", "HideMasterPage", "HideAll", "Hide")
-                    if _safe_has(st, k)]
-            for k in keys:
-                st.SetItem(k, 1)
-            ret = act.Execute(st)
-            after_pghd = _count("pghd")
-            made = after_pghd > before_pghd
-            log(f"  2) 감추기 [{name}] 키={keys or '없음'} Execute={ret} "
-                f"pghd {before_pghd}→{after_pghd} {'✓ 컨트롤 생성됨' if made else '✗ 변화 없음'}")
-            if made:
-                hide_ok = name
-                break
-        except Exception as e:
-            log(f"  2) 감추기 [{name}] ✗ {type(e).__name__}: {str(e)[:80]}")
-    if not hide_ok:
-        log("     → 액션 경로로는 감추기 생성 실패. 아래 D-2(기존 pghd 속성 덤프) 참고")
+    try:
+        before_pghd = _count("pghd")
+        hwp.MovePos(3)
+        pset = hwp.HParameterSet.HPageHiding
+        hwp.HAction.GetDefault("PageHiding", pset.HSet)
+        got, missed = [], []
+        for f in HIDE_FIELDS:
+            try:
+                setattr(pset, f, 1)
+                got.append(f)
+            except Exception:
+                missed.append(f)
+        ret = hwp.HAction.Execute("PageHiding", pset.HSet)
+        after_pghd = _count("pghd")
+        log(f"  2) 감추기 [HParameterSet 방식] 설정={got}"
+            + (f" 실패={missed}" if missed else ""))
+        log(f"     Execute={ret}  pghd {before_pghd}→{after_pghd} "
+            f"{'✓ 컨트롤 생성됨' if after_pghd > before_pghd else '(개수 변화 없음)'}")
+        if ret:
+            hide_ok = "HParameterSet"
+    except Exception as e:
+        log(f"  2) 감추기 [HParameterSet 방식] ✗ {type(e).__name__}: {str(e)[:120]}")
 
     # (2b) 감추기 재시도 — **구역(secd) 속성 경로**
     #      D-2에서 secd만 Hide*=0으로 실값을 갖고 pghd는 전부 None이었다

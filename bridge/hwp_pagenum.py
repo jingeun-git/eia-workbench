@@ -39,7 +39,9 @@ _CODE_RE = re.compile(r"^\s*(\d{4})")
 COVER_CHAPTER = "00"          # 표지·옆표지·목차 — 번호 부여 제외(R0)
 
 # 감추기에 쓰는 구역 속성 키 (실측으로 존재 확인된 것만)
-HIDE_KEYS = ("HideHeader", "HideFooter", "HideBorder", "HideFill", "HideMasterPage")
+# 감추기 필드 — 한글 대화상자 6항목에 대응(쪽번호는 HidePageNumPos, 2026-07-20 실측 발견)
+HIDE_FIELDS = ("HideHeader", "HideFooter", "HideBorder", "HideFill",
+               "HideMasterPage", "HidePageNumPos")
 
 
 # ── 파일명 → 장/절 판별 ────────────────────────────────────────────────
@@ -282,28 +284,39 @@ def _goto_page(hwp, phys: int):
         hwp.HAction.Run("MovePageDown")
 
 
-def _hide_first_section(hwp):
-    """첫 구역을 감추기 처리 — secd 속성 쓰기(실측 확정 경로).
-    ⚠ PageHiding 액션은 무동작이라 쓰지 않는다. HidePageNum은 secd에 없다."""
-    c = hwp.HeadCtrl
-    while c is not None:
-        if c.CtrlID == "secd":
+def _hide_current_page(hwp):
+    """현재 커서 위치에 감추기를 적용한다(머리말·꼬리말·테두리·배경·바탕쪽·쪽번호).
+
+    ⚠ COM 호출 패턴 주의: `hwp.HParameterSet.H{액션}.HSet` + 파이썬 속성 대입이 정석이다
+      (기존 승인 코드 hwpContent1.1.py가 쓰던 방식). `act.CreateSet()+SetItem`으로는
+      파라미터가 초기화되지 않아 전부 None이 되고 Execute가 True를 반환해도 무동작이다
+      (2026-07-20 실사고). 쪽번호 필드명은 HidePageNumPos.
+    반환: (성공여부, 적용된 필드 목록)"""
+    try:
+        pset = hwp.HParameterSet.HPageHiding
+        hwp.HAction.GetDefault("PageHiding", pset.HSet)
+        applied = []
+        for f in HIDE_FIELDS:
             try:
-                st = c.Properties
-                applied = []
-                for k in HIDE_KEYS:
-                    try:
-                        if st.Item(k) is not None:
-                            st.SetItem(k, 1)
-                            applied.append(k)
-                    except Exception:
-                        pass
-                c.Properties = st
-                return applied
+                setattr(pset, f, 1)
+                applied.append(f)
             except Exception:
-                return []
-        c = c.Next
-    return []
+                pass
+        ok = hwp.HAction.Execute("PageHiding", pset.HSet)
+        return bool(ok), applied
+    except Exception:
+        return False, []
+
+
+def _hide_divider_pages(hwp, pages: int = 2):
+    """간지 구간(앞 N면)에 감추기를 적용한다. 각 쪽으로 이동해 개별 적용한다."""
+    done = []
+    for phys in range(1, pages + 1):
+        _goto_page(hwp, phys)
+        ok, applied = _hide_current_page(hwp)
+        if ok:
+            done.append(phys)
+    return done, (applied if done else [])
 
 
 def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
@@ -344,13 +357,11 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"    · 장 끝 짝수 맞춤 — 공란 1쪽 삽입")
 
                 if f.get("divider"):
-                    applied = _hide_first_section(hwp)
-                    if applied:
-                        log(f"    · 간지 구역 감추기: {', '.join(applied)}")
-                        log(f"      ⚠ 쪽번호 숨김은 이 경로에 없습니다 — 간지 구역의 쪽번호는 "
-                            f"한글에서 확인해주세요")
+                    done, applied = _hide_divider_pages(hwp, 2)
+                    if done:
+                        log(f"    · 간지 감추기: {len(done)}면({done}) — {', '.join(applied)}")
                     else:
-                        log(f"    ⚠ 간지 감추기 실패(구역 속성 접근 불가)")
+                        log(f"    ⚠ 간지 감추기 실패 — 한글에서 직접 처리해주세요")
 
                 if not dry_run:
                     hwp.Save()
