@@ -381,8 +381,8 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
 #   → **기본 삭제 대상에서 제외 확정**(2026-07-20 사용자: "nwno만 삭제").
 #     반복 실행 시 혼선은 nwno 초기화만으로 해소되며, 표시 서식은 문서 자산이므로 보존한다.
 #     extra_clear는 향후 검증이 끝나면 열 수 있도록 남겨둔 비활성 옵션이다.
-PAGENUM_CTRLS = ("nwno",)
-PAGENUM_CTRLS_RISKY = ("pgnp", "pgct")
+PAGENUM_CTRLS = ("nwno", "pgct")      # 새 쪽번호 · 쪽 번호 제어 — 삭제 후 재부여
+PAGENUM_CTRLS_RISKY = ("pgnp",)       # 쪽번호 표시 위치 — 서식이라 보존
 
 
 def _clear_pagenum(hwp, extra_clear: bool = False):
@@ -390,6 +390,10 @@ def _clear_pagenum(hwp, extra_clear: bool = False):
 
     ※ pghd(감추기)·head(머리말)는 쪽번호가 아니라 사용자 서식이므로 건드리지 않는다.
       간지 모드에서 감추기를 새로 부여할 때만 별도로 다룬다."""
+    # nwno(새 쪽번호)·pgct(쪽 번호 제어)를 모두 지운다.
+    # 이 도구는 여러 사람이 각자 쓴 장을 취합한 **직후**, 작성자가 수작업하기
+    # 전에 쓰는 것이다. 작성자가 넣어둔 조판부호에 의존하면 그것을 쓰지 않는
+    # 프로젝트에서 통째로 동작하지 않는다(2026-07-20 사용자 정정).
     targets = set(PAGENUM_CTRLS) | (set(PAGENUM_CTRLS_RISKY) if extra_clear else set())
     removed = {}
     c = hwp.HeadCtrl
@@ -538,23 +542,24 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"    ⚠ 쪽수 불일치: 스캔 {_planned}쪽 → 현재 {_now}쪽. "
                         f"이미 적용된 파일일 수 있습니다 — 원본 사본으로 다시 스캔하세요")
 
-                # 문서에 이미 [쪽 번호 제어](pgct)가 있는 자리에는 새 쪽번호를
-                # 넣지 않는다. pgct가 '직후 홀수'를 이미 보장하므로 중복이고,
-                # 조판부호만 늘어난다(2026-07-20 사용자 지적).
-                # 파일 첫 쪽은 예외 — 파일이 분리돼 있어 시작값은 반드시 지정해야 한다.
-                held = set(f.get("pgct_phys") or [])
-                done_marks, skipped = 0, []
+                # 기존 조판부호는 위에서 전부 지웠으므로, 필요한 자리마다
+                # **절대 번호**를 직접 부여한다. 작성자 관행에 의존하지 않는다.
                 for phys, num in f["marks"]:
-                    if phys != 1 and phys in held:
-                        skipped.append(phys)
-                        continue
                     _goto_page(hwp, phys)
                     if not _set_number(hwp, num):
                         log(f"    ⚠ {phys}면 새 쪽번호({num}) 적용 실패")
-                    done_marks += 1
+
+                # ── 자체 검증: 쓴 대로 됐는지 문서에서 다시 읽어 대조한다 ──
+                # 눈으로 확인해 알려주시기를 반복해서 기다리지 않기 위한 장치.
+                want = {ph: nm for ph, nm, _ in f["pages"]}
+                got = {r["phys"]: r["num"] for r in _page_map(hwp, f.get("phys_pages") or 0)}
+                bad = [(ph, want[ph], got.get(ph)) for ph in sorted(want)
+                       if got.get(ph) != want[ph]]
                 log(f"  {p.name}: 쪽번호 {f['start']}~{f['end']}"
-                    + (f" · 새 쪽번호 {done_marks}곳" if done_marks else "")
-                    + (f" · 쪽번호제어 존중 {skipped}면" if skipped else ""))
+                    + f" · 새 쪽번호 {len(f['marks'])}곳"
+                    + ("" if not bad else
+                       f" · ✗ 불일치 {len(bad)}쪽 → " +
+                       ", ".join(f"{ph}면 기대{w}/실제{g}" for ph, w, g in bad[:5])))
 
                 if f.get("divider"):
                     existing = _count_hidden(hwp)

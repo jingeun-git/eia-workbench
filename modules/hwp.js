@@ -89,7 +89,7 @@ export function init(section, { bridge, toast }, kind) {
       </div>
       <p class="help" id="hw-warn" style="display:none;color:var(--fail);margin-top:var(--space-3)">
         ⚠ <b>원본 문서를 직접 수정합니다.</b> 실행 전 폴더를 백업해두세요.
-        기존 새 쪽번호(nwno)는 삭제 후 재부여되며, 쪽번호 표시 서식은 보존됩니다.</p>` : ""}
+        기존 쪽번호 조판부호(<b>새 쪽번호·쪽 번호 제어</b>)를 모두 삭제한 뒤 다시 부여합니다 — 작성자가 넣어둔 설정에 의존하지 않습니다. 쪽번호 표시 서식은 보존됩니다.</p>` : ""}
       <div class="progress-wrap" id="hw-prog">
         <div class="progress-head"><span class="stage" id="hw-stage"></span><span class="count" id="hw-count"></span></div>
         <div class="progress-track"><div class="progress-fill" id="hw-fill"></div></div>
@@ -280,7 +280,7 @@ export function init(section, { bridge, toast }, kind) {
         : [r.is_chapter_head ? "장 시작" : "",
            r.divider ? (r.div_skip ? "간지 1장(결번)" : "간지 2장") : "",
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
-           r.pgct_phys?.length ? `쪽번호제어 ${r.pgct_phys.join(",")}면` : "",
+           r.pgct_phys?.length ? `기존 쪽번호제어 ${r.pgct_phys.length}곳(삭제됨)` : "",
            (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `
