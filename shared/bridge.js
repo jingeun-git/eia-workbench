@@ -34,30 +34,49 @@ export class BridgeClient extends EventTarget {
       if (!all.includes(hb)) all.unshift(hb);
       else all.sort((a, b) => (a === hb ? -1 : b === hb ? 1 : 0));
     }
-    const candidates = this.base
-      ? [this.base, ...all.filter((b) => b !== this.base)]
-      : all;
+    // 전 포트를 훑는다(첫 응답에서 멈추면 구버전을 잡는다)
+    const candidates = all;
 
+    /* 응답하는 브리지를 **전부** 모아 가장 최신 버전을 고른다.
+       구버전 창을 닫지 않은 채 새 브리지를 띄우면 새 것이 포트를 비켜 뜨고,
+       웹이 먼저 응답한 구버전에 붙어 "unknown job type" 같은 오류가 난다
+       (2026-07-20 실사고 — PoC 스텁 사건과 동형). 버전으로 판정해 자동 회피한다. */
+    const found = [];
     let stubFound = false;
     for (const base of candidates) {
       try {
         const res = await this._fetch(`${base}/ping`, { timeoutMs: 1500 });
         if (res && res.ok) {
           const info = await res.json();
-          // features가 없으면 진짜 브리지가 아니라 PoC 진단 스텁이다 —
-          // 실사고(2026-07-20): 스텁이 8765를 점유한 채 살아있어 칩은 "연결됨"인데
-          // 모든 기능 호출이 Failed to fetch로 죽는 혼동 발생. 명시 구분한다.
-          if (!info.features) { stubFound = true; continue; }
-          const changed = this.state !== "ok" || this.base !== base;
-          this.base = base;
-          this.info = info;
-          this._setState("ok", changed);
-          return;
+          if (!info.features) { stubFound = true; continue; }   // PoC 진단 스텁
+          found.push({ base, info });
         }
       } catch (_) { /* 다음 포트 */ }
     }
+
+    if (found.length) {
+      const ver = (v) => String(v || "0").split(".").map((n) => parseInt(n, 10) || 0);
+      const newer = (a, b) => {                       // a > b 이면 true
+        const [x, y] = [ver(a), ver(b)];
+        for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+        return false;
+      };
+      let best = found[0];
+      for (const f of found.slice(1))
+        if (newer(f.info.bridge_version, best.info.bridge_version)) best = f;
+
+      const changed = this.state !== "ok" || this.base !== best.base;
+      this.base = best.base;
+      this.info = best.info;
+      this.duplicates = found.length > 1
+        ? found.filter((f) => f !== best).map((f) => `${f.base} v${f.info.bridge_version}`)
+        : [];
+      this._setState("ok", changed);
+      return;
+    }
     this.base = null;
     this.info = null;
+    this.duplicates = [];
     this._setState(stubFound ? "stub" : "off");
   }
 
@@ -80,6 +99,13 @@ export class BridgeClient extends EventTarget {
       body: body != null ? JSON.stringify(body) : undefined,
     });
     if (res.status === 401) throw new Error("토큰 불일치 — 브리지를 재시작하면 자동 재등록됩니다");
+    if (res.status === 400) {
+      let d = ""; try { d = (await res.json()).error || ""; } catch (_) {}
+      if (/unknown job type/i.test(d))
+        throw new Error(`이 브리지(v${this.info?.bridge_version ?? "?"})가 지원하지 않는 기능입니다 — `
+          + `열려 있는 브리지 창을 모두 닫고 run_bridge.bat을 다시 실행하세요`);
+      throw new Error(d || "브리지 요청 오류 (400)");
+    }
     if (!res.ok) {
       // 서버가 보낸 실제 사유를 살린다 — "HTTP 500"만 보여주면 원인 추적이 불가능
       // (2026-07-20 실사고: 구버전 브리지의 명확한 오류 메시지가 숫자에 가려짐)

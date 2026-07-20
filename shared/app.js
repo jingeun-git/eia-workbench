@@ -91,6 +91,12 @@ function initBridgeChip() {
       s === "off"  ? "○ 브리지 미연결" : "◌ 확인 중…";
     if (s === "stub")
       chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 run_bridge.bat를 실행하세요";
+    // 브리지가 여러 개 떠 있으면 최신을 골랐음을 알린다(구버전 창 방치 감지)
+    if (s === "ok" && bridge.duplicates?.length) {
+      chip.textContent += " ⚠";
+      chip.title = `브리지가 ${bridge.duplicates.length + 1}개 실행 중 — 최신(v${bridge.info?.bridge_version})에 연결했습니다.\n`
+        + `구버전: ${bridge.duplicates.join(", ")}\n혼선을 막으려면 구버전 창을 닫아주세요.`;
+    }
     // 브리지 필요 탭 잠금/해제 — 숨기지 않고 이유를 남긴다(empty-nav-state)
     $$(".tab[data-needs-bridge]").forEach((b) => {
       b.disabled = s !== "ok";
