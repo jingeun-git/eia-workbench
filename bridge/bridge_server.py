@@ -41,7 +41,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.1.2"
+BRIDGE_VERSION = "3.2.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -383,7 +383,8 @@ def run_pagenum_scan(job, params):
         progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
     )
     plan = hp.assign_numbers(
-        hp.build_plan(files, include_divider=params.get("divider", "none")),
+        hp.build_plan(files, include_divider=params.get("divider", "none"),
+                      a3_back=params.get("a3_back", "skip")),
         start_num=int(params.get("start_num", 1)),
     )
     # UI 표에 실을 요약(무거운 pages 배열은 제외)
@@ -400,7 +401,8 @@ def run_pagenum_scan(job, params):
         "start_page": f.get("start_page"), "end_page": f.get("end_page"),
         "hide_pages": f.get("hide_pages") or [],
         "gap_count": f.get("gap_count", 0),
-        "blank_pages": f.get("blank_pages") or [],
+        "pgct_pages": f.get("pgct_pages") or [],
+        "pgct_phys": f.get("pgct_phys") or [],
         "div_skip": f.get("div_skip", 0),
         "expect_hide": f.get("expect_hide") or [],
         "stray_hide": f.get("stray_hide") or [],

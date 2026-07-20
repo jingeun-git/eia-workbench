@@ -62,7 +62,7 @@ def _div_mode(v) -> str:
     return v if v in ("none", "one", "two") else "none"
 
 
-def build_plan(files, include_divider=False, start_num: int = 1):
+def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = "skip"):
     """include_divider: "none" | "one" | "two"  (하위호환으로 bool도 받는다)
          none — 간지 없음
          one  — 간지 1장만 (뒷면 공백 없음) → 뒷면 몫으로 번호를 하나 건너뛴다
@@ -90,6 +90,7 @@ def build_plan(files, include_divider=False, start_num: int = 1):
             "skip": skip,
             "divider": bool(_div_mode(include_divider) != "none" and is_head and not skip),
             "divider_mode": _div_mode(include_divider),
+            "a3_back": a3_back if a3_back in ("skip", "blank") else "skip",
         })
         if chapter is not None:
             prev_chapter = chapter
@@ -126,8 +127,7 @@ def assign_numbers(plan, start_num: int = 1):
         # 작성자가 어느 쪽을 썼는지는 문서마다 다르므로 **가정하지 않고 스캔 결과로
         # 판별한다.** 규약을 가정했다가 시나리오 2·3을 못 맞춘 사례가 있다
         # (2026-07-20 사용자 지적).
-        blanks = set(f.get("blank_pages") or [])
-
+        a3_back = f.get("a3_back", "skip")   # "skip"=결번 | "blank"=물리 공백 있음
         # 간지 뒷면: "간지 2장"이면 공백이 이미 물리 페이지로 있으므로 결번 불필요.
         # "간지 1장"이면 뒷면 몫으로 번호를 하나 건너뛴다.
         div_skip = 1 if (f.get("divider") and f.get("divider_mode") == "one") else 0
@@ -148,14 +148,17 @@ def assign_numbers(plan, start_num: int = 1):
             # 단 작성자가 A3 뒤에 물리 빈 페이지를 이미 넣어뒀다면 그 페이지가
             # 번호를 가져가므로, 여기서 2를 소비하면 이중 계산이 된다.
             if is_a3:
-                n += 1 if (phys + 1) in blanks else 2
+                # A3 뒷면이 물리 공백으로 이미 있으면 그 쪽이 번호를 가져가므로 1,
+                # 결번 방식이면 뒷면 몫까지 2를 소비한다
+                n += 1 if a3_back == "blank" else 2
             else:
                 n += 1
 
         end = (pages[-1][1] if pages else cur - 1)
-        # A3로 끝나면 그 뒷면(짝수)까지 차지한 것으로 본다 — 다음은 홀수에서 시작
-        if pages and pages[-1][2]:
-            end += 1
+        # A3로 끝나면 그 뒷면은 인쇄상 비는 면이다. 그렇다고 이 파일의 끝 번호를
+        # 부풀리면 안 된다 — 31쪽으로 끝나는 문서를 32까지라고 표기하게 된다
+        # (2026-07-20 사용자 지적). 넘겨줄 다음 시작 번호에서만 한 칸 건너뛴다.
+        tail_a3 = bool(pages and pages[-1][2])
 
         # R1: 장이 홀수로 끝나도 **빈 페이지를 만들지 않는다** (2026-07-20 사용자 확정).
         #   앞장 끝이 홀수면 그 뒷면은 인쇄상 비는 면이고, 다음 장 간지가 그 다음
@@ -170,7 +173,9 @@ def assign_numbers(plan, start_num: int = 1):
         # 그 밖의 감추기는 사람이 잘못 넣었을 가능성이 있으므로 사용자에게 알린다.
         expect = set()
         if f.get("divider"):
-            expect |= {1, 2}
+            # 간지 1장이면 2면은 **본문**이다. 여기를 감추면 본문이 감춰진다
+            # (2026-07-20 사용자 지적 — 표에 1,2면으로 표기하던 것이 오류).
+            expect |= {1, 2} if f.get("divider_mode") == "two" else {1}
         if pad:
             expect.add(total + 1)
         stray = [h for h in (f.get("hide_pages") or []) if h and h not in expect]
@@ -179,7 +184,7 @@ def assign_numbers(plan, start_num: int = 1):
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
                     "expect_hide": sorted(expect), "stray_hide": stray,
                     "div_skip": div_skip})
-        cur = end + 1
+        cur = end + 1 + (1 if tail_a3 else 0)
     return out
 
 
@@ -240,11 +245,9 @@ def _page_map(hwp, total: int, log=lambda *_: None):
     except Exception as e:
         log(f"    ⚠ 쪽 지도 작성 중단: {type(e).__name__} {e}")
 
-    # 빈 쪽 추정: 문단이 1개 이하로만 걸친 쪽 (간지 뒷면·A3 사이 공백 판정용)
-    for i, r in enumerate(out):
-        nxt = out[i + 1]["para"] if i + 1 < len(out) else None
-        r["blank"] = (r["para"] is not None and nxt is not None
-                      and nxt - r["para"] <= 1)
+    # ※ 문단 수로 빈 쪽을 추정하던 로직은 폐기했다(2026-07-20). 전면 표·전면 그림이
+    #   한 문단으로 잡혀 부록에서 10곳이 오탐났다. 빈 쪽 유무는 추정하지 않고
+    #   사용자가 간지·A3 옵션으로 명시한다.
     return out
 
 
@@ -345,15 +348,17 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
             gaps = [pmap[i + 1]["num"] for i in range(len(pmap) - 1)
                     if pmap[i]["num"] is not None and pmap[i + 1]["num"] is not None
                     and pmap[i + 1]["num"] != pmap[i]["num"] + 1]
-            blanks = [r["phys"] for r in pmap if r.get("blank")]
+            pgct = _pgct_pages(hwp, log)
+            pgct_phys = sorted({_n2p[n] for n in pgct if n in _n2p})
             log(f"  {p.name} — 현재 쪽번호 {start}~{end} / 물리 {phys}쪽"
                 + (f" / A3 {len(a3)}쪽 {a3}" if a3 else "")
                 + (f" / 결번 {len(gaps)}곳" if gaps else "")
-                + (f" / 빈쪽 추정 {blanks}" if blanks else "")
+                + (f" / 쪽번호제어 인쇄 {pgct}" if pgct else "")
                 + (f" / 기존 감추기 물리 {hides}면(인쇄 {hides_num})" if hides_num else ""))
             out.append({"name": p.name, "path": str(p), "end_page": end,
                         "start_page": start, "hide_pages": hides,
-                        "gap_count": len(gaps), "blank_pages": blanks,
+                        "gap_count": len(gaps), "pgct_pages": pgct,
+                        "pgct_phys": pgct_phys,
                         "phys_pages": phys, "a3_pages": a3})
             try:
                 hwp.XHwpDocuments.Item(0).Close(isDirty=False)
@@ -401,12 +406,32 @@ def _clear_pagenum(hwp, extra_clear: bool = False):
 
 
 def _set_number(hwp, num: int):
-    act = hwp.CreateAction("NewNumber")
-    st = act.CreateSet()
-    act.GetDefault(st)
-    st.SetItem("NumType", hwp.AutoNumType("Page"))
-    st.SetItem("NewNumber", int(num))
-    return bool(act.Execute(st))
+    """새 쪽번호 부여. HParameterSet 속성 대입 방식 — CreateSet()+SetItem()은
+    값이 반영되지 않는 사례가 확인됐다(2026-07-20)."""
+    act = hwp.HAction
+    pset = hwp.HParameterSet.HAutoNum
+    act.GetDefault("NewNumber", pset.HSet)
+    pset.NumType = hwp.AutoNumType("Page")
+    pset.NewNumber = int(num)
+    return bool(act.Execute("NewNumber", pset.HSet))
+
+
+def _pgct_pages(hwp, log=lambda *_: None):
+    """[쪽 번호 제어](pgct)가 걸린 인쇄 쪽번호 목록.
+
+    이 조판부호는 '직후 홀수로 강제'라서, 본문 시작을 홀수로 만드는 일을
+    이미 문서가 하고 있다는 뜻이다. 그 자리에 새 쪽번호를 또 넣으면 안 된다.
+    """
+    pages, c = [], hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "pgct":
+            try:
+                hwp.SetPosBySet(c.GetAnchorPos(0))
+                pages.append(int(hwp.KeyIndicator()[_KI_PRNPAGE]))
+            except Exception as e:
+                log(f"    ⚠ 쪽번호제어 위치 특정 실패: {type(e).__name__} {e}")
+        c = c.Next
+    return sorted(set(pages))
 
 
 def _goto_page(hwp, phys: int):
@@ -513,11 +538,23 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"    ⚠ 쪽수 불일치: 스캔 {_planned}쪽 → 현재 {_now}쪽. "
                         f"이미 적용된 파일일 수 있습니다 — 원본 사본으로 다시 스캔하세요")
 
+                # 문서에 이미 [쪽 번호 제어](pgct)가 있는 자리에는 새 쪽번호를
+                # 넣지 않는다. pgct가 '직후 홀수'를 이미 보장하므로 중복이고,
+                # 조판부호만 늘어난다(2026-07-20 사용자 지적).
+                # 파일 첫 쪽은 예외 — 파일이 분리돼 있어 시작값은 반드시 지정해야 한다.
+                held = set(f.get("pgct_phys") or [])
+                done_marks, skipped = 0, []
                 for phys, num in f["marks"]:
+                    if phys != 1 and phys in held:
+                        skipped.append(phys)
+                        continue
                     _goto_page(hwp, phys)
-                    _set_number(hwp, num)
+                    if not _set_number(hwp, num):
+                        log(f"    ⚠ {phys}면 새 쪽번호({num}) 적용 실패")
+                    done_marks += 1
                 log(f"  {p.name}: 쪽번호 {f['start']}~{f['end']}"
-                    + (f" (NewNumber {len(f['marks'])}곳)" if len(f["marks"]) > 1 else ""))
+                    + (f" · 새 쪽번호 {done_marks}곳" if done_marks else "")
+                    + (f" · 쪽번호제어 존중 {skipped}면" if skipped else ""))
 
                 if f.get("divider"):
                     existing = _count_hidden(hwp)

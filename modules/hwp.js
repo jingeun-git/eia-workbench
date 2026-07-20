@@ -51,6 +51,13 @@ export function init(section, { bridge, toast }, kind) {
             <option value="two">간지 2장 — 뒷면 공백 페이지 포함</option>
           </select>
         </div>
+        <div class="field">
+          <label for="hw-a3back">A3 뒷면</label>
+          <select id="hw-a3back">
+            <option value="skip">결번 — 빈 페이지 없음</option>
+            <option value="blank">물리 공백 페이지 있음</option>
+          </select>
+        </div>
       </div>
       <p class="help" style="margin-top:-8px">각 장 <b>첫 파일</b>의 앞머리를 어떻게 세는지 지정합니다. <b>간지 1장</b>이면 뒷면 몫으로 번호를 하나 건너뛰어
         본문이 홀수에서 시작하고, <b>간지 2장</b>이면 공백이 이미 페이지로 있으므로 그대로 셉니다.
@@ -174,7 +181,7 @@ export function init(section, { bridge, toast }, kind) {
   /* 입력이 바뀌면 스캔 결과가 낡는다 — 적용을 막고 재스캔을 요구한다
      (낡은 계획으로 원본을 고치는 사고 방지) */
   if (kind === "pagenum") {
-    for (const sel of ["#hw-start", "#hw-divider", "#hw-dir"]) {
+    for (const sel of ["#hw-start", "#hw-divider", "#hw-a3back", "#hw-dir"]) {
       const el = $(sel);
       el?.addEventListener("change", () => {
         if (!scanned) return;
@@ -273,7 +280,7 @@ export function init(section, { bridge, toast }, kind) {
         : [r.is_chapter_head ? "장 시작" : "",
            r.divider ? (r.div_skip ? "간지 1장(결번)" : "간지 2장") : "",
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
-           r.blank_pages?.length ? `빈쪽 ${r.blank_pages.join(",")}` : "",
+           r.pgct_phys?.length ? `쪽번호제어 ${r.pgct_phys.join(",")}면` : "",
            (r.marks?.length > 1) ? `번호제어 ${r.marks.length}곳` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `
@@ -309,7 +316,8 @@ export function init(section, { bridge, toast }, kind) {
           method: "POST",
           body: { type: "pagenum_scan", folder: dir,
                   start_num: parseInt($("#hw-start").value, 10) || 1,
-                  divider: $("#hw-divider").value },
+                  divider: $("#hw-divider").value,
+                  a3_back: $("#hw-a3back").value },
         });
         const done = await bridge.pollJob(job.job_id, {
           onLog: (l) => log(l),
