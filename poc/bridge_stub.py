@@ -56,6 +56,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Vary", "Origin")
+        # 캐시 금지 — 오리진마다 ACAO 값이 달라지는 응답이라 한 번이라도 캐시되면
+        # 다른 오리진에서 낡은 ACAO가 재생돼 "CORS 차단"으로 오진된다.
+        # (2026-07-20 실제 발생: 로컬 테스트 응답이 캐시돼 githack 검사가 전부 실패,
+        #  서버 로그에도 안 남아 정책 차단으로 잘못 진단했다. Vary: Origin만으로는 부족했다.)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
         if with_pna:
             # 이 헤더가 PNA 프리플라이트의 핵심이다
             self.send_header("Access-Control-Allow-Private-Network", "true")
@@ -91,7 +97,9 @@ class Handler(BaseHTTPRequestHandler):
         with_pna = not self.path.startswith("/ping-nopna")
         self.send_response(204)
         self._cors(with_pna)
-        self.send_header("Access-Control-Max-Age", "600")
+        # PoC 단계에서는 프리플라이트 캐시도 끈다 — 재검사할 때마다 실제 요청이
+        # 서버까지 와야 로그로 판정할 수 있다. 실제 브리지에서는 값을 올린다.
+        self.send_header("Access-Control-Max-Age", "0")
         self.end_headers()
 
     # ── 본 요청 ──────────────────────────────────────────────────────────

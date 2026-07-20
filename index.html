@@ -122,8 +122,8 @@
     </div>
     <div class="test" id="t3">
       <div class="test-head"><span class="pill" data-pill>대기</span>
-        <span class="test-name">③ 명시적 로컬 지정 <code>targetAddressSpace</code></span></div>
-      <div class="test-why">Chrome의 로컬 접근 명시 옵션입니다. 미지원 브라우저에서는 건너뜁니다.</div>
+        <span class="test-name">③ 명시적 loopback 지정 <code>targetAddressSpace</code></span></div>
+      <div class="test-why">Chrome에 "127.0.0.1로 간다"고 미리 알리는 옵션입니다(<code>loopback</code>). 미지원 브라우저에서는 건너뜁니다.</div>
       <div class="test-out" data-out>—</div>
     </div>
     <div style="margin-top:18px">
@@ -175,7 +175,10 @@ async function probe(id, url, opts) {
   setOut(id, '요청 중…');
   const t0 = performance.now();
   try {
-    const res = await fetch(url, opts);
+    // 캐시 무력화 2중 장치. 오리진마다 ACAO가 달라지는 응답이라 한 번이라도
+    // 캐시되면 낡은 ACAO가 재생돼 "CORS 차단"으로 오진된다(2026-07-20 실제 발생).
+    const bust = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    const res = await fetch(bust, Object.assign({ cache: 'no-store' }, opts || {}));
     const ms = Math.round(performance.now() - t0);
     const body = await res.text();
     setPill(id, 'ok', '성공');
@@ -200,9 +203,12 @@ $('#run').addEventListener('click', async () => {
   const r1 = await probe('t1', BRIDGE + '/ping');
   const r2 = await probe('t2', BRIDGE + '/ping-nopna');
 
+  // Chrome은 loopback(127.0.0.1)과 local(사설 LAN)을 다른 주소공간으로 구분한다.
+  // 'local'로 지정하면 "target address space of `local` yet the resource is in
+  // address space `loopback`" 오류가 난다 — 127.0.0.1은 반드시 'loopback'이다.
   let r3 = null;
   try {
-    r3 = await probe('t3', BRIDGE + '/ping', { targetAddressSpace: 'local' });
+    r3 = await probe('t3', BRIDGE + '/ping', { targetAddressSpace: 'loopback' });
   } catch (_) {
     setPill('t3', '', '미지원');
     setOut('t3', '이 브라우저는 targetAddressSpace 옵션을 지원하지 않습니다.');
