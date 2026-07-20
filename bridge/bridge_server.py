@@ -7,8 +7,10 @@ EIA Workbench 로컬 브리지 (SYS-29 7단계)
   - md 고품질 변환  : convert_core.py (HWP·HWPX·OCR·듀얼엔진) — import 참조
   - EIASS 자동탐색  : eiass_doc_resolver.py — 서브프로세스(검증된 CLI 그대로)
   - HWP→PDF        : hwp2pdf_core.py — import 참조 (한컴 COM)
-  - 차례/쪽번호     : hwpContent1.1.py·hwpPageNum2.0.py — 서브프로세스(cwd=대상 폴더)
-  ※ 끼워넣기(.Egg)는 한컴 매크로라 자동화 불가 — 기능 목록에서 false로 노출
+  - 쪽번호          : hwp_pagenum.py — 같은 폴더의 자체 엔진(SYS-31, 한컴 COM)
+  ※ 차례(hwpContent)·끼워넣기(.Egg)는 2026-07-20 기능 삭제.
+    구 배포용/hwpPageNum2.1 의존은 2026-07-21 제거 — 그 exe 유무가 쪽번호 탭
+    활성화를 좌우하던 구조였다.
 
 설계 원칙 (1단계 PoC 실측 반영):
   - CORS: ACAO "*" 고정 (Origin 헤더는 경로상 변조가 실측되어 신뢰하지 않는다)
@@ -41,7 +43,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.8.1"
+BRIDGE_VERSION = "3.9.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -59,11 +61,10 @@ CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
 EIASS_DIR    = TOOLS_DIR / "EIASS"
 HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
 # 차례(hwpContent)·끼워넣기(.Egg): 2026-07-20 사용자 지시로 기능 삭제
-# ⚠ hwpPageNum2.0.py는 `import intro`를 하는데 intro.py가 저장소에 없다(2026-07-20 실측)
-#   → .py 직접 실행은 ModuleNotFoundError로 즉사한다. 동봉된 .exe는 자립형이라 그쪽을 우선한다.
-#   SYS-31에서 규칙 3종과 함께 재구현되면 이 의존 자체가 사라진다.
-PAGE_EXE     = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.1.exe"
-PAGE_SCRIPT  = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.0.py"
+# 쪽번호: SYS-31에서 hwp_pagenum.py로 전면 재구현(2026-07-21) — 구
+#   `배포용/hwpPageNum2.1`(exe·py) 의존은 제거됐다. 구 .py는 `import intro`인데
+#   intro.py가 저장소에 없어 원래 실행 불가였다.
+PAGENUM_MOD  = BRIDGE_DIR / "hwp_pagenum.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
 for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
@@ -89,7 +90,13 @@ def detect_features():
             feats["hwp2pdf"] = True
         except Exception:
             pass
-        feats["pagenum"] = PAGE_EXE.exists() or PAGE_SCRIPT.exists()
+        # 실제 동작 주체가 판정 기준이어야 한다. 예전에는 구 exe 존재를 봤는데,
+        # 그러면 그 exe를 치우는 순간 멀쩡한 기능이 비활성화된다(2026-07-21).
+        try:
+            import hwp_pagenum  # noqa
+            feats["pagenum"] = True
+        except Exception:
+            feats["pagenum"] = PAGENUM_MOD.exists()
     return feats
 
 # ── 설정·토큰 ────────────────────────────────────────────────────────────────
@@ -277,33 +284,6 @@ def run_hwp2pdf(job, params):
     if fail and not ok:
         raise RuntimeError("전건 변환 실패 — 한컴오피스 설치·한컴 PDF 프린터를 확인하세요")
 
-def run_hwptool(job, params):
-    tool = params["tool"]
-    folder = Path(params["folder"])
-    if not path_allowed(folder):
-        raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다")
-    if tool != "pagenum":
-        raise RuntimeError(f"지원하지 않는 도구: {tool}")
-    start = str(int(params.get("start_num", 1)))
-    if PAGE_EXE.exists():
-        cmd = [str(PAGE_EXE), start]          # 자립 exe (intro 번들됨)
-    elif PAGE_SCRIPT.exists():
-        cmd = ["python", str(PAGE_SCRIPT), start]
-        job_log(job, "⚠ exe가 없어 .py로 실행합니다 — intro 모듈이 없으면 실패합니다")
-    else:
-        raise RuntimeError("쪽번호 도구를 찾을 수 없습니다 (exe·py 모두 없음)")
-    job_log(job, f"[{tool}] 대상 폴더: {folder} — 폴더 내 전체 .hwp 처리")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="cp949", errors="replace",
-                            cwd=str(folder))
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            job_log(job, line)
-    proc.wait()
-    if proc.returncode != 0:
-        raise RuntimeError(f"{tool} 종료 코드 {proc.returncode}")
-
 def run_eiass_seq_dl(job, params):
     """FILE_SEQ 직접 다운로드 (SYS-32) — 웹 iframe 경로의 '조용한 누락'을 없애는 검증 가능 경로.
     브라우저는 저장 성공을 JS에 알려주지 않지만, 여기서는 응답 코드·크기·예외가 전부 남는다."""
@@ -475,7 +455,7 @@ RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
            "pagenum_scan": run_pagenum_scan, "pagenum_apply": run_pagenum_apply,
            "hwp_probe": run_hwp_probe,
            "eiass_seq_dl": run_eiass_seq_dl,
-           "hwp2pdf": run_hwp2pdf, "hwptool": run_hwptool}
+           "hwp2pdf": run_hwp2pdf}
 
 def worker():
     while True:

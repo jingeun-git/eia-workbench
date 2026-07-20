@@ -715,3 +715,64 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
             pass
     log(f"─── {'미리보기' if dry_run else '적용'} 완료: 성공 {ok} / 실패 {fail}")
     return {"ok": ok, "fail": fail}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# CLI — 워크벤치를 거치지 않고 세션·터미널에서 직접 쓰기 위한 진입점
+#   워크벤치에서 개선한 내용이 로컬 도구에도 그대로 반영되어야 한다는
+#   원칙(2026-07-21 사용자 지시)에 따라, 같은 엔진을 CLI로도 노출한다.
+#   기본은 **미리보기(dry-run)** — 원본을 수정하려면 --apply를 명시해야 한다.
+#
+#   python3 hwp_pagenum.py scan  <폴더>
+#   python3 hwp_pagenum.py apply <폴더> --divider one --a3-back skip [--hide] --apply
+# ══════════════════════════════════════════════════════════════════════
+def _cli(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="HWP 폴더 쪽번호 일괄 부여 (SYS-31)")
+    ap.add_argument("mode", choices=["scan", "apply"])
+    ap.add_argument("folder")
+    ap.add_argument("--start", type=int, default=1, help="시작 쪽번호")
+    ap.add_argument("--divider", choices=["none", "one", "two"], default="none",
+                    help="장별 간지: 없음 / 1장(뒷면 공백 없음) / 2장(뒷면 공백 포함)")
+    ap.add_argument("--a3-back", choices=["skip", "blank"], default="skip",
+                    help="A3 뒷면: 결번 / 물리 공백 페이지 있음")
+    ap.add_argument("--hide", action="store_true", help="간지·여백면 감추기")
+    ap.add_argument("--apply", action="store_true",
+                    help="실제로 원본을 수정한다(없으면 미리보기)")
+    a = ap.parse_args(argv)
+
+    log = lambda m: print(m, flush=True)
+    files = scan_folder(a.folder, log=log)
+    plan = assign_numbers(
+        build_plan(files, include_divider=a.divider, a3_back=a.a3_back,
+                   do_hide=a.hide),
+        start_num=a.start,
+    )
+
+    print(f"\n{'파일':44}{'물리':>5}{'현재':>10}{'적용후':>10}  처리")
+    for f in plan:
+        if f.get("skip"):
+            print(f"{f['name'][:42]:44}{f.get('phys_pages') or 0:>5}{'—':>10}{'번호 제외':>10}")
+            continue
+        cur = (f"{f.get('start_page')}~{f.get('end_page')}"
+               if f.get("start_page") else "—")
+        note = []
+        if f.get("hide_targets") and a.hide: note.append(f"감추기 {f['hide_targets']}")
+        if f.get("force_odd"): note.append(f"홀수강제 {f['force_odd']}")
+        print(f"{f['name'][:42]:44}{f['phys_pages']:>5}{cur:>10}"
+              f"{f['start']}~{f['end']:>4}  {' · '.join(note)}")
+
+    if a.mode == "scan":
+        print("\n(스캔만 수행 — 문서를 수정하지 않았습니다)")
+        return 0
+    if not a.apply:
+        print("\n⚠ 미리보기입니다. 실제 적용하려면 --apply 를 붙이세요. "
+              "원본을 직접 수정하므로 사본으로 먼저 시험하세요.")
+        return 0
+    r = apply_plan(plan, log=log, do_hide=a.hide)
+    return 0 if r["fail"] == 0 else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    _sys.exit(_cli())
