@@ -317,34 +317,35 @@ def _hide_section_first_page(ctrl):
 
 
 def _hide_divider_pages(hwp, log=lambda *_: None):
-    """간지 2면(간지+뒷공백)을 감춘다.
+    """간지 1면(구역 첫 쪽)을 감춘다.
 
-    1면은 구역1의 첫 쪽이라 바로 감출 수 있고, 2면은 그 자리에 구역을 나눠
-    새 구역의 첫 쪽으로 만든 뒤 감춘다(BreakSection 동작 검증 완료).
-    3면부터는 같은 구역의 두 번째 쪽 이후라 감춰지지 않는다 — 의도대로다.
+    ⚠ **BreakSection을 쓰지 않는다** — 2026-07-20 실사고: 2면을 감추려고 구역을
+      나눴더니 머리말·꼬리말이 본문 전체에서 사라졌다. 한글에서 머리말·꼬리말은
+      **구역 속성**이라, 새 구역에는 상속되지 않는다. 조판부호는 남아 있는데
+      화면에 안 나오는 증상으로 나타난다.
+      → 구역 구조는 절대 건드리지 않는다. 감출 수 있는 것은 '구역 첫 쪽'뿐이다.
+
+    2면(간지 뒷공백)은 임의 쪽 감추기가 필요한데 COM으로는 pghd 컨트롤을 만들 수
+    없다(실측 3회). 그래서 **자동 처리하지 않고 사용자에게 알린다.**
     """
-    before_pages = _end_page(hwp)
-
-    # 2면 시작에 구역 나누기 — 이미 구역 경계면 한컴이 중복 생성하지 않는다
-    _goto_page(hwp, 2)
-    try:
-        hwp.HAction.Run("BreakSection")
-    except Exception as e:
-        log(f"    ⚠ 구역 나누기 실패: {e}")
-
-    after_pages = _end_page(hwp)
-    if after_pages != before_pages:
-        log(f"    ⚠ 구역 나누기로 쪽수가 변했습니다({before_pages}→{after_pages}) — 확인 필요")
-
-    # 앞 두 구역의 첫 쪽을 감춘다
-    applied, done = [], 0
+    applied = []
     c = hwp.HeadCtrl
-    while c is not None and done < 2:
+    while c is not None:
         if c.CtrlID == "secd":
-            done += 1
-            applied += _hide_section_first_page(c)
+            applied = _hide_section_first_page(c)
+            break
         c = c.Next
-    return done, sorted(set(applied))
+    return (1 if applied else 0), applied
+
+
+def _count_hidden(hwp):
+    """문서에 이미 설정된 감추기(pghd) 개수 — 사용자가 직접 걸어둔 것을 존중하기 위해 센다."""
+    n, c = 0, hwp.HeadCtrl
+    while c is not None:
+        if c.CtrlID == "pghd":
+            n += 1
+        c = c.Next
+    return n
 
 
 def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
@@ -385,11 +386,21 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                     log(f"    · 장 끝 짝수 맞춤 — 공란 1쪽 삽입")
 
                 if f.get("divider"):
-                    done, applied = _hide_divider_pages(hwp, log)
-                    if done:
-                        log(f"    · 간지 감추기: {done}개 구역 첫 쪽 — {', '.join(applied)}")
+                    existing = _count_hidden(hwp)
+                    if existing:
+                        # 사용자가 이미 걸어둔 감추기를 존중한다 — 덮어쓰지 않는다
+                        log(f"    · 간지 감추기: 문서에 이미 설정됨({existing}개) — 건드리지 않음")
+                        done, applied = 0, []
                     else:
-                        log(f"    ⚠ 간지 감추기 실패 — 한글에서 직접 처리해주세요")
+                        done, applied = _hide_divider_pages(hwp, log)
+                    if done:
+                        log(f"    · 간지 1면 감추기: {', '.join(applied)}"
+                            + (f" (문서에 기존 감추기 {existing}개 있음)" if existing else ""))
+                    else:
+                        log(f"    ⚠ 간지 1면 감추기 실패")
+                    if not existing:
+                        log(f"    ⚠ 간지 뒷면(2면)은 자동 감추기가 불가합니다 — "
+                            f"한글에서 [쪽]→감추기로 직접 설정해주세요")
 
                 if not dry_run:
                     hwp.Save()
