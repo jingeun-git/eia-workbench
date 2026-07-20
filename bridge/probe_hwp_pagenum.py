@@ -16,8 +16,8 @@ SYS-31 1단계 — 한컴 COM 기능 검증 (읽기 전용 · 원본 수정 안 
 ⚠ 원본을 수정하지 않는다. 열기만 하고 저장 없이 닫는다.
 
 사용법 (Windows, 한컴오피스 설치 필요):
-    python probe_hwp_pagenum.py "D:\\경로\\보고서폴더"
-    python probe_hwp_pagenum.py "D:\\경로\\파일.hwp"
+    python probe_hwp_pagenum.py "D:\\경로\\보고서폴더"     (.hwp·.hwpx 모두 검사)
+    python probe_hwp_pagenum.py "D:\\경로\\파일.hwpx"
 
 결과는 화면 출력 + 같은 폴더에 probe_result.txt 저장.
 """
@@ -42,14 +42,31 @@ def log(msg=""):
 
 def probe_file(hwp, path: Path):
     log(f"\n{'─' * 66}")
-    log(f"■ {path.name}")
+    log(f"■ {path.name}   [{path.suffix.lower().lstrip('.')}]")
     log(f"{'─' * 66}")
 
-    try:
-        hwp.Open(str(path), "HWP", "forceopen:true")
-    except Exception as e:
-        log(f"  ✗ 열기 실패: {e}")
+    # 열기 — hwpx는 형식 인자가 다를 수 있어 후보를 순차 시도하고 성공한 것을 기록한다
+    # (학습데이터 추측 금지 — 어떤 인자가 통하는지 실측으로 남긴다)
+    ext = path.suffix.lower()
+    candidates = ([("HWPX", "forceopen:true"), ("HWP", "forceopen:true"), (None, None)]
+                  if ext == ".hwpx" else
+                  [("HWP", "forceopen:true"), (None, None)])
+    opened_with = None
+    for fmt, arg in candidates:
+        try:
+            if fmt is None:
+                hwp.Open(str(path))          # 형식 자동판별
+                opened_with = "자동판별"
+            else:
+                hwp.Open(str(path), fmt, arg)
+                opened_with = f'"{fmt}"'
+            break
+        except Exception as e:
+            last = e
+    if opened_with is None:
+        log(f"  ✗ 열기 실패(모든 형식 인자 시도): {last}")
         return
+    log(f"  열기 성공 — 형식 인자: {opened_with}")
 
     # ── A. 총쪽수 ────────────────────────────────────────────────────────
     try:
@@ -175,16 +192,18 @@ def main():
         sys.exit(1)
 
     target = Path(sys.argv[1])
+    EXTS = (".hwp", ".hwpx")
     if target.is_dir():
-        files = sorted(p for p in target.glob("*.hwp") if not p.name.startswith("~"))
-    elif target.suffix.lower() == ".hwp":
+        files = sorted(p for p in target.iterdir()
+                       if p.suffix.lower() in EXTS and not p.name.startswith("~"))
+    elif target.suffix.lower() in EXTS:
         files = [target]
     else:
-        print("hwp 파일 또는 폴더를 지정하세요.")
+        print("hwp/hwpx 파일 또는 폴더를 지정하세요.")
         sys.exit(1)
 
     if not files:
-        print("대상 .hwp 파일이 없습니다.")
+        print("대상 .hwp / .hwpx 파일이 없습니다.")
         sys.exit(1)
 
     log("=" * 66)
