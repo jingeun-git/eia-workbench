@@ -59,6 +59,10 @@ CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
 EIASS_DIR    = TOOLS_DIR / "EIASS"
 HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
 # 차례(hwpContent)·끼워넣기(.Egg): 2026-07-20 사용자 지시로 기능 삭제
+# ⚠ hwpPageNum2.0.py는 `import intro`를 하는데 intro.py가 저장소에 없다(2026-07-20 실측)
+#   → .py 직접 실행은 ModuleNotFoundError로 즉사한다. 동봉된 .exe는 자립형이라 그쪽을 우선한다.
+#   SYS-31에서 규칙 3종과 함께 재구현되면 이 의존 자체가 사라진다.
+PAGE_EXE     = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.1.exe"
 PAGE_SCRIPT  = TOOLS_DIR / "배포용/hwpPageNum2.1/hwpPageNum2.0.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
@@ -85,7 +89,7 @@ def detect_features():
             feats["hwp2pdf"] = True
         except Exception:
             pass
-        feats["pagenum"] = PAGE_SCRIPT.exists()
+        feats["pagenum"] = PAGE_EXE.exists() or PAGE_SCRIPT.exists()
     return feats
 
 # ── 설정·토큰 ────────────────────────────────────────────────────────────────
@@ -280,7 +284,14 @@ def run_hwptool(job, params):
         raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다")
     if tool != "pagenum":
         raise RuntimeError(f"지원하지 않는 도구: {tool}")
-    cmd = ["python", str(PAGE_SCRIPT), str(int(params.get("start_num", 1)))]
+    start = str(int(params.get("start_num", 1)))
+    if PAGE_EXE.exists():
+        cmd = [str(PAGE_EXE), start]          # 자립 exe (intro 번들됨)
+    elif PAGE_SCRIPT.exists():
+        cmd = ["python", str(PAGE_SCRIPT), start]
+        job_log(job, "⚠ exe가 없어 .py로 실행합니다 — intro 모듈이 없으면 실패합니다")
+    else:
+        raise RuntimeError("쪽번호 도구를 찾을 수 없습니다 (exe·py 모두 없음)")
     job_log(job, f"[{tool}] 대상 폴더: {folder} — 폴더 내 전체 .hwp 처리")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="cp949", errors="replace",
