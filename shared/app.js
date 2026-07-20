@@ -3,19 +3,24 @@
  */
 import { bridge } from "./bridge.js";
 
+/* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
+   Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
+   버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
+const V = "3.1.2";
+
 /* ── 도구 레지스트리 ───────────────────────────────────────────────────
    init은 첫 활성화 시 1회 lazy 호출. needsBridge 도구는 미연결 시 잠금. */
 const TOOLS = [
   { id: "parcel", label: "건축물대장", needsBridge: false,
-    load: () => import("../modules/parcel.js") },
+    load: () => import(`../modules/parcel.js?v=${V}`) },
   { id: "md",     label: "md 변환",    needsBridge: false,
-    load: () => import("../modules/md.js") },
+    load: () => import(`../modules/md.js?v=${V}`) },
   { id: "eiass",  label: "EIASS",      needsBridge: false,
-    load: () => import("../modules/eiass.js") },
+    load: () => import(`../modules/eiass.js?v=${V}`) },
   { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,
-    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
+    load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
   { id: "pagenum",label: "쪽번호",     needsBridge: true,
-    load: () => import("../modules/hwp.js").then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
+    load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
   // 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제
 ];
 

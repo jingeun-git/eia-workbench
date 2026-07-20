@@ -331,7 +331,13 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
             phys = _phys_pages(hwp)
             a3 = _a3_pages(hwp, phys or 0)
             pmap = _page_map(hwp, phys or 0, log)
-            hides = _hidden_pages(hwp, log)
+            hides_num = _hidden_pages(hwp, log)
+            # _hidden_pages는 **인쇄 쪽번호**를 돌려주는데 expect_hide는 **물리 쪽**
+            # 기준이다. 그대로 비교하면 각 파일의 간지(물리 1면)가 인쇄 33면 등으로
+            # 잡혀 전부 오탐이 된다(2026-07-20 실사고). 물리 쪽으로 환산해 맞춘다.
+            _n2p = {r["num"]: r["phys"] for r in pmap if r["num"] is not None}
+            hides = sorted({_n2p.get(n, 0) for n in hides_num} - {0}) or \
+                    ([0] if hides_num else [])
             nums = [r["num"] for r in pmap if r["num"] is not None]
             start = nums[0] if nums else None
             # 결번 = 번호는 소비했으나 물리 쪽이 없는 자리
@@ -344,7 +350,7 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None):
                 + (f" / A3 {len(a3)}쪽 {a3}" if a3 else "")
                 + (f" / 결번 {len(gaps)}곳" if gaps else "")
                 + (f" / 빈쪽 추정 {blanks}" if blanks else "")
-                + (f" / 기존 감추기 {hides}" if hides else ""))
+                + (f" / 기존 감추기 물리 {hides}면(인쇄 {hides_num})" if hides_num else ""))
             out.append({"name": p.name, "path": str(p), "end_page": end,
                         "start_page": start, "hide_pages": hides,
                         "gap_count": len(gaps), "blank_pages": blanks,
