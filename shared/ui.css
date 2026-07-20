@@ -229,7 +229,7 @@ input:focus, textarea:focus, select:focus {
 .result-table td { padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border); }
 .result-table tr:last-child td { border-bottom: none; }
-.result-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.result-table td.num { text-align: center; font-variant-numeric: tabular-nums; }
 
 /* ── 모달 ────────────────────────────────────────────────────────────── */
 .modal-backdrop {

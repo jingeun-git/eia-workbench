@@ -4,18 +4,44 @@
  * turf(604KB)를 이 판정 하나 때문에 싣지 않기 위한 수제 구현 — node로 단위검증 필수.
  */
 
-/** GeoJSON geometry의 [minx,miny,maxx,maxy] */
+/** 모든 geometry 타입의 좌표를 재귀 방문 (Point~MultiPolygon·Z좌표 무시) */
+function eachCoord(coords, cb) {
+  if (!Array.isArray(coords)) return;
+  if (typeof coords[0] === "number") { cb(coords[0], coords[1]); return; }
+  for (const c of coords) eachCoord(c, cb);
+}
+
+/** GeoJSON geometry의 [minx,miny,maxx,maxy] — 전 타입 지원 */
 export function bboxOfGeometry(geom) {
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-  eachRing(geom, (ring) => {
-    for (const [x, y] of ring) {
-      if (x < minx) minx = x;
-      if (y < miny) miny = y;
-      if (x > maxx) maxx = x;
-      if (y > maxy) maxy = y;
-    }
+  if (geom?.coordinates) eachCoord(geom.coordinates, (x, y) => {
+    if (x < minx) minx = x;
+    if (y < miny) miny = y;
+    if (x > maxx) maxx = x;
+    if (y > maxy) maxy = y;
   });
   return [minx, miny, maxx, maxy];
+}
+
+/**
+ * 닫힌 (Multi)LineString → Polygon 승격.
+ * 실무에서 "부지 경계"를 선으로 그린 SHP가 흔한데(실사례: 송호리 변전소 부지 —
+ * 핵심교훈 #10), LineString 그대로는 "경계선과 교차하는" 필지만 잡히고 내부
+ * 필지가 통째로 누락된다. 첫점=끝점(허용오차 1e-9)이면 면으로 간주한다.
+ */
+export function promoteClosedLines(geom) {
+  const closed = (ring) => {
+    if (!ring || ring.length < 4) return false;
+    const [x0, y0] = ring[0], [x1, y1] = ring[ring.length - 1];
+    return Math.abs(x0 - x1) < 1e-9 && Math.abs(y0 - y1) < 1e-9;
+  };
+  if (geom?.type === "LineString" && closed(geom.coordinates))
+    return { promoted: true, geometry: { type: "Polygon", coordinates: [geom.coordinates] } };
+  if (geom?.type === "MultiLineString" && geom.coordinates.length &&
+      geom.coordinates.every(closed))
+    return { promoted: true,
+             geometry: { type: "MultiPolygon", coordinates: geom.coordinates.map((r) => [r]) } };
+  return { promoted: false, geometry: geom };
 }
 
 /** FeatureCollection 전체 bounds */
@@ -92,8 +118,9 @@ function onSeg(ax, ay, bx, by, px, py) {
 }
 
 /**
- * bbox 사각형이 GeoJSON (Multi)Polygon과 교차하는가.
- * shapely box(...).intersects(poly)와 동일 의미(접촉 포함).
+ * bbox 사각형이 GeoJSON geometry와 교차하는가.
+ * shapely box(...).intersects(geom)와 동일 의미(접촉 포함).
+ * Polygon·MultiPolygon은 내부 포함 판정, LineString·Point 계열은 접촉 판정.
  */
 export function bboxIntersectsGeometry(bbox, geom) {
   const [x0, y0, x1, y1] = bbox;
@@ -103,6 +130,34 @@ export function bboxIntersectsGeometry(bbox, geom) {
 
   const [gx0, gy0, gx1, gy1] = bboxOfGeometry(geom);
   if (x1 < gx0 || gx1 < x0 || y1 < gy0 || gy1 < y0) return false; // 빠른 배제
+
+  // 선·점 계열: 정점 포함 또는 선분×사각형 변 교차
+  if (geom.type === "Point" || geom.type === "MultiPoint") {
+    let hit = false;
+    eachCoord(geom.coordinates, (px, py) => {
+      if (x0 <= px && px <= x1 && y0 <= py && py <= y1) hit = true;
+    });
+    return hit;
+  }
+  if (geom.type === "LineString" || geom.type === "MultiLineString") {
+    const lines = geom.type === "LineString" ? [geom.coordinates] : geom.coordinates;
+    const rectEdges = [
+      [x0, y0, x1, y0], [x1, y0, x1, y1],
+      [x1, y1, x0, y1], [x0, y1, x0, y0],
+    ];
+    for (const line of lines) {
+      for (let i = 0; i < line.length; i++) {
+        const [px, py] = line[i];
+        if (x0 <= px && px <= x1 && y0 <= py && py <= y1) return true;
+        if (i > 0) {
+          const [qx, qy] = line[i - 1];
+          for (const [ex0, ey0, ex1, ey1] of rectEdges)
+            if (segIntersects(px, py, qx, qy, ex0, ey0, ex1, ey1)) return true;
+        }
+      }
+    }
+    return false;
+  }
 
   const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
   const rectEdges = [

@@ -7,7 +7,7 @@
  *  ② Excel: openpyxl → xlsx-js-style (서식 동일 재현: 헤더 1F4E79·줄무늬 EBF3FB)
  * 판정 의미는 동일: 필지 bbox × 사업지구 폴리곤 intersects (shared/geo.js, 15케이스 검증).
  */
-import { bboxOfGeometry, boundsOfFeatures, bboxIntersectsGeometry } from "../shared/geo.js";
+import { bboxOfGeometry, boundsOfFeatures, bboxIntersectsGeometry, promoteClosedLines } from "../shared/geo.js";
 import { keys } from "../shared/app.js";
 
 const VWORLD_DATA = "https://api.vworld.kr/req/data";
@@ -349,6 +349,7 @@ export function init(section, { toast }) {
 
     <div style="display:flex;gap:var(--space-2);align-items:center">
       <button class="btn btn-primary" id="pc-run">조회 실행</button>
+      <button class="btn btn-secondary" id="pc-reset">초기화</button>
       <button class="btn btn-danger" id="pc-cancel" style="display:none">중단</button>
     </div>
 
@@ -440,6 +441,20 @@ export function init(section, { toast }) {
   };
   const checkCancel = () => { if (cancelled) throw new Error("사용자 취소"); };
 
+  /* 초기화 — 입력·진행·로그·결과 전부 비움 (실행 중에는 중단부터) */
+  $("#pc-reset").addEventListener("click", () => {
+    if (running) { toast("실행 중입니다 — 먼저 [중단]을 눌러주세요", "warn"); return; }
+    filesInput.value = ""; showFiles();
+    $("#pc-addrs").value = "";
+    results = null;
+    logEl.textContent = ""; logEl.classList.remove("active");
+    $("#pc-prog").classList.remove("active");
+    $("#pc-fill").style.width = "0%";
+    $("#pc-tbl tbody").innerHTML = "";
+    $("#pc-tblwrap").classList.remove("active");
+    $("#pc-savebar").style.display = "none";
+  });
+
   /* 실행 */
   $("#pc-cancel").addEventListener("click", () => { cancelled = true; });
   $("#pc-run").addEventListener("click", async () => {
@@ -467,10 +482,26 @@ export function init(section, { toast }) {
         log("사업지구 SHP 파일 읽는 중...");
         const fc = await readShpFiles(filesInput.files, log);
         const feats = (fc.features || []).filter((f) => f.geometry);
-        if (!feats.length) throw new Error("SHP에서 폴리곤을 읽지 못했습니다");
-        log(`  피처 수: ${feats.length}`);
+        if (!feats.length) throw new Error("SHP에서 지오메트리를 읽지 못했습니다");
+
+        // geometry 타입 실물 확인 + 닫힌 선 → 면 승격 (핵심교훈 #10:
+        // "부지" SHP가 실제 LineString인 실무 사례 — 승격 없이는 내부 필지 전체 누락)
+        const types = new Set();
+        let promoted = 0;
+        for (const f of feats) {
+          const r = promoteClosedLines(f.geometry);
+          if (r.promoted) { f.geometry = r.geometry; promoted++; }
+          types.add(f.geometry.type);
+        }
+        log(`  피처 수: ${feats.length} (${[...types].join(", ")})`);
+        if (promoted)
+          log(`  ※ 닫힌 경계선 ${promoted}건을 면(Polygon)으로 승격 — 내부 필지 포함 판정`, "warn");
+        if ([...types].some((t) => t.includes("LineString")))
+          log(`  ⚠ 열린 선형 지오메트리 — 선과 교차하는 필지만 추출됩니다`, "warn");
 
         const b = boundsOfFeatures(feats);
+        if (!Number.isFinite(b[0]) || !Number.isFinite(b[2]))
+          throw new Error("경계 좌표를 계산하지 못했습니다 — SHP 좌표계를 확인하세요");
         // 버퍼: 5% 또는 0.002도(약 180m) — 엔진 동일
         const bufx = Math.max((b[2] - b[0]) * 0.05, 0.002);
         const bufy = Math.max((b[3] - b[1]) * 0.05, 0.002);
