@@ -2,11 +2,12 @@
  * 탭 라우팅(해시 동기화) · 테마 · 브리지 상태칩 · 설정(API 키·토큰) · 토스트
  */
 import { bridge } from "./bridge.js";
+import { keys } from "./keys.js";
 
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-const V = "3.3.2";
+const V = "3.3.3";
 
 /* ── 도구 레지스트리 ───────────────────────────────────────────────────
    init은 첫 활성화 시 1회 lazy 호출. needsBridge 도구는 미연결 시 잠금. */
@@ -115,10 +116,6 @@ function initBridgeChip() {
 }
 
 /* ── 설정(API 키) ─────────────────────────────────────────────────── */
-export const keys = {
-  get vworld()  { return localStorage.getItem("eiaw.key.vworld") || ""; },
-  get pubdata() { return localStorage.getItem("eiaw.key.pubdata") || ""; },
-};
 function initSettings() {
   $("#settings-btn").addEventListener("click", () => {
     $("#set-vworld").value = keys.vworld;

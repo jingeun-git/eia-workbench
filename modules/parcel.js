@@ -8,7 +8,7 @@
  * 판정 의미는 동일: 필지 bbox × 사업지구 폴리곤 intersects (shared/geo.js, 15케이스 검증).
  */
 import { bboxOfGeometry, boundsOfFeatures, bboxIntersectsGeometry, promoteClosedLines } from "../shared/geo.js";
-import { keys } from "../shared/app.js";
+import { keys } from "../shared/keys.js";
 
 const VWORLD_DATA = "https://api.vworld.kr/req/data";
 const VWORLD_ADDR = "https://api.vworld.kr/req/address";
