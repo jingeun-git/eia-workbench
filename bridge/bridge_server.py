@@ -394,11 +394,30 @@ def main():
 
     threading.Thread(target=worker, daemon=True).start()
 
+    # ⚠ Windows 함정: HTTPServer 기본 allow_reuse_address=True는 Windows에서
+    # SO_REUSEADDR로 **이미 사용 중인 포트에도 바인딩이 성공**한다(2026-07-20 실사고 —
+    # PoC 스텁이 8765를 쥔 채로 브리지가 "정상 기동"했지만 연결은 전부 스텁이 가로챔).
+    # ① reuse 금지 ② 바인딩 전 실제 리스너 존재를 소켓 연결로 선확인.
+    class StrictServer(ThreadingHTTPServer):
+        allow_reuse_address = False
+
+    def port_in_use(p):
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        try:
+            return s.connect_ex(("127.0.0.1", p)) == 0
+        finally:
+            s.close()
+
     srv = None
     port = None
     for p in PORTS:
+        if port_in_use(p):
+            print(f"  ※ 포트 {p} 사용 중 (다른 프로그램/PoC 스텁?) — 다음 포트 시도")
+            continue
         try:
-            srv = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+            srv = StrictServer(("127.0.0.1", p), Handler)
             port = p
             break
         except OSError:
