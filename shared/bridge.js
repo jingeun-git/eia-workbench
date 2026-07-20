@@ -79,8 +79,14 @@ export class BridgeClient extends EventTarget {
       },
       body: body != null ? JSON.stringify(body) : undefined,
     });
-    if (res.status === 401) throw new Error("토큰 불일치 — 브리지 트레이 메뉴에서 토큰을 복사해 설정에 입력하세요");
-    if (!res.ok) throw new Error(`브리지 오류 HTTP ${res.status}`);
+    if (res.status === 401) throw new Error("토큰 불일치 — 브리지를 재시작하면 자동 재등록됩니다");
+    if (!res.ok) {
+      // 서버가 보낸 실제 사유를 살린다 — "HTTP 500"만 보여주면 원인 추적이 불가능
+      // (2026-07-20 실사고: 구버전 브리지의 명확한 오류 메시지가 숫자에 가려짐)
+      let detail = "";
+      try { detail = (await res.json()).error || ""; } catch (_) {}
+      throw new Error(detail || `브리지 오류 HTTP ${res.status}`);
+    }
     return res.json();
   }
 
