@@ -38,12 +38,12 @@ export function init(section, { bridge, toast }, kind) {
         <p class="help">파일은 PC 안에서만 처리됩니다 — 웹으로 전송되지 않습니다.</p>
       </div>
       ${kind === "pagenum" ? `
-      <div class="field" style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end">
-        <div style="max-width:180px">
+      <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4)">
+        <div class="field" style="margin-bottom:0;flex:0 0 180px">
           <label for="hw-start">시작 쪽번호 <span class="req">*</span></label>
           <input type="number" id="hw-start" value="1" min="1" step="1">
         </div>
-        <div class="field">
+        <div class="field" style="margin-bottom:0;flex:0 0 240px">
           <label for="hw-divider">장별 간지</label>
           <select id="hw-divider">
             <option value="none">없음 — 간지를 별도 인쇄</option>
@@ -51,7 +51,7 @@ export function init(section, { bridge, toast }, kind) {
             <option value="two">간지 2장 — 뒷면 공백 페이지 포함</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" style="margin-bottom:0;flex:0 0 240px">
           <label for="hw-a3back">A3 뒷면</label>
           <select id="hw-a3back">
             <option value="skip">결번 — 빈 페이지 없음</option>
@@ -60,21 +60,21 @@ export function init(section, { bridge, toast }, kind) {
         </div>
       </div>
       <p class="help" style="margin-top:-8px">
-        <b>이 두 옵션은 문서를 고치지 않습니다 — 쪽번호를 계산하는 조건일 뿐입니다.</b>
-        같은 인쇄 결과를 내는 두 가지 작성 방식(빈 페이지를 실제로 넣었는가 / 넣지 않고 번호만 건너뛰었는가)
-        중 <u>이 보고서가 어느 쪽인지</u>를 알려주는 값입니다. 잘못 고르면 번호가 한 칸씩 어긋납니다.
+        양면 인쇄에서 <b>간지 뒷면</b>과 <b>A3 뒷면</b>은 비워 둡니다. 이때 작성 방식이 둘로 갈립니다 —
+        <b>빈 페이지를 실제로 넣어 둔 문서</b>가 있고, <b>페이지 없이 쪽번호만 건너뛴 문서</b>가 있습니다.
+        인쇄 결과는 같지만 세는 방법이 달라서, 이 보고서가 어느 쪽인지 골라주셔야 번호가 맞습니다.
       </p>
-      <details class="help" style="margin-top:-4px">
-        <summary style="cursor:pointer">도구가 문서에 실제로 하는 일 (3가지)</summary>
+      <details class="help">
+        <summary style="cursor:pointer">도구가 문서에 실제로 하는 일</summary>
+        <p style="margin:8px 0 0">이 두 선택은 <b>계산 조건일 뿐이며, 문서를 그 방식으로 바꾸지 않습니다.</b>
+          실행해도 쪽수는 늘거나 줄지 않습니다.</p>
         <ol style="margin:8px 0 0 18px;line-height:1.7">
-          <li><b>기존 쪽번호 조판부호 삭제</b> — 새 쪽번호·쪽 번호 제어를 모두 지웁니다</li>
-          <li><b>새 쪽번호 부여</b> — 계산된 번호를 필요한 쪽에 넣습니다</li>
-          <li><b>간지 감추기</b> — 간지가 있는 장의 첫 쪽만 (머리말·꼬리말·쪽번호)</li>
+          <li>기존 쪽번호 조판부호 삭제 — 새 쪽번호·쪽 번호 제어</li>
+          <li>새 쪽번호 부여 — 계산된 번호를 필요한 쪽에</li>
+          <li>간지 감추기 — 간지가 있는 장의 첫 쪽만(머리말·꼬리말·쪽번호)</li>
         </ol>
-        <p style="margin:8px 0 0">
-          <b>하지 않는 것:</b> 페이지 삽입·삭제, 빈 페이지 생성·제거, 머리말/꼬리말 내용 변경,
-          용지 방향·크기 변경, 본문 내용 수정. 쪽수는 실행 전후가 같아야 정상입니다.
-        </p>
+        <p style="margin:8px 0 0"><b>하지 않는 것</b> — 페이지 삽입·삭제, 머리말/꼬리말 내용 변경,
+          용지 방향·크기 변경, 본문 수정</p>
       </details>` : ""}
       ${kind === "pdf" ? `
       <div class="field">
