@@ -87,6 +87,7 @@ export async function init(section, { toast, bridge, V }) {
   let chartHeight = 260;
   let charts = {}; // colId -> Chart 인스턴스
   let chartDebounce = null;
+  let cornerWidth = null; // 측정지점 열 너비(드래그로 조절, px 문자열)
 
   /* ── 판정 로직 ─────────────────────────────────────────────────────── */
   /* ppm 항목만 ppb 표시로 전환 가능(질량농도 항목은 ppb 개념이 없다) */
@@ -142,26 +143,33 @@ export async function init(section, { toast, bridge, V }) {
       <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
       <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
     </div>
-
-    <div class="ed-scroll" id="ed-scroll">
-      <table class="ed-table" id="ed-table">
-        <thead><tr id="ed-thead-row"></tr></thead>
-        <tbody id="ed-tbody"></tbody>
-      </table>
-    </div>
   </div>
 
-  <div class="panel">
-    <h3 style="margin:0 0 var(--space-3)">그래프</h3>
-    <div class="ed-chart-tools">
-      <div class="segment" role="group" aria-label="그래프 타입">
-        <button type="button" data-ctype="bar" aria-pressed="true">막대</button>
-        <button type="button" data-ctype="line" aria-pressed="false">선</button>
+  <div class="ed-layout">
+    <div class="ed-main panel">
+      <h3 style="margin:0 0 var(--space-3)">표</h3>
+      <div class="ed-scroll" id="ed-scroll">
+        <table class="ed-table" id="ed-table">
+          <thead><tr id="ed-thead-row"></tr></thead>
+          <tbody id="ed-tbody"></tbody>
+        </table>
       </div>
-      <label class="ed-color-label">색상 <input type="color" id="ed-color" value="${chartColor.startsWith('#') ? chartColor : '#2f6fed'}"></label>
-      <label class="ed-size-label">크기 <input type="range" id="ed-size" min="160" max="520" value="${chartHeight}"></label>
     </div>
-    <div class="ed-charts" id="ed-charts"></div>
+
+    <div class="ed-side">
+      <div class="panel">
+        <h3 style="margin:0 0 var(--space-3)">그래프</h3>
+        <div class="ed-chart-tools">
+          <div class="segment" role="group" aria-label="그래프 타입">
+            <button type="button" data-ctype="bar" aria-pressed="true">막대</button>
+            <button type="button" data-ctype="line" aria-pressed="false">선</button>
+          </div>
+          <label class="ed-color-label">색상 <input type="color" id="ed-color" value="${chartColor.startsWith('#') ? chartColor : '#2f6fed'}"></label>
+          <label class="ed-size-label">크기 <input type="range" id="ed-size" min="160" max="520" value="${chartHeight}"></label>
+        </div>
+        <div class="ed-charts" id="ed-charts"></div>
+      </div>
+    </div>
   </div>`;
 
   const $ = (s) => section.querySelector(s);
@@ -208,6 +216,31 @@ export async function init(section, { toast, bridge, V }) {
     });
   }
 
+  /* 열 너비 조절 손잡이 — geocode 탭(gc-resizer)과 동일한 상호작용을 재사용.
+     draggable=false로 둬서 옆의 컬럼 드래그(순서변경)가 오작동하지 않게 한다. */
+  function addResizer(th, onResize) {
+    const h = document.createElement("span");
+    h.className = "ed-resizer";
+    h.title = "끌어서 너비 조절";
+    h.draggable = false;
+    th.appendChild(h);
+    let x0 = 0, w0 = 0;
+    const move = (ev) => { th.style.width = `${Math.max(40, w0 + (ev.clientX - x0))}px`; };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      document.body.classList.remove("ed-resizing");
+      onResize(th.style.width);
+    };
+    h.addEventListener("mousedown", (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      x0 = ev.clientX; w0 = th.offsetWidth;
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+      document.body.classList.add("ed-resizing");
+    });
+  }
+
   function renderGrid() {
     const thead = $("#ed-thead-row");
     thead.innerHTML = "";
@@ -219,13 +252,20 @@ export async function init(section, { toast, bridge, V }) {
     thead.appendChild(dragTh);
     const corner = document.createElement("th");
     corner.textContent = "측정지점";
-    corner.style.minWidth = "110px";
+    corner.style.width = cornerWidth || "110px";
+    addResizer(corner, (w) => { cornerWidth = w; });
     thead.appendChild(corner);
 
     for (const col of columns) {
       const th = document.createElement("th");
       th.dataset.col = col.id;
       th.title = "드래그해서 항목 순서 변경";
+      // table-layout:fixed(리사이즈에 필요)는 min-width를 무시하고 컨테이너 폭에
+      // 맞춰 칸을 균등 압축한다 — 폭을 명시하지 않으면 8개 항목이 좁은 표 폭에
+      // 짓눌려 글자가 여러 줄로 접히고 헤더가 수백 px까지 늘어난다(2026-07-22
+      // 60:40 레이아웃 적용 후 실측 — 헤더 높이 538px). 기본폭을 지정해 대신
+      // 넘치는 만큼은 .ed-scroll의 가로 스크롤로 처리한다.
+      th.style.width = col.width || "128px";
       const std = effectiveStandard(col);
       const dispUnit = col.unitScale === 1000 ? "ppb" : col.unit;
       const avgOptions = (!col.custom && standards.items.find((i) => i.code === col.code)?.standards.length > 1)
@@ -253,6 +293,7 @@ export async function init(section, { toast, bridge, V }) {
         </div>
         <button type="button" class="ed-col-del" title="항목 삭제">×</button>`;
       attachColDrag(th, col);
+      addResizer(th, (w) => { col.width = w; });
 
       const avgSel = th.querySelector(".ed-avg-select");
       if (avgSel) avgSel.addEventListener("change", () => { col.averaging = avgSel.value; renderGrid(); scheduleCharts(); });
