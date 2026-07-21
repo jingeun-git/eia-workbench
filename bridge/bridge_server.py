@@ -44,7 +44,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.10.2"
+BRIDGE_VERSION = "3.11.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -288,20 +288,35 @@ def run_eiass_dl(job, params):
         targets = [d for d in docs if str(d.file_seq) in seqs]
         if not targets:
             raise RuntimeError("선택한 FILE_SEQ가 현재 목록과 일치하지 않습니다 — 다시 조회하세요")
+        # 절차(초안·본안·보완 등)별 하위 폴더로 나눠 저장한다.
+        # 한 폴더에 전부 쏟으면 PDF가 뒤섞여 무엇이 어느 절차인지 알 수 없다
+        # (2026-07-21 사용자 요구). stage_label은 EIASS 아코디언 원문 그대로다.
         base_dir.mkdir(parents=True, exist_ok=True)
         for i, d in enumerate(targets, 1):
             job["progress"] = {"done": i - 1, "total": len(targets), "stage": d.filename}
-            dl(d, base_dir, f"{code}/")
+            label = (getattr(d, "stage_label", None) or "").strip()
+            if label:
+                sub = base_dir / edr._safe_filename(label)
+                sub.mkdir(parents=True, exist_ok=True)
+                dl(d, sub, f"{code}/{edr._safe_filename(label)}/")
+            else:
+                dl(d, base_dir, f"{code}/")
 
     job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
     if params.get("zip") and saved:
-        import zipfile
+        import shutil, zipfile
         zip_path = out_root / f"{edr._safe_filename(code)}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
             for p, arc in saved:
                 z.write(p, arcname=arc)
-        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건)")
-    job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
+        # ZIP으로 묶었으면 **개별 원문은 남기지 않는다**(2026-07-21 사용자 요구).
+        # 같은 파일이 두 벌로 남아 어느 쪽이 최신인지 헷갈리는 것을 막는다.
+        # ZIP 생성이 끝난 뒤에만 지운다 — 중간에 실패하면 원본이 그대로 남아야 한다.
+        shutil.rmtree(base_dir, ignore_errors=True)
+        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건) — 개별 파일은 정리했습니다")
+        job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {zip_path}")
+    else:
+        job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
 
 def run_hwp2pdf(job, params):
     """convert_batch는 진행 dict를 yield하는 **제너레이터**다 — 순회해야 실행된다.

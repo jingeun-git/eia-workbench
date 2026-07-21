@@ -132,6 +132,7 @@ export function init(section, { bridge, toast }) {
             <button class="btn btn-primary" id="ec-run">선택 다운로드</button>
             <label style="font-size:var(--text-sm);display:flex;align-items:center;gap:6px">
               <input type="checkbox" id="ec-zip" checked> ZIP으로 묶기
+              <span style="color:var(--text-dim)">— 묶으면 개별 PDF는 남기지 않습니다</span>
             </label>
             <button class="btn btn-secondary" id="ec-reset">초기화</button>
           </div>
