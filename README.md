@@ -17,7 +17,7 @@
               ↕ http://127.0.0.1
 [로컬 브리지]                     ← 실행 중일 때만 활성화
    ├─ 한컴 2종 (hwp2pdf·hwpPageNum) ※차례·끼워넣기는 2026-07-20 기능 삭제
-   ├─ md 변환 고품질 (convert_core.py — HWP/HWPX·OCR·듀얼엔진)
+   ├─ md 변환 — 한글·스캔·일괄 (convert_core.py — HWP/HWPX·OCR·듀얼엔진)
    └─ EIASS 사업코드 자동탐색 (eiass_doc_resolver.py)
 ```
 
@@ -47,7 +47,7 @@
 | 2. 설계 스펙 | ✅ `tasks/specs/2026-07-20-통합업무도구-웹화-design.md` |
 | 3. 디자인 시스템 | ✅ `shared/tokens.css` + `docs/design-system.md` |
 | 4. 건축물대장 | ✅ 실브라우저 검증 통과 (SHP·주소 모드) |
-| 5. md 변환 | ✅ 웹 경로 검증 통과 + 브리지 고품질 경로 연결 |
+| 5. md 변환 | ✅ 웹 경로 검증 통과 + 브리지 경로(한글·스캔·일괄) 연결 |
 | 6. EIASS | ✅ 검증 통과 — FILE_SEQ·사업코드(절차 그룹핑)·사후(연도별 회차→PDF 선택) |
 | 7. 로컬 브리지 | ✅ Windows 실검증 통과 — 원클릭 페어링(run_bridge.bat) |
 | 8. 문서 | ✅ `사용법.md` |

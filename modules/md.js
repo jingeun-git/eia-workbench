@@ -186,7 +186,7 @@ export function init(section, { bridge, toast }) {
   <div class="panel">
     <h2>문서 → 마크다운 변환</h2>
     <p class="desc">PDF·Word·Excel을 브라우저 안에서 마크다운으로 변환합니다 (파일은 업로드되지 않습니다).
-      HWP·HWPX와 OCR(스캔 PDF)은 로컬 브리지 연결 시 고품질 경로로 처리됩니다.</p>
+      HWP·HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>브리지 경로</b>에서 처리합니다.</p>
 
     <div class="field">
       <label>변환할 파일 <span class="req">*</span></label>
@@ -225,8 +225,9 @@ export function init(section, { bridge, toast }) {
   </div>
 
   <div class="panel">
-    <h2>고품질 변환 (브리지)</h2>
-    <p class="desc">HWP·HWPX·스캔 PDF(OCR)·대량 배치는 로컬 브리지의 convert_core 엔진으로 처리합니다
+    <h2>한글·스캔 문서 변환 (브리지)</h2>
+    <p class="desc">브라우저가 열 수 없는 형식(HWP·HWPX·스캔 PDF)과 폴더 일괄 처리를 담당합니다
+      — <b>변환 품질이 다른 것이 아니라 다룰 수 있는 형식이 다릅니다.</b> 로컬 브리지의 convert_core 엔진을 씁니다
       — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 대상 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
     <p class="help" style="margin-top:-6px">
       <b>내용만 필요하면</b> 한글 문서(HWP·HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
@@ -306,7 +307,7 @@ export function init(section, { bridge, toast }) {
     if (!reasons.length) { el.style.display = "none"; return; }
     el.style.display = "";
     el.innerHTML = `⚠ <b>${reasons.join(" · ")}</b> — 브라우저 변환은 파일을 메모리에 올려 처리하므로
-      탭이 멈추거나 종료될 수 있습니다. 아래 <b>고품질 변환(브리지)</b>으로 폴더째 처리하시길 권합니다.`;
+      탭이 멈추거나 종료될 수 있습니다. 아래 <b>브리지 변환</b>으로 폴더째 처리하시길 권합니다.`;
   }
 
   function addFiles(newFiles) {
@@ -318,7 +319,7 @@ export function init(section, { bridge, toast }) {
       if (BRIDGE_EXTS.includes(e)) bridgeCnt++;
     }
     if (bridgeCnt)
-      toast(`HWP·HWPX ${bridgeCnt}건은 브리지 연결 시 아래 고품질 변환에서 처리됩니다`, "warn");
+      toast(`HWP·HWPX ${bridgeCnt}건은 브리지 연결 시 아래 한글·스캔 문서 변환에서 처리됩니다`, "warn");
     renderList(); updateUI(); warnIfHeavy();
   }
 
@@ -433,7 +434,7 @@ export function init(section, { bridge, toast }) {
     const cur = results[activeTab];
     if (cur) downloadMd(cur.name.replace(/\.[^.]+$/, "") + ".md", cur.md);
   });
-  /* ── 브리지 고품질 경로 ─────────────────────────────────────────── */
+  /* ── 브리지 경로(한글·스캔·일괄) ─────────────────────────────────── */
   let mbRunning = false;
   const mbLog = (msg, cls = "") => {
     const el = $("#mb-log");

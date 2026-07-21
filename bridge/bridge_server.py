@@ -4,7 +4,7 @@
 EIA Workbench 로컬 브리지 (SYS-29 7단계)
 
 웹 UI(GitHub Pages)가 브라우저에서 할 수 없는 작업을 대신 실행한다:
-  - md 고품질 변환  : convert_core.py (HWP·HWPX·OCR·듀얼엔진) — import 참조
+  - md 변환(한글·스캔·일괄) : convert_core.py (HWP·HWPX·OCR·듀얼엔진) — import 참조
   - EIASS 자동탐색  : eiass_doc_resolver.py — 서브프로세스(검증된 CLI 그대로)
   - HWP→PDF        : hwp2pdf_core.py — import 참조 (한컴 COM)
   - 쪽번호          : hwp_pagenum.py — 같은 폴더의 자체 엔진(SYS-31, 한컴 COM)
@@ -44,7 +44,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.12.0"
+BRIDGE_VERSION = "3.12.1"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
