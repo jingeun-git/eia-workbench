@@ -88,6 +88,8 @@ export async function init(section, { toast, bridge, V }) {
   let charts = {}; // colId -> Chart 인스턴스
   let chartDebounce = null;
   let cornerWidth = null; // 측정지점 열 너비(드래그로 조절, px 문자열)
+  let showTitle = true, showLegend = false;
+  let yManual = false, yMin = null, yMax = null, yStep = null;
 
   /* ── 판정 로직 ─────────────────────────────────────────────────────── */
   /* ppm 항목만 ppb 표시로 전환 가능(질량농도 항목은 ppb 개념이 없다) */
@@ -166,6 +168,18 @@ export async function init(section, { toast, bridge, V }) {
           </div>
           <label class="ed-color-label">색상 <input type="color" id="ed-color" value="${chartColor.startsWith('#') ? chartColor : '#2f6fed'}"></label>
           <label class="ed-size-label">크기 <input type="range" id="ed-size" min="160" max="520" value="${chartHeight}"></label>
+          <label class="ed-chk-label"><input type="checkbox" id="ed-show-title" checked> 제목(PNG 포함)</label>
+          <label class="ed-chk-label"><input type="checkbox" id="ed-show-legend"> 범례</label>
+        </div>
+        <div class="ed-chart-tools">
+          <label class="ed-chk-label"><input type="checkbox" id="ed-y-manual"> Y축 직접설정</label>
+          <span class="ed-y-range" id="ed-y-range" style="display:none">
+            <input type="number" id="ed-y-min" placeholder="최소" step="any">
+            <span>~</span>
+            <input type="number" id="ed-y-max" placeholder="최대" step="any">
+            <span>눈금</span>
+            <input type="number" id="ed-y-step" placeholder="자동" step="any">
+          </span>
         </div>
         <div class="ed-charts" id="ed-charts"></div>
       </div>
@@ -530,8 +544,20 @@ export async function init(section, { toast, bridge, V }) {
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, annotation: { annotations } },
-          scales: { y: { beginAtZero: true, title: { display: !!std, text: std?.unit || "" } } },
+          plugins: {
+            legend: { display: showLegend },
+            title: { display: showTitle, text: col.label, font: { size: 13 } },
+            annotation: { annotations },
+          },
+          scales: {
+            y: {
+              beginAtZero: !yManual,
+              ...(yManual && yMin != null ? { min: yMin } : {}),
+              ...(yManual && yMax != null ? { max: yMax } : {}),
+              ...(yManual && yStep != null ? { ticks: { stepSize: yStep } } : {}),
+              title: { display: !!std, text: std?.unit || "" },
+            },
+          },
         },
       });
 
@@ -592,6 +618,16 @@ export async function init(section, { toast, bridge, V }) {
     section.querySelectorAll(".ed-chart-canvas-wrap").forEach((w) => { w.style.height = `${chartHeight}px`; });
     Object.values(charts).forEach((c) => c.resize());
   });
+  $("#ed-show-title").addEventListener("change", (e) => { showTitle = e.target.checked; renderCharts(); });
+  $("#ed-show-legend").addEventListener("change", (e) => { showLegend = e.target.checked; renderCharts(); });
+  $("#ed-y-manual").addEventListener("change", (e) => {
+    yManual = e.target.checked;
+    $("#ed-y-range").style.display = yManual ? "" : "none";
+    renderCharts();
+  });
+  $("#ed-y-min").addEventListener("change", (e) => { yMin = parseNum(e.target.value); renderCharts(); });
+  $("#ed-y-max").addEventListener("change", (e) => { yMax = parseNum(e.target.value); renderCharts(); });
+  $("#ed-y-step").addEventListener("change", (e) => { yStep = parseNum(e.target.value); renderCharts(); });
 
   renderGrid();
   renderCharts();

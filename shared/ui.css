@@ -850,7 +850,10 @@ body.ed-resizing * { cursor: col-resize !important; }
 
 .ed-add-select { max-width: 220px; }
 
-.ed-chart-tools { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.ed-chart-tools { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.ed-chk-label { display: flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-muted); cursor: pointer; }
+.ed-y-range { display: flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-muted); }
+.ed-y-range input[type="number"] { width: 68px; height: 28px; padding: 0 6px; font-size: var(--text-xs); }
 .ed-color-label, .ed-size-label { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-muted); }
 .ed-color-label input[type="color"] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; cursor: pointer; }
 .ed-size-label input[type="range"] { width: 140px; }
