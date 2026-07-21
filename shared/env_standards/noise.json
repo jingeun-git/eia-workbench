@@ -1,0 +1,25 @@
+{
+  "field": "소음",
+  "type": "region",
+  "legal_basis": "환경정책기본법 시행령 별표1 (소음환경기준, 제2조 관련)",
+  "enacted": "2025-10-01",
+  "verified_via": "law_client.py annex --mst 280511 --no 0001 (2026-07-22 직접 조회)",
+  "unit": "dB(A)",
+  "periods": [
+    { "code": "day", "label": "낮(06:00~22:00)" },
+    { "code": "night", "label": "밤(22:00~06:00)" }
+  ],
+  "regions": [
+    { "code": "gen_ga", "label": "일반지역 \"가\"(녹지·보전관리·농림·자연환경보전·전용주거 등)", "day": 50, "night": 40 },
+    { "code": "gen_na", "label": "일반지역 \"나\"(생산관리·일반주거·준주거)", "day": 55, "night": 45 },
+    { "code": "gen_da", "label": "일반지역 \"다\"(상업·계획관리·준공업)", "day": 65, "night": 55 },
+    { "code": "gen_ra", "label": "일반지역 \"라\"(전용공업·일반공업)", "day": 70, "night": 65 },
+    { "code": "road_ga_na", "label": "도로변지역 \"가\"·\"나\"", "day": 65, "night": 55 },
+    { "code": "road_da", "label": "도로변지역 \"다\"", "day": 70, "night": 60 },
+    { "code": "road_ra", "label": "도로변지역 \"라\"", "day": 75, "night": 70 }
+  ],
+  "notes": [
+    "이 소음환경기준은 항공기소음·철도소음·건설작업소음에는 적용하지 않는다.",
+    "지역구분(가~라)의 대상지역 세부 정의는 국토의 계획 및 이용에 관한 법률 등 관계법령에 따른다 — 위 label은 요약이며 정확한 판정은 원문 비고 참조."
+  ]
+}

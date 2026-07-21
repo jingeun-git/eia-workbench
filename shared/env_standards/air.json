@@ -1,5 +1,6 @@
 {
   "field": "대기질",
+  "type": "item",
   "legal_basis": "환경정책기본법 시행령 별표1 (환경기준, 제2조 관련)",
   "enacted": "2025-10-01",
   "verified_via": "law_client.py annex --mst 280511 --no 0001 (2026-07-22 직접 조회, 개정 2025.10.1)",
