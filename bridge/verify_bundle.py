@@ -102,7 +102,8 @@ def main() -> int:
     fail = 0
     for k in keys:
         s, b = sf.get(k), bf.get(k)
-        # OCR은 lite 빌드에서 의도적으로 빠진다 — 그것만 예외로 인정한다
+        # OCR은 lite 빌드에서 의도적으로 빠지는 **유일한** 기능이다.
+        # 그 외 기능이 번들에서 꺼지면 자립화 실패로 본다.
         expected_off = (k == "ocr" and not a.expect_ocr)
         ok = (s == b) or (expected_off and s and not b)
         note = "" if s == b else ("lite 의도된 제외" if expected_off else "✗ 불일치")

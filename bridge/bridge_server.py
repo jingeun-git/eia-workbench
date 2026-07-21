@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.21.0"
+BRIDGE_VERSION = "3.22.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -101,13 +101,15 @@ try:
     sys.path.insert(0, str(next(p for p in BRIDGE_DIR.resolve().parents
                                 if (p / "CLAUDE_folder.md").exists())))
     from claude_paths import resolve as _resolve
-    CONVERT_DIR = _resolve("convert_core").parent
-    EIASS_DIR   = _resolve("eiass_doc_resolver").parent
-    HWP2PDF_DIR = _resolve("hwp2pdf_core").parent
+    CONVERT_DIR  = _resolve("convert_core").parent
+    EIASS_DIR    = _resolve("eiass_doc_resolver").parent
+    HWP2PDF_DIR  = _resolve("hwp2pdf_core").parent
+    PDF2XLSX_DIR = _resolve("pdf2excel_core").parent
 except Exception:
     CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
     EIASS_DIR    = TOOLS_DIR / "EIASS"
     HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
+    PDF2XLSX_DIR = TOOLS_DIR / "pdf2excel"
 # 차례(hwpContent)·끼워넣기(.Egg): 2026-07-20 사용자 지시로 기능 삭제
 # 쪽번호: SYS-31에서 hwp_pagenum.py로 전면 재구현(2026-07-21) — 구
 #   `배포용/hwpPageNum2.1`(exe·py) 의존은 제거됐다. 구 .py는 `import intro`인데
@@ -121,7 +123,7 @@ RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 # 남의 서버로 요청을 대신 보내는 통로이므로 **호스트를 화이트리스트로 못박는다.**
 PROXY_HOSTS = ("apis.data.go.kr",)
 
-for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
+for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR, PDF2XLSX_DIR):
     if p.exists():
         sys.path.insert(0, str(p))
 
@@ -130,7 +132,12 @@ IS_WINDOWS = os.name == "nt"
 # ── 기능 가용성 탐지 (파일 실재·임포트 가능 여부로 판정 — 표기만으로 단정 금지) ──
 def detect_features():
     feats = {"convert": False, "ocr": False, "eiass": False,
-             "hwp2pdf": False, "pagenum": False}
+             "hwp2pdf": False, "pagenum": False, "pdf2excel": False}
+    try:
+        import pdf2excel_core  # noqa
+        feats["pdf2excel"] = True
+    except Exception:
+        pass
     try:
         import convert_core  # noqa
         feats["convert"] = True
@@ -225,6 +232,15 @@ ALLOWED_ROOTS: list[Path] = []        # /pick으로 승인된 폴더
 JOBS: dict[str, dict] = {}            # job_id → {status, log[], progress, error, results}
 JOB_QUEUE: list[str] = []
 JOB_LOCK = threading.Lock()
+
+# 웹 UI가 닫히면 브리지도 스스로 끝난다 — 사용자가 트레이에서 따로 끄지 않아도
+# 되게 하기 위함(2026-07-21). 웹은 15초마다 /ping을 보내므로, 그 신호가
+# 일정 시간 끊기면 아무도 안 쓰는 것으로 본다.
+#   ⚠ 작업 중에는 절대 끝내지 않는다 — 변환이 수십 분 걸릴 수 있고,
+#     그 사이 사용자가 탭을 닫아 두는 경우가 실제로 있다.
+LAST_SEEN = time.time()
+IDLE_EXIT_SEC = 90          # ping 15초 간격 기준 6회 연속 유실
+
 
 def path_allowed(p: Path) -> bool:
     try:
@@ -393,6 +409,90 @@ def run_eiass_dl(job, params):
             shutil.rmtree(work_root, ignore_errors=True)
     else:
         job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
+
+
+def run_pdf2excel_scan(job, params):
+    """PDF에서 표를 찾아 목록만 돌려준다(파일은 만들지 않는다).
+
+    검증 완료된 pdf2excel_core를 **그대로** 호출한다 — scan → group 순서와
+    인자를 GUI(pdf2excel_gui.py)와 동일하게 맞춘다. 로직을 다시 짜지 않는다.
+    """
+    import pdf2excel_core as pc
+    src = Path(params["path"])
+    if not path_allowed(src):
+        raise RuntimeError("대상 파일이 승인된 경로가 아닙니다 — [파일 선택]으로 다시 지정하세요")
+    if src.suffix.lower() != ".pdf":
+        raise RuntimeError("PDF 파일만 처리할 수 있습니다")
+
+    spec = (params.get("page_range") or "").strip()
+    job_log(job, f"표 스캔: {src.name}" + (f" (페이지 {spec})" if spec else " (전체)"))
+
+    def on_prog(done, total):
+        job["progress"] = {"done": done, "total": total, "stage": f"{done}/{total} 쪽"}
+
+    raws = pc.scan(src, spec, progress=on_prog)
+    if not raws:
+        raise RuntimeError(f"표를 찾지 못했습니다 ({spec or '전체'}) — 페이지 범위를 확인하세요. "
+                           f"스캔 이미지 PDF는 표 추출이 불가합니다")
+    tables = pc.group(raws)
+
+    rows = []
+    for i, t in enumerate(tables):
+        rows.append({
+            "idx": i,
+            "caption": t.caption or "(표제 없음)",
+            "pages": t.page_label,
+            "cols": len(t.header or (t.rows[0] if t.rows else [])),
+            "rows": len(t.rows),
+            "removed_headers": t.removed_headers,
+            "header_out_of_range": t.header_out_of_range,
+            "filled_cells": t.filled_cells,
+            "lost_chars": t.lost_chars,
+            "preview": [r[:8] for r in ([t.header] if t.header else []) + t.rows[:3]],
+        })
+        job_log(job, f"  [{i + 1}] {t.caption or '(표제 없음)'} · {t.page_label} · "
+                     f"{len(t.rows)}행"
+                     + (f" · ⚠ 미포착 {t.lost_chars}자" if t.lost_chars else ""))
+
+    job_log(job, f"─── 표 {len(tables)}개 발견")
+    job["result"] = {"tables": rows, "path": str(src)}
+
+
+def run_pdf2excel_write(job, params):
+    """선택한 표만 엑셀로 저장한다. 스캔을 다시 하므로 원본이 바뀌면 결과도 따라간다."""
+    import pdf2excel_core as pc
+    src = Path(params["path"])
+    if not path_allowed(src):
+        raise RuntimeError("대상 파일이 승인된 경로가 아닙니다")
+    out_dir = Path(params.get("out_dir") or src.parent)
+    if not path_allowed(out_dir):
+        raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+
+    spec = (params.get("page_range") or "").strip()
+    picked = params.get("picked")            # None이면 전체
+    gap = int(params.get("gap_rows", 4))
+
+    def on_prog(done, total):
+        job["progress"] = {"done": done, "total": total, "stage": f"{done}/{total} 쪽"}
+
+    raws = pc.scan(src, spec, progress=on_prog)
+    if not raws:
+        raise RuntimeError("표를 찾지 못했습니다 — 페이지 범위를 확인하세요")
+    tables = pc.group(raws)
+
+    if picked is not None:
+        sel = set(int(i) for i in picked)
+        tables = [t for i, t in enumerate(tables) if i in sel]
+        if not tables:
+            raise RuntimeError("선택한 표가 없습니다")
+
+    out = out_dir / f"{src.stem}.xlsx"
+    # write_xlsx는 표가 0개면 ValueError를 낸다 — 빈 엑셀을 만들지 않는 설계다
+    path = pc.write_xlsx(tables, out, src.name, gap)
+    size = Path(path).stat().st_size
+    job_log(job, f"  ✓ {Path(path).name} ({size >> 10} KB · 표 {len(tables)}개)")
+    job_log(job, f"─── 저장 완료 → {path}")
+    job["result"] = {"path": str(path)}
 
 
 def run_hwp2pdf(job, params):
@@ -626,7 +726,8 @@ RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
            "pagenum_scan": run_pagenum_scan, "pagenum_apply": run_pagenum_apply,
            "hwp_probe": run_hwp_probe,
            "eiass_seq_dl": run_eiass_seq_dl,
-           "hwp2pdf": run_hwp2pdf}
+           "hwp2pdf": run_hwp2pdf,
+           "pdf2excel_scan": run_pdf2excel_scan, "pdf2excel_write": run_pdf2excel_write}
 
 def worker():
     while True:
@@ -686,6 +787,8 @@ class Handler(BaseHTTPRequestHandler):
         self._headers(204, length=0)
 
     def do_GET(self):
+        global LAST_SEEN
+        LAST_SEEN = time.time()
         url = urlparse(self.path)
         if url.path == "/ping":
             self._json({"ok": True, "bridge_version": BRIDGE_VERSION,
@@ -720,6 +823,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "unknown endpoint"}, 404)
 
     def do_POST(self):
+        global LAST_SEEN
+        LAST_SEEN = time.time()
         if not self._auth_ok():
             self._json({"ok": False, "error": "unauthorized"}, 401)
             return
@@ -803,6 +908,33 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "unknown endpoint"}, 404)
 
 # ── 기동 ─────────────────────────────────────────────────────────────────────
+def _idle_watchdog(srv, on_exit=None):
+    """웹 UI가 닫히면(=요청이 끊기면) 스스로 종료한다.
+
+    사용자는 exe를 더블클릭해 쓰고 브라우저를 닫으면 끝이다 — 트레이에서
+    따로 끄는 절차를 요구하지 않는다(2026-07-21 사용자 지시).
+    작업 중에는 끝내지 않는다: 변환이 수십 분 걸릴 수 있고 그 사이 탭을
+    닫아 두는 경우가 있다.
+    """
+    def loop():
+        while True:
+            time.sleep(10)
+            busy = any(j.get("status") == "running" for j in JOBS.values()) or JOB_QUEUE
+            if busy:
+                continue
+            if time.time() - LAST_SEEN > IDLE_EXIT_SEC:
+                print(f"\n  웹 UI 연결이 {IDLE_EXIT_SEC}초 이상 끊겨 종료합니다.", flush=True)
+                try:
+                    srv.shutdown()
+                except Exception:
+                    pass
+                if on_exit:
+                    try: on_exit()
+                    except Exception: pass
+                return
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def _make_tray(srv, port: int):
     """트레이 아이콘을 만든다. 못 만들면 None을 돌려 콘솔 모드로 떨어진다.
 
@@ -931,8 +1063,9 @@ def main():
     # (pystray 미설치 등)에서는 종전대로 콘솔에서 돈다 — 종료 수단이 없어지면
     # 안 되므로 조용히 창만 없애지는 않는다.
     icon = _make_tray(srv, port)
+    _idle_watchdog(srv, on_exit=(icon.stop if icon else None))
     if icon is None:
-        print("  이 창을 켜 둔 동안에만 브리지 기능이 활성화됩니다. 종료: Ctrl+C")
+        print("  웹 UI를 닫으면 자동 종료됩니다. 즉시 종료: Ctrl+C")
         print("-" * 64, flush=True)
         try:
             srv.serve_forever()
@@ -940,7 +1073,7 @@ def main():
             print("\n  종료했습니다.")
         return
 
-    print("  트레이(작업표시줄 오른쪽 아래)에 상주합니다 — 종료는 트레이 메뉴에서.")
+    print("  트레이에 상주합니다 — 웹 UI를 닫으면 자동 종료됩니다(트레이 메뉴로도 종료 가능).")
     print("-" * 64, flush=True)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:

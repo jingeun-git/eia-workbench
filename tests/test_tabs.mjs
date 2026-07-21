@@ -10,13 +10,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 await import(join(ROOT, "shared/app.js"));
 await new Promise((r) => setTimeout(r, 30));
 
-const tabs = nav.children.map((c) => c.textContent);
+// 내비가 그룹으로 묶이면서 탭이 한 단계 안쪽으로 들어갔다(2026-07-21)
+const tabs = nav.children.flatMap((g) =>
+  (g.children || []).filter((c) => c.classList?.contains("tab")).map((c) => c.textContent));
 const dup = tabs.filter((t, i) => tabs.indexOf(t) !== i);
 const importers = readdirSync(join(ROOT, "modules"))
   .filter((f) => readFileSync(join(ROOT, "modules", f), "utf8").includes("shared/app.js"));
 
 let fail = 0;
-console.log(`탭 ${tabs.length}개: ${tabs.join(" · ")}`);
+const groups = nav.children.length;
+console.log(`그룹 ${groups}개 · 탭 ${tabs.length}개: ${tabs.join(" · ")}`);
 if (dup.length) { console.log(`✗ 중복: ${[...new Set(dup)].join(", ")}`); fail = 1; }
 else console.log("✓ 중복 없음");
 if (importers.length) { console.log(`✗ app.js를 import하는 모듈: ${importers}`); fail = 1; }

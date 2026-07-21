@@ -3,7 +3,13 @@
    2026-07-21 탭 중복 사고(진입점 이중 실행)를 재현·검증한 도구다. */
 class El {
   constructor(tag){ this.tagName=tag; this.children=[]; this.dataset={}; this.style={};
+    // ⚠ className 대입은 classList에도 반영되어야 한다 — 실제 DOM이 그렇다.
+    //   동기화하지 않으면 `.tab` 선택이 전부 빗나가 "탭 0개"로 나온다(2026-07-21).
     this.classList={_s:new Set(), add(...a){a.forEach(x=>this._s.add(x))}, remove(){}, toggle(){}, contains(x){return this._s.has(x)}};
+    Object.defineProperty(this, "className", {
+      get(){ return [...this.classList._s].join(" "); },
+      set(v){ this.classList._s = new Set(String(v).split(/\s+/).filter(Boolean)); },
+    });
     this._attrs={}; this.textContent=""; }
   appendChild(c){ this.children.push(c); c.parentNode=this; return c; }
   setAttribute(k,v){ this._attrs[k]=v; } getAttribute(k){ return this._attrs[k]; }
@@ -12,7 +18,7 @@ class El {
   querySelectorAll(s){ return doc.querySelectorAll(s); }
 }
 const nav = new El("nav"); nav.classList.add("tabs");
-const TOOL_IDS = ["parcel","md","eiass","hwppdf","pagenum"];
+const TOOL_IDS = ["parcel","md","eiass","hwppdf","pagenum","pdf2xl","photo"];
 const reg = { ".tabs": nav, ".toasts": new El("div") };
 for (const t of TOOL_IDS) reg["#sec-"+t] = new El("section");
 for (const id of ["theme-toggle","bridge-chip","settings-btn","settings-save",
@@ -21,7 +27,8 @@ const doc = {
   documentElement:{dataset:{}},
   querySelector(s){ return reg[s] ?? null; },
   querySelectorAll(s){
-    if (s===".tab"||s===".tab[data-needs-bridge]") return nav.children.filter(c=>c.classList.contains("tab"));
+    if (s===".tab"||s===".tab[data-needs-bridge]")
+      return nav.children.flatMap(g=>(g.children||[]).filter(c=>c.classList?.contains("tab")));
     if (s===".tool-section") return TOOL_IDS.map(t=>reg["#sec-"+t]);
     return [];
   },

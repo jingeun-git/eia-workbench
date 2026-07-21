@@ -7,21 +7,37 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-const V = "3.21.0";
+const V = "3.22.0";
 
 /* ── 도구 레지스트리 ───────────────────────────────────────────────────
    init은 첫 활성화 시 1회 lazy 호출. needsBridge 도구는 미연결 시 잠금. */
+/* 도구를 EIA 업무 흐름 순서로 묶는다 — 이름이 아니라 **언제 쓰는가**로 나눠야
+   찾는 시간이 준다.
+     자료 수집·조사  : 보고서에 넣을 근거 자료를 모으는 단계
+     본문 작성       : 모은 자료를 보고서 형식으로 만드는 단계
+     제출본 정리     : 다 쓴 뒤 제책·제출 형태로 다듬는 단계 */
+const GROUPS = [
+  { id: "collect", label: "자료 수집·조사" },
+  { id: "author",  label: "본문 작성" },
+  { id: "finish",  label: "제출본 정리" },
+];
+
 const TOOLS = [
-  { id: "parcel", label: "건축물대장", needsBridge: false,
-    load: () => import(`../modules/parcel.js?v=${V}`) },
-  { id: "md",     label: "md 변환",    needsBridge: false,
-    load: () => import(`../modules/md.js?v=${V}`) },
-  { id: "eiass",  label: "EIASS",      needsBridge: false,
+  { id: "eiass",  group: "collect", label: "EIASS 수집",  needsBridge: false,
     load: () => import(`../modules/eiass.js?v=${V}`) },
-  { id: "hwppdf", label: "HWP→PDF",   needsBridge: true,
-    load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
-  { id: "pagenum",label: "쪽번호",     needsBridge: true,
+  { id: "md",     group: "collect", label: "문서 → MD",   needsBridge: false,
+    load: () => import(`../modules/md.js?v=${V}`) },
+  { id: "photo",  group: "collect", label: "사진 좌표",   needsBridge: true, planned: true },
+
+  { id: "parcel", group: "author",  label: "건축물대장",  needsBridge: true,
+    load: () => import(`../modules/parcel.js?v=${V}`) },
+  { id: "pdf2xl", group: "author",  label: "PDF 표 → 엑셀", needsBridge: true,
+    load: () => import(`../modules/pdf2excel.js?v=${V}`) },
+
+  { id: "pagenum",group: "finish",  label: "쪽번호",      needsBridge: true,
     load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
+  { id: "hwppdf", group: "finish",  label: "HWP → PDF",   needsBridge: true,
+    load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
   // 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제
 ];
 
@@ -46,7 +62,7 @@ function initTheme() {
 
 /* ── 탭 ───────────────────────────────────────────────────────────── */
 async function activate(id, pushHash = true) {
-  const tool = TOOLS.find((t) => t.id === id) || TOOLS[0];
+  const tool = TOOLS.find((t) => t.id === id && !t.planned) || TOOLS[0];
   $$(".tab").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.tool === tool.id)));
   $$(".tool-section").forEach((s) =>
@@ -67,18 +83,32 @@ async function activate(id, pushHash = true) {
 }
 function initTabs() {
   const nav = $(".tabs");
-  for (const t of TOOLS) {
-    const b = document.createElement("button");
-    b.className = "tab"; b.dataset.tool = t.id;
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", "false");
-    b.textContent = t.label;
-    if (t.needsBridge) {
-      b.dataset.needsBridge = "1";
-      b.title = "브리지 연결 필요";
+  for (const g of GROUPS) {
+    const wrap = document.createElement("div");
+    wrap.className = "tab-group";
+    const cap = document.createElement("span");
+    cap.className = "tab-group-label";
+    cap.textContent = g.label;
+    wrap.appendChild(cap);
+
+    for (const t of TOOLS.filter((x) => x.group === g.id)) {
+      const b = document.createElement("button");
+      b.className = "tab"; b.dataset.tool = t.id;
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", "false");
+      b.textContent = t.label;
+      if (t.planned) {
+        b.disabled = true;
+        b.dataset.planned = "1";
+        b.title = "구현 예정";
+      } else if (t.needsBridge) {
+        b.dataset.needsBridge = "1";
+        b.title = "브리지 연결 필요";
+      }
+      b.addEventListener("click", () => !b.disabled && activate(t.id));
+      wrap.appendChild(b);
     }
-    b.addEventListener("click", () => !b.disabled && activate(t.id));
-    nav.appendChild(b);
+    nav.appendChild(wrap);
   }
   addEventListener("hashchange", () =>
     activate(location.hash.slice(1) || TOOLS[0].id, false));
@@ -105,6 +135,7 @@ function initBridgeChip() {
     }
     // 브리지 필요 탭 잠금/해제 — 숨기지 않고 이유를 남긴다(empty-nav-state)
     $$(".tab[data-needs-bridge]").forEach((b) => {
+      if (b.dataset.planned) return;         // 구현 예정 탭은 항상 잠김
       b.disabled = s !== "ok";
       b.title = s === "ok" ? "" : "브리지 연결 필요 — 상태칩을 눌러 안내를 확인하세요";
     });

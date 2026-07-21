@@ -399,3 +399,18 @@ input:focus, textarea:focus, select:focus {
 .plan-calc b { font-weight: 600; }
 .plan-tags { margin-top: 3px; font-size: var(--text-xs); color: var(--text-dim); line-height: 1.5; }
 .plan-note { margin-top: 3px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+
+/* 도구 내비 — 업무 흐름 단계로 묶는다 */
+.tabs { display: flex; gap: var(--space-5); flex-wrap: wrap; align-items: flex-end; }
+.tab-group { display: flex; align-items: center; gap: 2px; }
+.tab-group-label {
+  font-size: var(--text-xs); color: var(--text-dim); font-weight: 600;
+  letter-spacing: .02em; white-space: nowrap; padding: 0 8px 0 0;
+  border-right: 1px solid var(--border); margin-right: 6px; align-self: center;
+}
+.tab[data-planned] { opacity: .45; cursor: not-allowed; }
+.tab[data-planned]::after { content: " (예정)"; font-size: .85em; }
+@media (max-width: 760px) {
+  .tabs { gap: var(--space-3); }
+  .tab-group { flex: 1 1 100%; }
+}

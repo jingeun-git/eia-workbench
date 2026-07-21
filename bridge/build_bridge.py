@@ -53,6 +53,7 @@ BUNDLE_SRC = [
     _find("convert_core",       TOOLS / "convert_to_md" / "convert_core.py"),
     _find("eiass_doc_resolver", TOOLS / "EIASS" / "eiass_doc_resolver.py"),
     _find("hwp2pdf_core",       TOOLS / "hwp2pdf" / "hwp2pdf_core.py"),
+    _find("pdf2excel_core",     TOOLS / "pdf2excel" / "pdf2excel_core.py"),
 ]
 # 쪽번호는 브리지 자체 엔진(hwp_pagenum.py)이 처리한다 — bridge/ 안에 있어 자동 포함된다.
 # 구 `배포용/hwpPageNum2.1.exe` 동봉 특례는 SYS-31 재구현 완료로 폐지(2026-07-21,
@@ -153,6 +154,7 @@ def build(full: bool):
         # 쪽번호 엔진은 bridge/ 안에 있어 --paths로 잡히지만, PyInstaller가
         # 동적 import를 놓치지 않도록 명시한다
         "--hidden-import", "hwp_pagenum",
+        "--hidden-import", "pdf2excel_core",
     ]
     # ⚠ 참조 도구들은 **함수 안에서 늦게 import**한다(기동 속도 때문). PyInstaller의
     #   정적 분석은 이런 호출을 못 잡아 번들에서 ModuleNotFoundError로 죽는다 —
