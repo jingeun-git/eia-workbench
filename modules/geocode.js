@@ -90,6 +90,7 @@ export async function init(section, { bridge, toast, V }) {
         <div class="progress-track"><div class="progress-fill" id="gc-fill"></div></div>
       </div>
 
+      <div class="gc-scrolltop" id="gc-scrolltop"><div></div></div>
       <div class="table-wrap active gc-scroll" id="gc-tblwrap">
         <table class="data-table gc-table" id="gc-table">
           <thead><tr>
@@ -294,10 +295,13 @@ export async function init(section, { bridge, toast, V }) {
       ? `${n}건 · 완료 ${done}${fail ? ` · 실패 ${fail}` : ""}` : "";
     $("#gc-empty").style.display = n ? "none" : "";
     $("#gc-tblwrap").style.display = n ? "" : "none";
+    const pk = section.querySelectorAll(".gc-chk:checked").length;
+    $("#gc-export").textContent = pk ? `엑셀로 내보내기 (선택 ${pk}건)` : "엑셀로 내보내기";
     $("#gc-export").disabled = !done;
     $("#gc-retry").disabled = !fail || busy;
     syncRunLabel();
     initResizers();
+    syncTopScroll();
   }
   const stCls = (s) => s === "완료" ? "ok" : s === "실패" ? "fail" : s === "조회중" ? "run" : "";
 
@@ -788,8 +792,13 @@ export async function init(section, { bridge, toast, V }) {
   /* ── 내보내기 ────────────────────────────────────────────────────── */
   $("#gc-export").addEventListener("click", () => {
     if (!window.XLSX) { toast("엑셀 라이브러리를 불러오지 못했습니다", "fail"); return; }
+    // 체크한 행이 있으면 **그것만** 내보낸다. 조회 실행과 같은 규칙이다 —
+    // 한쪽만 선택을 따르면 사용자는 어느 쪽이 맞는지 알 수 없다
+    // (2026-07-21 사용자 지적: 내보내기는 항상 전체가 나갔다).
+    const picked = new Set([...section.querySelectorAll(".gc-chk:checked")].map((c) => +c.value));
+    const target = picked.size ? rows.filter((r) => picked.has(r.id)) : rows;
     const e = epsg(), geo = e === 4326;
-    const out = rows.map((r) => {
+    const out = target.map((r) => {
       let x = "", y = "";
       if (r.lat != null && !geo) {
         try { const p = fromWgs84(r.lat, r.lon, e); x = +p[0].toFixed(3); y = +p[1].toFixed(3); }
@@ -819,8 +828,9 @@ export async function init(section, { bridge, toast, V }) {
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
     window.XLSX.writeFile(wb, `지오코딩_${stamp}.xlsx`);
-    log(`엑셀 ${out.length}건 저장 — 출처 칼럼으로 ${SRC_UPLOAD}/${SRC_MAP}이 구분됩니다`, "ok");
-    toast(`${out.length}건을 엑셀로 저장했습니다`, "ok");
+    log(`엑셀 ${out.length}건 저장${picked.size ? " (선택분만)" : " (전체)"}`
+        + ` — 출처 칼럼으로 ${SRC_UPLOAD}/${SRC_MAP}이 구분됩니다`, "ok");
+    toast(`${picked.size ? "선택한 " : ""}${out.length}건을 엑셀로 저장했습니다`, "ok");
   });
 
   /* ── 칼럼 너비 조절 ────────────────────────────────────────────────
@@ -852,6 +862,7 @@ export async function init(section, { bridge, toast, V }) {
         document.removeEventListener("mouseup", up);
         document.body.classList.remove("gc-resizing");
         saveWidths();
+        syncTopScroll();
       };
       h.addEventListener("mousedown", (ev) => {
         ev.preventDefault(); ev.stopPropagation();
@@ -871,6 +882,27 @@ export async function init(section, { bridge, toast, V }) {
         th.style.width = `${Math.min(520, Math.max(48, max))}px`;
         saveWidths();
       });
+    });
+  }
+
+  /* ── 위쪽 가로 스크롤바 ────────────────────────────────────────────
+     가로 스크롤바가 표 **아래**에만 있으면 행이 많을 때 끝까지 내려가야
+     보인다(2026-07-21 사용자 지적). 표 위에 같은 폭의 빈 막대를 두고
+     양쪽 스크롤을 서로 맞춘다. */
+  function syncTopScroll() {
+    const top = $("#gc-scrolltop"), wrap = $("#gc-tblwrap"), table = $("#gc-table");
+    const bar = top && top.firstElementChild;
+    if (!top || !wrap || !table || !bar) return;
+    bar.style.width = `${table.scrollWidth}px`;
+    top.style.display = table.scrollWidth > wrap.clientWidth ? "" : "none";
+    if (top.dataset.bound) return;
+    top.dataset.bound = "1";
+    let lock = false;
+    top.addEventListener("scroll", () => {
+      if (lock) return; lock = true; wrap.scrollLeft = top.scrollLeft; lock = false;
+    });
+    wrap.addEventListener("scroll", () => {
+      if (lock) return; lock = true; top.scrollLeft = wrap.scrollLeft; lock = false;
     });
   }
 

@@ -61,6 +61,8 @@ class El {
     return new El("div");
   }
   querySelectorAll() { return []; }
+  get firstElementChild() { return this.children[0] || null; }
+  get clientWidth() { return 800; }
   get offsetWidth() { return 100; }
   get scrollWidth() { return 100; }
 }

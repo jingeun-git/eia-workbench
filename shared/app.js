@@ -7,7 +7,7 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.30.0";
+export const V = "3.31.0";
 
 /* 브리지가 마지막으로 **실제로 바뀐** 버전.
    웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
@@ -149,6 +149,7 @@ function initBridgeChip() {
   const render = () => {
     const s = bridge.state;
     chip.className = "chip " + (s === "ok" ? "ok" : s === "checking" ? "warn" : "fail");
+    chip.style.cursor = s === "ok" ? "default" : "pointer";
     const bv = bridge.info?.bridge_version ?? "?";
     const stale = s === "ok" && cmpVer(bv, MIN_BRIDGE) < 0;
     chip.textContent =
@@ -162,6 +163,7 @@ function initBridgeChip() {
     else if (s === "ok") {
       chip.classList.toggle("warn", stale);
       chip.classList.toggle("ok", !stale);
+      chip.style.cursor = "default";
       chip.title = stale
         ? `브리지가 오래됐습니다 — v${MIN_BRIDGE} 이상이 필요합니다(현재 v${bv}).\n`
           + `열려 있는 브리지를 닫고 run_bridge.bat을 다시 실행하세요.`
@@ -183,7 +185,12 @@ function initBridgeChip() {
     });
   };
   bridge.addEventListener("change", render);
-  chip.addEventListener("click", () => openModal("bridge-modal"));
+  /* 상태칩은 **상태 표시가 본업**이다(2026-07-21 사용자 지시). 정상일 때는
+     눌러도 아무 일이 없다 — 굳이 설명창을 띄울 이유가 없다.
+     반대로 연결이 안 된 상태에서는 "어떻게 켜지?"를 알아야 하므로 그때만 연다. */
+  chip.addEventListener("click", () => {
+    if (bridge.state !== "ok") openModal("bridge-modal");
+  });
   render();
   bridge.start();
 }

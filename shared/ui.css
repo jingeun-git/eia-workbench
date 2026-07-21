@@ -53,22 +53,27 @@
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
   appearance: none; background: none; border: none;
-  height: var(--tab-height); align-self: center;
-  padding: 0 var(--space-4) 0 0;
-  margin-right: var(--space-4);
+  height: 32px; align-self: center;
+  padding: 0 11px; margin: 0 1px;
+  border-radius: 7px;
   display: inline-flex; align-items: center; gap: 6px;
   font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium);
   color: var(--tab-fg); cursor: pointer; white-space: nowrap;
-  border-bottom: 2px solid transparent;
   transition: color var(--motion-fast) var(--ease-out),
-              border-color var(--motion-base) var(--ease-out);
+              background var(--motion-fast) var(--ease-out),
+              transform var(--motion-fast) var(--ease-out);
 }
-.tab:last-child { margin-right: 0; }
-.tab:hover { color: var(--text); }
+.tab:hover:not(:disabled) { color: var(--text); background: var(--surface); }
+.tab:active:not(:disabled) { transform: scale(.97); }
 .tab[aria-selected="true"] {
-  color: var(--text);
+  color: var(--btn-primary-fg, #fff);
+  background: var(--accent);
   font-weight: var(--weight-semibold);
-  border-bottom-color: var(--tab-indicator);
+}
+.tab[aria-selected="true"]:hover { background: var(--accent-hover, var(--accent)); color: var(--btn-primary-fg, #fff); }
+@media (prefers-reduced-motion: reduce) {
+  .tab, .tab-group { transition: none; }
+  .tab:active:not(:disabled) { transform: none; }
 }
 .tab:disabled { color: var(--text-dim); cursor: not-allowed; }
 .tab:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
@@ -401,17 +406,43 @@ input:focus, textarea:focus, select:focus {
 .plan-note { margin-top: 3px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
 
 /* 도구 내비 — 업무 흐름 단계로 묶는다 */
-.tabs { display: flex; gap: var(--space-5); flex-wrap: wrap; align-items: flex-end; }
-.tab-group { display: flex; align-items: center; gap: 2px; }
+/* ── 카테고리 내비 ──────────────────────────────────────────────────
+   업무 흐름 3그룹이 한 줄에 늘어서 있으면 어디까지가 한 묶음인지 안 보인다
+   (2026-07-21 사용자 지적). 그룹을 **덩어리로 보이게** 하고 가운데 정렬한다. */
+.tabs {
+  display: flex; gap: var(--space-4); flex-wrap: wrap;
+  align-items: stretch; justify-content: center;
+  padding: var(--space-2) 0;
+}
+.tab-group {
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 10px;
+  background: var(--surface-2, transparent);
+  border: 1px solid transparent;
+  transition: background var(--motion-base) var(--ease-out),
+              border-color var(--motion-base) var(--ease-out);
+}
+.tab-group:hover { background: var(--accent-subtle); border-color: var(--border); }
+/* 활성 탭이 든 그룹은 그대로 두드러지게 — 지금 어느 단계에 있는지 보인다 */
+.tab-group:has(.tab[aria-selected="true"]) {
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 .tab-group-label {
-  font-size: var(--text-xs); color: var(--text-dim); font-weight: 600;
-  letter-spacing: .02em; white-space: nowrap; padding: 0 8px 0 0;
-  border-right: 1px solid var(--border); margin-right: 6px; align-self: center;
+  font-size: 11px; color: var(--text-dim); font-weight: var(--weight-bold);
+  letter-spacing: .04em; white-space: nowrap;
+  padding: 3px 9px; margin-right: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; align-self: center;
+}
+.tab-group:has(.tab[aria-selected="true"]) .tab-group-label {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .tab[data-planned] { opacity: .45; cursor: not-allowed; }
 .tab[data-planned]::after { content: " (예정)"; font-size: .85em; }
 @media (max-width: 760px) {
-  .tabs { gap: var(--space-3); }
+  .tabs { gap: var(--space-2); justify-content: flex-start; }
   .tab-group { flex: 1 1 100%; }
 }
 
@@ -687,3 +718,49 @@ body.gc-resizing * { cursor: col-resize !important; }
   white-space: nowrap;
 }
 .foot-ver { color: var(--text-muted); font-size: var(--text-xs); margin-left: 10px; }
+
+/* ── 지오코딩 표 — 헤더 구분·상하 스크롤 (2026-07-21 사용자 요청) ─────
+   ① 머리행에 선이 없어 어디까지가 헤더인지 안 보였다.
+   ② 가로 스크롤바가 아래에만 있어, 행이 많으면 끝까지 내려가야 보였다.
+      행도 무한정 늘어나 페이지가 끝없이 길어졌다 — 로그창처럼 스스로 스크롤한다. */
+
+/* 세로 스크롤 — 표가 페이지를 늘리지 않고 자기 안에서 구른다 */
+.gc-scroll {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+}
+.gc-scroll .gc-table { border-collapse: separate; border-spacing: 0; }
+
+/* 머리행 고정 — 스크롤해도 어느 열인지 보인다 */
+.gc-table thead th {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border-strong);
+  border-right: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--border);
+}
+.gc-table thead th:last-child { border-right: 0; }
+.gc-table tbody td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.gc-table tbody td:last-child { border-right: 0; }
+.gc-table tbody tr:last-child td { border-bottom: 0; }
+.gc-table tbody tr:hover td { background: var(--accent-subtle); }
+
+/* 위쪽 가로 스크롤바 — 표 위에 같은 폭의 빈 막대를 두고 스크롤을 맞춘다 */
+.gc-scrolltop {
+  overflow-x: auto; overflow-y: hidden;
+  height: 12px; margin-bottom: 2px;
+}
+.gc-scrolltop > div { height: 1px; }
+.gc-scrolltop::-webkit-scrollbar { height: 10px; }
+.gc-scrolltop::-webkit-scrollbar-thumb,
+.gc-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 5px;
+}
+.gc-scrolltop::-webkit-scrollbar-track,
+.gc-scroll::-webkit-scrollbar-track { background: var(--log-bg); }
+.gc-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
