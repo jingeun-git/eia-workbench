@@ -252,6 +252,7 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
   const encKey = encodeURIComponent(pkey);
   const results = [];
   const total = parcels.length;
+  let nOk = 0, nNone = 0, nFail = 0;
 
   for (let i = 0; i < total; i++) {
     checkCancel();
@@ -267,15 +268,25 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
     log(`  [${i + 1}/${total}] 건축물대장 조회: ${disp}`);
     onProgress(i + 1, total, disp);
 
-    let title, wclf;
+    /* **"건축물이 없다"와 "조회에 실패했다"는 다른 사실이다.**
+       예전에는 실패를 catch로 삼켜 전부 "건물없음"으로 적었다(2026-07-21 실사고).
+       이제 필지마다 결과를 세 갈래로 남기고, 실패는 실패로 표시한다. */
+    let title, wclf, failed = null;
     try {
       title = await getTitleInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
       wclf  = await getWclfInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
     } catch (e) {
-      // 조회 실패를 "건물없음"으로 적지 않는다 — 결과와 실패는 다른 것이다.
-      // 첫 실패에서 즉시 중단한다(같은 원인이면 나머지도 전부 실패한다).
-      log(`  ✗ ${disp}: ${e.message}`, "fail");
-      throw new Error(`건축물대장 조회 실패 (${i + 1}/${total}번째) — ${e.message}`);
+      failed = e.message;
+      title = {}; wclf = {};
+      log(`  ✗ ${disp} — 조회 실패: ${e.message}`, "fail");
+    }
+
+    if (failed) {
+      results.push({ addr: parcel.addr || disp, mainPurps: "✗ 조회 실패",
+                     totArea: null, sewage: "-", _error: failed });
+      nFail++;
+      await sleep(250);
+      continue;
     }
 
     const addr = title.platPlc || parcel.addr || `${+parcel.bun}-${+parcel.ji}`;
@@ -289,15 +300,25 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
       mode = "-";
     }
 
+    const hasBldg = !!title.mainPurps;
+    if (hasBldg) nOk++; else nNone++;
     results.push({
       addr,
-      mainPurps: title.mainPurps || "건물없음",
+      // 조회는 정상이었고 결과가 없는 경우 — 실패와 구분해 명시한다
+      mainPurps: hasBldg ? title.mainPurps : "건축물 없음(조회 정상)",
       totArea: title.totArea ?? null,
       sewage: mode,
     });
     await sleep(250);   // API rate limiting — 엔진 동일
   }
-  log(`✅ 분석 완료: 총 ${results.length}개 필지`, "ok");
+  // 요약을 반드시 남긴다 — 전건 실패인데 표만 보면 "건물 없는 동네"로 오인된다
+  log(`✅ 분석 완료: 총 ${results.length}개 필지 — `
+      + `건축물 ${nOk} · 건축물 없음 ${nNone} · 조회 실패 ${nFail}`,
+      nFail ? "fail" : "ok");
+  if (nFail) {
+    log(`⚠ ${nFail}개 필지는 조회에 실패했습니다 — "건축물 없음"이 아닙니다. `
+        + `브리지 연결과 API 상태를 확인한 뒤 다시 실행하세요.`, "fail");
+  }
   return results;
 }
 
