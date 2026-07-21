@@ -164,10 +164,35 @@ async function geocodeToParcel(addr, vkey, log) {
 /* ── 건축물대장 API (fetch — ACAO:* 실측 확인, XML 응답) ────────────── */
 function findText(el, tag) { return el?.querySelector(tag)?.textContent ?? ""; }
 
+/* 공공데이터포털은 Access-Control-Allow-Origin을 주지 않는다(2026-07-21 실측:
+   ACAO 헤더 없음). 브라우저에서 직접 fetch하면 CORS로 통째로 실패하고, 그
+   실패가 "건물없음"으로 표시돼 왔다 — 결과가 아니라 차단이었다.
+   → 브리지가 연결돼 있으면 브리지가 대신 호출한다(호스트 화이트리스트). */
+let _bridgeRef = null;
+export function useBridge(b) { _bridgeRef = b; }
+
 async function fetchXml(url) {
-  const r = await fetch(url, { cache: "no-store" });
+  let r;
+  if (_bridgeRef?.state === "ok" && _bridgeRef.base) {
+    r = await fetch(`${_bridgeRef.base}/proxy?url=${encodeURIComponent(url)}`, {
+      cache: "no-store",
+      headers: _bridgeRef.token ? { Authorization: `Bearer ${_bridgeRef.token}` } : {},
+    });
+  } else {
+    throw new Error("건축물대장 조회는 브리지가 필요합니다 — "
+      + "공공데이터포털이 브라우저 직접 호출을 허용하지 않습니다(CORS). "
+      + "run_bridge.bat을 실행한 뒤 다시 시도하세요");
+  }
+  if (!r.ok) throw new Error(`건축물대장 API 오류 (HTTP ${r.status})`);
   const text = await r.text();
-  return new DOMParser().parseFromString(text, "text/xml");
+  const doc = new DOMParser().parseFromString(text, "text/xml");
+  // 포털은 오류도 200으로 준다 — resultCode를 반드시 확인한다
+  const code = doc.querySelector("resultCode")?.textContent?.trim();
+  if (code && code !== "00") {
+    const msg = doc.querySelector("resultMsg")?.textContent?.trim() || "";
+    throw new Error(`건축물대장 API 거부: ${code} ${msg}`);
+  }
+  return doc;
 }
 
 /* getBrTitleInfo — 총괄표제부(regstrKindCd=1) 우선, 없으면 합산 (엔진 동일) */
@@ -197,7 +222,10 @@ async function getTitleInfo(encKey, sgg, bjd, bun, ji) {
       mainPurps: etc || purps,     // etcPurps가 더 구체적(아파트 등) — 엔진 동일
       totArea: totArea > 0 ? totArea : null,
     };
-  } catch { return {}; }
+  } catch (e) {
+    // 조용히 {}를 돌려주면 조회 실패가 "건물없음"으로 둔갑한다(2026-07-21 실사고)
+    throw e;
+  }
 }
 
 /* getBrWclfInfo — 오수처리방법 */
@@ -213,7 +241,10 @@ async function getWclfInfo(encKey, sgg, bjd, bun, ji) {
       modeCdNm: findText(it, "modeCdNm").trim(),
       etcMode:  findText(it, "etcMode").trim(),
     };
-  } catch { return {}; }
+  } catch (e) {
+    // 조용히 {}를 돌려주면 조회 실패가 "건물없음"으로 둔갑한다(2026-07-21 실사고)
+    throw e;
+  }
 }
 
 /* ── 필지 목록 → 건축물대장 결과 (엔진 _query_buildings 동일) ──────── */
@@ -236,8 +267,16 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
     log(`  [${i + 1}/${total}] 건축물대장 조회: ${disp}`);
     onProgress(i + 1, total, disp);
 
-    const title = await getTitleInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
-    const wclf  = await getWclfInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
+    let title, wclf;
+    try {
+      title = await getTitleInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
+      wclf  = await getWclfInfo(encKey, parcel.sigunguCd, parcel.bjdongCd, parcel.bun, parcel.ji);
+    } catch (e) {
+      // 조회 실패를 "건물없음"으로 적지 않는다 — 결과와 실패는 다른 것이다.
+      // 첫 실패에서 즉시 중단한다(같은 원인이면 나머지도 전부 실패한다).
+      log(`  ✗ ${disp}: ${e.message}`, "fail");
+      throw new Error(`건축물대장 조회 실패 (${i + 1}/${total}번째) — ${e.message}`);
+    }
 
     const addr = title.platPlc || parcel.addr || `${+parcel.bun}-${+parcel.ji}`;
     let mode;
@@ -400,7 +439,8 @@ function saveExcel(results) {
 }
 
 /* ── UI ────────────────────────────────────────────────────────────── */
-export function init(section, { toast }) {
+export function init(section, { toast, bridge }) {
+  useBridge(bridge);          // 건축물대장 조회는 브리지 프록시를 탄다(CORS)
   section.innerHTML = `
   <div class="panel">
     <h2>편입지적 건축물대장 조회</h2>

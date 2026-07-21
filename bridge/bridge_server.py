@@ -43,7 +43,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.9.0"
+BRIDGE_VERSION = "3.10.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -66,6 +66,12 @@ HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
 #   intro.py가 저장소에 없어 원래 실행 불가였다.
 PAGENUM_MOD  = BRIDGE_DIR / "hwp_pagenum.py"
 RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
+
+# 브라우저가 CORS 때문에 직접 못 부르는 공공 API를 대신 호출해 준다.
+# 공공데이터포털은 Access-Control-Allow-Origin을 주지 않아(2026-07-21 실측)
+# fetch가 통째로 실패하고, 그 실패가 조용히 "건물없음"으로 표시되고 있었다.
+# 남의 서버로 요청을 대신 보내는 통로이므로 **호스트를 화이트리스트로 못박는다.**
+PROXY_HOSTS = ("apis.data.go.kr",)
 
 for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR):
     if p.exists():
@@ -98,6 +104,33 @@ def detect_features():
         except Exception:
             feats["pagenum"] = PAGENUM_MOD.exists()
     return feats
+
+def proxy_get(target: str):
+    """화이트리스트 호스트로만 GET을 대리 수행한다. 반환: (bytes, content-type)"""
+    from urllib.parse import urlparse as _up
+    from urllib.request import urlopen as _open
+    u = _up(target)
+    if u.scheme != "https" or u.hostname not in PROXY_HOSTS:
+        raise RuntimeError(f"허용되지 않은 대상: {u.scheme}://{u.hostname}")
+    # ⚠ 공공데이터포털은 기본 Python-urllib UA에 대해 **HTTP 200 + 빈 본문**을 준다
+    #   (2026-07-21 실측: 기본 0 bytes / Accept·UA 지정 2525 bytes).
+    #   오류가 아니라 빈 응답이라 "조회 결과 없음"으로 오인되기 딱 좋다.
+    from urllib.request import Request as _Req
+    req = _Req(target, headers={
+        "Accept": "*/*",
+        "User-Agent": "Mozilla/5.0 (compatible; EIA-Workbench-Bridge)",
+        "Connection": "close",
+    })
+    # 헤더를 갖춰도 간헐적으로 빈 200이 온다 — 짧게 재시도한다.
+    last = None
+    for attempt in range(3):
+        with _open(req, timeout=25) as r:
+            body, last = r.read(), r
+        if body:
+            return body, last.headers.get("Content-Type", "application/xml")
+        time.sleep(0.4 * (attempt + 1))
+    raise RuntimeError("상위 API가 빈 응답만 반환했습니다(3회) — 잠시 후 다시 시도하세요")
+
 
 # ── 설정·토큰 ────────────────────────────────────────────────────────────────
 def load_config():
@@ -535,6 +568,17 @@ class Handler(BaseHTTPRequestHandler):
                         "result": job.get("result") if job["status"] == "done" else None,
                         "error": job.get("error")})
             return
+        if url.path == "/proxy":
+            target = (parse_qs(url.query).get("url") or [""])[0]
+            try:
+                body, ctype = proxy_get(target)
+            except Exception as e:
+                self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 502)
+                return
+            self._headers(200, ctype=ctype, length=len(body))
+            self.wfile.write(body)
+            return
+
         self._json({"ok": False, "error": "unknown endpoint"}, 404)
 
     def do_POST(self):
