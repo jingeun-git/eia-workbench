@@ -25,6 +25,7 @@ if errorlevel 1 goto FAIL
 echo.
 echo [2/2] Verifying feature parity
 %PYCMD% verify_bundle.py dist\EIAWorkbenchBridge.exe
+if errorlevel 2 goto BLOCKED
 if errorlevel 1 goto MISMATCH
 goto DONE
 
@@ -35,6 +36,7 @@ if errorlevel 1 goto FAIL
 echo.
 echo [2/2] Verifying feature parity
 %PYCMD% verify_bundle.py dist\EIAWorkbenchBridge-full.exe --expect-ocr
+if errorlevel 2 goto BLOCKED
 if errorlevel 1 goto MISMATCH
 goto DONE
 
@@ -51,6 +53,17 @@ goto END
 :FAIL
 echo.
 echo  [ERROR] Build failed. See messages above.
+goto END
+
+:BLOCKED
+echo.
+echo  [BLOCKED] Could not verify - Windows refused to run the exe.
+echo  This is an application control policy (Smart App Control / WDAC / AppLocker),
+echo  not a build error. The exe file itself was created.
+echo.
+echo  See the message above for how to check.
+echo  If this PC blocks it, target PCs will likely block it too.
+echo  Consider distributing Python + run_bridge.bat instead.
 goto END
 
 :MISMATCH

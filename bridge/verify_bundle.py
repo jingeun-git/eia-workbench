@@ -49,8 +49,30 @@ def _ping_any() -> dict | None:
 
 def _launch_and_ping(cmd: list[str], label: str, wait: int = 40) -> dict | None:
     print(f"  {label} 기동 중…")
-    proc = subprocess.Popen(cmd, cwd=str(HERE),
-                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        proc = subprocess.Popen(cmd, cwd=str(HERE),
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except OSError as e:
+        # Windows 응용 프로그램 제어 정책(WDAC·AppLocker·스마트 앱 제어)이
+        # 서명 없는 exe의 **실행 자체**를 막는다. 2026-07-21 실제로 겪었고,
+        # 그때는 원시 트레이스백만 떠서 무엇이 문제인지 알 수 없었다.
+        # 이건 빌드 결함이 아니라 **그 PC에서 exe를 못 돌린다**는 뜻이다.
+        print(f"  ✗ {label}을 실행할 수 없습니다 — {e}")
+        print()
+        print("  ── Windows가 이 exe의 실행을 막았습니다 ──")
+        print("     서명되지 않은 프로그램이라 보안 정책에 걸린 것입니다.")
+        print("     빌드가 잘못된 것이 아니라, 이 PC에서 실행이 금지된 상태입니다.")
+        print()
+        print("     확인 순서:")
+        print("       1) 설정 → 개인 정보 및 보안 → Windows 보안 →")
+        print("          앱 및 브라우저 컨트롤 → '스마트 앱 제어'가 켜져 있는지")
+        print("       2) 회사 PC라면 IT 정책(WDAC·AppLocker)일 수 있습니다")
+        print("       3) 이벤트 뷰어 → 응용 프로그램 및 서비스 로그 →")
+        print("          Microsoft → Windows → CodeIntegrity → Operational")
+        print()
+        print("     ⚠ 이 PC에서 막힌다면 **받는 PC에서도 막힐 가능성이 높습니다.**")
+        print("       exe 배포 대신 Python + run_bridge.bat 방식을 검토하세요.")
+        return None
     try:
         for _ in range(wait):
             time.sleep(1)
@@ -94,7 +116,12 @@ def main() -> int:
         return 1
     bun = _launch_and_ping([str(exe), "--no-browser"], "번들 exe")
     if not bun:
-        return 1
+        # 기능이 **다른** 것과 기능을 **확인하지 못한** 것은 다르다.
+        # 뭉뚱그리면 사용자가 원인을 엉뚱한 데서 찾는다(2026-07-21).
+        print()
+        print("  ✗ 검증하지 못했습니다 — exe를 띄울 수 없어 대조 자체가 불가능했습니다.")
+        print("    (기능이 달라서가 아닙니다. 위 사유를 먼저 해결해야 합니다.)")
+        return 2
 
     sf, bf = src["features"], bun["features"]
     keys = sorted(set(sf) | set(bf))
