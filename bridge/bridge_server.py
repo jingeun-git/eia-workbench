@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.25.0"
+BRIDGE_VERSION = "3.26.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -172,6 +172,28 @@ def detect_features():
         except Exception:
             feats["pagenum"] = PAGENUM_MOD.exists()
     return feats
+
+def detect_deps():
+    """선택 의존 라이브러리의 실재 여부. **features와 분리한 진단용 정보**다.
+
+    왜 나누나: features는 화면이 쓰는 "기능 켜짐/꺼짐"이라 여기에 세부 의존을
+    넣으면 UI가 소음을 뿜는다(2026-07-21 사용자가 그 경고문을 지우라고 했다).
+    그러나 **번들 검증에는 반드시 필요하다** — 이것들이 빠지면 기능이 꺼지는
+    게 아니라 **조용히 틀린 결과**가 나온다:
+      · pyproj 없음      → 사진 좌표 CSV의 평면좌표 X·Y 칸이 빈 채로 저장된다
+      · pillow_heif 없음 → HEIC 사진을 못 읽는다(사진별 사유로는 표시된다)
+    빌드 PC에 없으면 PyInstaller가 조용히 빼므로, exe와 저장소 실행본을
+    대조할 때 이 목록이 없으면 차이를 발견할 방법이 없다.
+    """
+    out = {}
+    for mod in ("pyproj", "pillow_heif", "pandas", "fitz", "pdfplumber"):
+        try:
+            __import__(mod)
+            out[mod] = True
+        except Exception:
+            out[mod] = False
+    return out
+
 
 _PROXY_LOCK = threading.Lock()
 _PROXY_CONN = {}          # host -> HTTPSConnection (재사용)
@@ -912,7 +934,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/ping":
             self._json({"ok": True, "bridge_version": BRIDGE_VERSION,
-                        "features": detect_features(), "queue": len(JOB_QUEUE)})
+                        "features": detect_features(), "deps": detect_deps(),
+                        "queue": len(JOB_QUEUE)})
             return
         if not self._auth_ok():
             self._json({"ok": False, "error": "unauthorized"}, 401)

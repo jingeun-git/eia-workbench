@@ -143,6 +143,28 @@ def main() -> int:
         print(f"  {k:12}{str(s):>8}{str(b):>8}   {'✓' if ok else '✗'} {note}")
         fail += (not ok)
 
+    # ── 선택 의존 대조 ────────────────────────────────────────────────
+    # features만 보면 놓치는 것들이다. 빠져도 기능이 꺼지지 않고 **조용히
+    # 틀린 결과**가 나온다(pyproj 없으면 CSV 평면좌표 칸이 빈다).
+    sd, bd = src.get("deps") or {}, bun.get("deps") or {}
+    if sd or bd:
+        print(f"\n  {'선택 의존':14}{'저장소':>8}{'번들':>8}   판정")
+        for k in sorted(set(sd) | set(bd)):
+            s_, b_ = sd.get(k), bd.get(k)
+            lost = bool(s_) and not b_
+            fail += lost
+            note = "✗ 번들에서 누락" if lost else ("저장소에도 없음" if not s_ else "")
+            print(f"  {k:14}{str(s_):>8}{str(b_):>8}   {'✗' if lost else '✓'} {note}")
+        missing_both = [k for k in sd if not sd[k]]
+        if missing_both:
+            print(f"\n  ※ 빌드 PC에 없어 번들에도 들어가지 않은 것: {', '.join(missing_both)}")
+            print("     기능이 꺼지는 게 아니라 결과가 조용히 달라집니다:")
+            if "pyproj" in missing_both:
+                print("       · pyproj      — 사진 좌표 CSV의 평면좌표 X·Y 칸이 빕니다")
+            if "pillow_heif" in missing_both:
+                print("       · pillow_heif — HEIC 사진을 읽지 못합니다(JPG는 정상)")
+            print("     필요하면: pip install pyproj pillow-heif  후 재빌드")
+
     if src.get("bridge_version") != bun.get("bridge_version"):
         print(f"\n  ✗ 버전 불일치 — 저장소 {src.get('bridge_version')} / "
               f"번들 {bun.get('bridge_version')} (오래된 소스로 빌드했을 수 있습니다)")
