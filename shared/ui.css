@@ -771,12 +771,7 @@ body.gc-resizing * { cursor: col-resize !important; }
 .feedback-mark {
   position: fixed; right: 14px; bottom: 10px; z-index: var(--z-sticky);
   font-size: 11px; line-height: 1.4; color: var(--text-dim);
-  pointer-events: none; user-select: none;
+  pointer-events: auto; user-select: text;   /* 주소를 끌어 복사할 수 있게 */
   text-align: right; max-width: min(92vw, 420px);
 }
-.feedback-mark a {
-  color: inherit; text-decoration: underline; text-underline-offset: 2px;
-  pointer-events: auto;          /* 메일 주소만 누를 수 있게 */
-}
-.feedback-mark a:hover { color: var(--text-muted); }
 @media (max-width: 760px) { .feedback-mark { position: static; margin: var(--space-4) var(--space-3); text-align: center; max-width: none; } }

@@ -20,10 +20,12 @@
 
 /* 공용 모듈도 버전을 붙여 부른다 — 붙이지 않으면 브라우저가 옛 파일을
    계속 써서, 고쳐도 화면이 안 바뀐다(2026-07-21 실사고). */
+import { loadShared } from "../shared/loader.js";
+
 export async function init(section, { bridge, toast, V }) {
   const { createMap, baseSwitcherHtml, bindBaseSwitcher, destination: dest } =
-    await import(`../shared/mapview.js?v=${V}`);
-  const { keys } = await import(`../shared/keys.js?v=${V}`);
+    await loadShared("mapview.js", V);
+  const { keys } = await loadShared("keys.js", V);
 
   section.innerHTML = `
   <div class="panel">

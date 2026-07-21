@@ -17,6 +17,8 @@
  * 결과가 나오므로, 반드시 사용자가 드롭다운으로 고른다(사용자 지시).
  */
 
+import { loadShared } from "../shared/loader.js";
+
 const SRC_UPLOAD = "업로드";
 const SRC_MAP = "지도지정";
 
@@ -24,10 +26,10 @@ const SRC_MAP = "지도지정";
    계속 써서, 고쳐도 화면이 안 바뀐다(2026-07-21 실사고). */
 export async function init(section, { bridge, toast, V }) {
   const { createMap, baseSwitcherHtml, bindBaseSwitcher } =
-    await import(`../shared/mapview.js?v=${V}`);
-  const { keys } = await import(`../shared/keys.js?v=${V}`);
+    await loadShared("mapview.js", V);
+  const { keys } = await loadShared("keys.js", V);
   const { toCoord, toAddress, toWgs84, fromWgs84, parseCoord, CRS_LIST } =
-    await import(`../shared/geocode.js?v=${V}`);
+    await loadShared("geocode.js", V);
 
   section.innerHTML = `
   <div class="panel">

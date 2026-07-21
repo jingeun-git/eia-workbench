@@ -7,7 +7,7 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.32.0";
+export const V = "3.33.0";
 
 /* 브리지가 마지막으로 **실제로 바뀐** 버전.
    웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
@@ -75,8 +75,6 @@ function applyTheme(mode) {              // "light" | "dark"
 function initVersion() {
   const v = $("#web-ver");
   if (v) v.textContent = `웹 v${V}`;
-  const f = $("#foot-ver");
-  if (f) f.textContent = `웹 v${V} · 브리지는 별도 프로그램입니다 (run_bridge.bat)`;
 }
 
 function initTheme() {
@@ -104,7 +102,17 @@ async function activate(id, pushHash = true) {
       const mod = await tool.load();
       await mod.init($(`#sec-${tool.id}`), { bridge, toast, V });
     } catch (e) {
-      toast(`${tool.label} 모듈 로드 실패: ${e.message}`, "fail");
+      /* 토스트는 몇 초 뒤 사라져 원인을 다시 볼 수 없다. 탭 안에 남겨
+         사용자가 그대로 읽어 전달할 수 있게 한다(2026-07-21 타 PC 사고). */
+      const el = $(`#sec-${tool.id}`);
+      if (el) el.innerHTML =
+        `<div class="panel"><h2>${tool.label}</h2>`
+        + `<div class="placeholder" style="white-space:pre-wrap;text-align:left">`
+        + `이 도구를 불러오지 못했습니다.\n\n${String(e.message || e)}\n\n`
+        + `· 새로고침(Ctrl+Shift+R)을 먼저 시도해 주세요.\n`
+        + `· 사내망·보안 프로그램이 차단하는 경우가 있습니다.\n`
+        + `· 계속되면 위 내용을 그대로 알려주세요.</div></div>`;
+      toast(`${tool.label}을 불러오지 못했습니다 — 탭 안 내용을 확인하세요`, "fail");
       inited.delete(tool.id);
     }
   }
@@ -164,12 +172,9 @@ function initBridgeChip() {
       chip.classList.toggle("warn", stale);
       chip.classList.toggle("ok", !stale);
       chip.style.cursor = "default";
-      chip.title = stale
-        ? `브리지가 오래됐습니다 — v${MIN_BRIDGE} 이상이 필요합니다(현재 v${bv}).\n`
-          + `열려 있는 브리지를 닫고 run_bridge.bat을 다시 실행하세요.`
-        : `웹 v${V} · 브리지 v${bv} — 호환됩니다.\n`
-          + `두 버전은 별개 프로그램이라 숫자가 다른 것이 정상입니다.\n`
-          + `브리지는 PC에서 하는 작업(한컴·파일 접근)이 바뀔 때만 올라갑니다.`;
+      // 툴팁은 **상태만** 말한다. 왜 버전이 다른지 같은 설명은 사용자가 알 필요가
+      // 없다(2026-07-21 사용자 지시) — 필요한 사람은 사용법 문서를 본다.
+      chip.title = stale ? "브리지 갱신 필요" : "정상";
     }
     /* 브리지 중복 경고는 **띄우지 않는다**(2026-07-21 사용자 지시).
        예전에는 인스턴스가 쌓여 경고가 필요했지만 그 원인 두 가지를 고쳤다 —
