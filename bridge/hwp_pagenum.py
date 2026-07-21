@@ -256,11 +256,26 @@ def assign_numbers(plan, start_num: int = 1):
         _marked = {p for p, _ in marks}
         force_odd = [p for p in force_odd if p not in _marked]
 
+        # ── 선언한 조건과 문서 실제 상태가 맞는지 대조 ──────────────────
+        # 스캔 조건은 "이 문서가 어떤 상태인가"를 선언하는 것이지, 도구가 그 상태를
+        # 만들어 주는 것이 아니다(도구는 쪽번호와 감추기 외에 문서를 바꾸지 않는다).
+        # 선언과 실제가 다르면 번호가 밀리므로 **고치지 말고 알린다.**
+        mismatch = None
+        _s, _e = f.get("start_page"), f.get("end_page")
+        if isinstance(_s, int) and isinstance(_e, int) and total:
+            actual_gap = (_e - _s + 1) - total
+            expect_gap = (1 if div_skip else 0)
+            if a3_back == "skip":
+                expect_gap += sum(1 for _, _, is_a3 in pages if is_a3)
+            if actual_gap != expect_gap:
+                mismatch = (f"선택 조건과 맞지 않습니다(결번 {actual_gap}곳, 조건상 {expect_gap}곳). "
+                            f"확인이 필요하며, 그대로 진행할 경우 쪽번호 밀림현상이 발생될 수 있습니다")
+
         out.append({**f, "start": (pages[0][1] if pages else cur),
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
                     "expect_hide": sorted(expect), "stray_hide": stray,
                     "hide_targets": targets, "force_odd": force_odd,
-                    "div_skip": div_skip, "a3_bad": a3_bad})
+                    "div_skip": div_skip, "a3_bad": a3_bad, "mismatch": mismatch})
         cur = end + 1 + (1 if tail_a3 else 0)
     return out
 

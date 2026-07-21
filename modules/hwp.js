@@ -63,8 +63,8 @@ export function init(section, { bridge, toast }, kind) {
         </div>
       </div>
       <p class="help" style="margin-top:-8px">
-        표의 <b>간지</b> 열은 <b>그 파일만</b> 다르게 지정하는 예외 수단입니다 — 비워두면 위 설정을 따릅니다.
-        한 보고서 안에서 관행이 섞였을 때만 쓰세요.<br>
+        <b>위 설정은 "이 문서가 어떤 상태인가"를 선언하는 것</b>입니다 — 도구가 그 상태로 만들어 주지 않습니다.
+        선언과 실제가 다른 파일은 <b style="color:var(--fail)">비고에 빨간 경고</b>가 뜨니 확인 후 진행하세요.<br>
         <b>간지와 여백면은 항상 감추기 처리됩니다</b> — 물리로 존재하는 공백면은 반드시 숨겨야 하고,
         결번은 페이지 자체가 없어 감출 대상이 아닙니다.<br>
         양면 인쇄에서 <b>간지 뒷면</b>과 <b>A3 뒷면</b>은 비워 둡니다. 이때 작성 방식이 둘로 갈립니다 —
@@ -103,7 +103,7 @@ export function init(section, { bridge, toast }, kind) {
         <table class="result-table">
           <thead><tr>
             <th>파일</th><th>장</th><th>물리 쪽수</th><th>A3</th>
-            <th>현재 쪽번호</th><th>→ 적용 후</th><th>감추기</th><th>간지</th><th>처리</th>
+            <th>현재 쪽번호</th><th>→ 적용 후</th><th>감추기</th><th>처리</th>
           </tr></thead>
           <tbody id="hw-tbody"></tbody>
         </table>
@@ -275,14 +275,9 @@ export function init(section, { bridge, toast }, kind) {
                  title="시작 쪽번호를 고치면 이 파일부터 다시 계산합니다">
           <span class="plan-end${same ? "" : " changed"}">~${r.end}${same ? " (동일)" : ""}</span>`}</td>
         <td class="num">${hideCell}</td>
-        <td class="num">${r.is_chapter_head && !r.skip ? `
-          <select class="plan-div" data-file="${r.name.replace(/"/g, "&quot;")}"
-                  title="기본값은 위 [장별 간지] 설정입니다. 이 파일만 다르면 여기서 바꾸세요 — 1장이면 뒷면이 결번, 2장이면 뒷면이 공백면입니다">
-            <option value=""${!r.override?.divider_mode ? " selected" : ""}>기본</option>
-            <option value="one"${r.override?.divider_mode === "one" ? " selected" : ""}>간지 1장</option>
-            <option value="two"${r.override?.divider_mode === "two" ? " selected" : ""}>간지 2장</option>
-          </select>` : ""}</td>
-        <td style="color:var(--text-muted)">${r.error || act}</td>`;
+
+        <td style="color:var(--text-muted)">${r.error || act}${
+          r.mismatch ? `<div class="plan-warn">⚠ ${r.mismatch}</div>` : ""}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
       tb.appendChild(tr);
     }
@@ -294,9 +289,6 @@ export function init(section, { bridge, toast }, kind) {
         const v = parseInt(el.value, 10);
         setOverride(el.dataset.file, "start", v > 0 ? v : null);
       }));
-    tb.querySelectorAll(".plan-div").forEach((el) =>
-      el.addEventListener("change", () =>
-        setOverride(el.dataset.file, "divider_mode", el.value || null)));
 
     $("#hw-tblwrap").classList.add("active");
     $("#hw-warn").style.display = "";

@@ -387,3 +387,9 @@ input:focus, textarea:focus, select:focus {
   border: 1px solid var(--border); border-radius: 4px;
   background: var(--surface); color: var(--text-muted);
 }
+
+/* 선언한 조건과 문서 실제가 다를 때 — 고치지 않고 알린다 */
+.plan-warn {
+  margin-top: 4px; color: var(--fail); font-size: var(--text-xs);
+  line-height: 1.5; font-weight: 500;
+}

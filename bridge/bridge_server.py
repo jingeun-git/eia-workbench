@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.18.1"
+BRIDGE_VERSION = "3.19.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -512,6 +512,7 @@ def _plan_row(f: dict) -> dict:
         "pgct_phys": f.get("pgct_phys") or [],
         "div_skip": f.get("div_skip", 0),
         "a3_bad": f.get("a3_bad") or [],
+        "mismatch": f.get("mismatch"),
         "override": f.get("override") or {},
         "expect_hide": f.get("expect_hide") or [],
         "stray_hide": f.get("stray_hide") or [],
