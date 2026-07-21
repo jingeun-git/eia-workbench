@@ -61,19 +61,10 @@ export function init(section, { bridge, toast }, kind) {
             <option value="blank">물리 공백 페이지 있음</option>
           </select>
         </div>
-        <div class="field" style="margin-bottom:0;flex:0 0 100%">
-          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
-            <input type="checkbox" id="hw-hide">
-            간지·여백면에 <b>감추기</b> 적용 (머리말·꼬리말·쪽번호·바탕쪽·테두리·배경)
-          </label>
-          <p class="help" style="margin-top:4px">
-            쪽번호를 <b>머리말 안에</b> 넣는 문서는 간지에 번호가 아예 안 나오므로 <b>불필요</b>합니다.
-            「쪽 번호 매기기」로 문서 전체에 거는 문서에서만 켜세요.
-            대상 — 간지 1면 / 간지 2장이면 뒷 여백면까지 / A3 여백면.
-          </p>
-        </div>
       </div>
       <p class="help" style="margin-top:-8px">
+        <b>간지와 여백면은 항상 감추기 처리됩니다</b> — 물리로 존재하는 공백면은 반드시 숨겨야 하고,
+        결번은 페이지 자체가 없어 감출 대상이 아닙니다.<br>
         양면 인쇄에서 <b>간지 뒷면</b>과 <b>A3 뒷면</b>은 비워 둡니다. 이때 작성 방식이 둘로 갈립니다 —
         <b>빈 페이지를 실제로 넣어 둔 문서</b>가 있고, <b>페이지 없이 쪽번호만 건너뛴 문서</b>가 있습니다.
         인쇄 결과는 같지만 세는 방법이 달라서, 이 보고서가 어느 쪽인지 골라주셔야 번호가 맞습니다.
@@ -188,7 +179,7 @@ export function init(section, { bridge, toast }, kind) {
     if (running) { toast("실행 중입니다 — 완료 후 초기화하세요", "warn"); return; }
     hwPaths = []; $("#hw-dir").value = "";
     if (kind === "pdf") $("#hw-outdir").value = "";
-    if (kind === "pagenum") { $("#hw-start").value = "1"; $("#hw-hide").checked = false; }
+    if (kind === "pagenum") $("#hw-start").value = "1";
     $("#hw-log").textContent = ""; $("#hw-log").classList.remove("active");
     $("#hw-prog").classList.remove("active"); $("#hw-fill").style.width = "0%";
     if (kind === "pagenum") {
@@ -204,7 +195,7 @@ export function init(section, { bridge, toast }, kind) {
   /* 입력이 바뀌면 스캔 결과가 낡는다 — 적용을 막고 재스캔을 요구한다
      (낡은 계획으로 원본을 고치는 사고 방지) */
   if (kind === "pagenum") {
-    for (const sel of ["#hw-start", "#hw-divider", "#hw-a3back", "#hw-hide", "#hw-dir"]) {
+    for (const sel of ["#hw-start", "#hw-divider", "#hw-a3back", "#hw-dir"]) {
       const el = $(sel);
       el?.addEventListener("change", () => {
         if (!scanned) return;
@@ -233,7 +224,6 @@ export function init(section, { bridge, toast }, kind) {
         start_num: parseInt($("#hw-start").value, 10) || 1,
         divider: $("#hw-divider").value,
         a3_back: $("#hw-a3back").value,
-        do_hide: $("#hw-hide").checked,
         overrides,
       }});
       scanned = r.plan;
@@ -268,6 +258,7 @@ export function init(section, { bridge, toast }, kind) {
            r.gap_count ? `기존 결번 ${r.gap_count}곳` : "",
            r.force_odd?.length ? `쪽번호제어 ${r.force_odd.join(",")}면` : "",
            r.pgct_phys?.length ? `기존 쪽번호제어 ${r.pgct_phys.length}곳(삭제됨)` : "",
+           r.a3_bad?.length ? `<span class="warn-mark" title="A3 뒷면에 같은 규격의 공백면이 없어 결번으로 처리했습니다. 양면 인쇄에서 A3는 용지 한 장의 앞뒤를 함께 쓰므로, 뒷면에 A4가 오면 인쇄가 어긋납니다.">⚠ A3 뒷면 미처리 ${r.a3_bad.join(",")}면</span>` : "",
            r.marks?.length ? `새쪽번호 ${r.marks[0][0]}면` : ""]
           .filter(Boolean).join(" · ") || "연속";
       tr.innerHTML = `
@@ -328,7 +319,7 @@ export function init(section, { bridge, toast }, kind) {
                   start_num: parseInt($("#hw-start").value, 10) || 1,
                   divider: $("#hw-divider").value,
                   a3_back: $("#hw-a3back").value,
-                  do_hide: $("#hw-hide").checked },
+                  },
         });
         const done = await bridge.pollJob(job.job_id, {
           onLog: (l) => log(l),
@@ -395,7 +386,6 @@ export function init(section, { bridge, toast }, kind) {
             // 기본값으로 계획을 다시 세워 스캔 표와 다른 번호가 찍힌다(2026-07-20)
             divider: $("#hw-divider").value,
             a3_back: $("#hw-a3back").value,
-            do_hide: $("#hw-hide").checked,
             overrides };
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {

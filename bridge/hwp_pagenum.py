@@ -65,7 +65,7 @@ def _div_mode(v) -> str:
 
 
 def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = "skip",
-               do_hide: bool = False, overrides: dict | None = None):
+               do_hide: bool = True, overrides: dict | None = None):
     """include_divider: "none" | "one" | "two"  (하위호환으로 bool도 받는다)
          none — 간지 없음
          one  — 간지 1장만 (뒷면 공백 없음) → 뒷면 몫으로 번호를 하나 건너뛴다
@@ -94,7 +94,10 @@ def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = 
             "divider": bool(_div_mode(include_divider) != "none" and is_head and not skip),
             "divider_mode": _div_mode(include_divider),
             "a3_back": a3_back if a3_back in ("skip", "blank") else "skip",
-            "do_hide": bool(do_hide),
+            # 간지·여백면 감추기는 선택이 아니다(2026-07-21 사용자 확정).
+            # 물리로 존재하는 공백면은 반드시 숨겨야 하고, 결번은 페이지가 없어
+            # 감출 대상 자체가 없다 — 두 개념을 섞지 않는다.
+            "do_hide": True,
             # 사용자가 표에서 고친 값 — 파일별로 전역 설정을 덮어쓴다.
             # 한 보고서 안에서도 관행이 섞이는 일이 실제로 있어(2026-07-21 원호리:
             # 5개 파일은 간지 결번, 2개는 결번 없음), 자동 판별보다 직접 지정이 확실하다.
@@ -147,33 +150,56 @@ def assign_numbers(plan, start_num: int = 1):
         div_skip = 1 if (f.get("divider") and mode == "one") else 0
         pages = []
         n = cur
-        prev_a3_content = False
-        blank_backs = []          # A3 뒷 여백면(물리)
+        blank_backs = []          # 물리로 존재하는 여백면(감추기 대상)
         force_odd = []            # 홀수 강제가 필요한 쪽 → [쪽 번호 제어] 대상
-        for phys in range(1, total + 1):
+        phys = 1
+        while phys <= total:
             if div_skip and phys == 2:
                 n += 1                       # 간지 뒷면 몫으로 번호 하나를 비운다
+                force_odd.append(phys)       # 본문은 홀수에서 시작
 
-            is_a3 = phys in a3set
-            # A3 판정은 용지 크기 기반이라 **A3 규격의 빈 페이지도 A3로 잡힌다.**
-            # blank 모드에서 A3 바로 뒤의 A3규격 쪽은 내용이 아니라 뒷 여백면이므로
-            # 홀수 강제 대상이 아니다(2026-07-21 실사고: 여백면에 번호가 튀었다).
-            is_a3_back = bool(is_a3 and a3_back == "blank" and prev_a3_content)
-            if is_a3_back:
-                blank_backs.append(phys)
+            if phys in a3set:
+                # R3b: A3 내용면은 홀수에서 시작한다
+                if n % 2 == 0:
+                    n += 1
+                    if phys not in force_odd:
+                        force_odd.append(phys)
+                pages.append((phys, n, True))
 
-            # R3b: A3 내용면은 홀수에서 시작해야 한다
-            if is_a3 and not is_a3_back and n % 2 == 0:
-                n += 1
-                force_odd.append(phys)
-            # R1: 간지 다음 본문도 홀수에서 시작한다(결번 방식일 때)
-            elif div_skip and phys == 2:
-                force_odd.append(phys)
+                if a3_back == "blank" and (phys + 1) in a3set:
+                    # 여백면은 **반드시 A3 규격**이다 — 양면 인쇄에서 A3는 용지 한 장의
+                    # 앞뒤를 함께 쓰므로, 그 뒷면에 A4 페이지가 올 수 없다
+                    # (2026-07-21 사용자 정정). 따라서 규격으로 판정하는 것이 맞다.
+                    n += 1
+                    pages.append((phys + 1, n, False))
+                    blank_backs.append(phys + 1)
+                    n += 1
+                    phys += 2
+                    continue
+                n += 2                       # 결번 방식 — 뒷면 몫까지 번호를 소비
+                phys += 1
+                continue
 
-            pages.append((phys, n, is_a3 and not is_a3_back))
-            n += 1 if (is_a3 and not is_a3_back and a3_back == "blank") else \
-                 (2 if (is_a3 and not is_a3_back) else 1)
-            prev_a3_content = is_a3 and not is_a3_back
+            pages.append((phys, n, False))
+            n += 1
+            phys += 1
+
+        # 부적격 점검 — **A3 뒷면을 결번 처리도 안 하고 같은 규격 공백면도 없이
+        # A4가 곧바로 붙는 상태**가 부적격이다(2026-07-21 사용자 정의).
+        # 양면 인쇄에서 A3는 용지 한 장의 앞뒤를 함께 쓰므로, 그 뒷면에 A4 내용이
+        # 오면 인쇄가 어긋난다.
+        # 도구는 이 상태를 만들지 않는다 — '물리공백' 선언인데 공백면이 없으면
+        # 결번 처리로 떨어져 뒤 페이지가 A3+2를 받는다. 다만 문서가 선언과 다르다는
+        # 사실은 사용자가 알아야 하므로 경고로 남긴다.
+        a3_bad = []
+        if a3_back == "blank":
+            _blank = set(blank_backs)
+            for ph in sorted(a3set):
+                if ph in _blank:
+                    continue                 # 여백면 자체는 검사 대상이 아니다
+                nxt = ph + 1
+                if nxt <= total and nxt not in _blank:
+                    a3_bad.append(ph)
 
         # 새 쪽번호는 **파일 첫 쪽에만** 넣는다. 파일이 분리돼 있어 시작값은
         # 절대값으로 줘야 하지만, 그 뒤의 홀수 강제는 [쪽 번호 제어]가 담당한다
@@ -218,7 +244,7 @@ def assign_numbers(plan, start_num: int = 1):
         # 감추기를 켰을 때만 그 쪽들이 실제로 가려진다. 가려지는 쪽에는 조판부호를
         # 넣지 않고(사용자 지시), 파일 시작값은 **가려지지 않는 첫 쪽**으로 옮긴다
         # — 안 그러면 시작값을 줄 자리가 사라진다.
-        if f.get("do_hide") and targets:
+        if targets:
             visible = [p for p in pages if p[0] not in targets]
             marks = [(visible[0][0], visible[0][1])] if visible else []
             force_odd = [p for p in force_odd if p not in targets]
@@ -234,7 +260,7 @@ def assign_numbers(plan, start_num: int = 1):
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
                     "expect_hide": sorted(expect), "stray_hide": stray,
                     "hide_targets": targets, "force_odd": force_odd,
-                    "div_skip": div_skip})
+                    "div_skip": div_skip, "a3_bad": a3_bad})
         cur = end + 1 + (1 if tail_a3 else 0)
     return out
 
@@ -626,7 +652,7 @@ def _count_hidden(hwp):
 
 
 def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
-               dry_run=False, extra_clear=False, do_hide=False):
+               dry_run=False, extra_clear=False, do_hide=True):
     """계산된 계획을 문서에 적용한다. dry_run이면 문서를 열어 확인만 하고 저장하지 않는다.
 
     do_hide: 간지·여백면에 **전체 감추기**(머리말·꼬리말·쪽번호·바탕쪽·테두리·배경·빈줄)를
@@ -700,7 +726,7 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
                         + (f" · 쪽번호제어 {ok_p}" if ok_p else "")
                         + (f" · 새쪽번호 대체 {miss}" if miss else ""))
 
-                if do_hide and f.get("hide_targets"):
+                if f.get("hide_targets"):
                     before = _count_hidden(hwp)
                     ok_pages, fail_pages = [], []
                     for ph in f["hide_targets"]:

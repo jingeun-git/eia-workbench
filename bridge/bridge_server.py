@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.17.0"
+BRIDGE_VERSION = "3.18.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -475,7 +475,7 @@ def run_pagenum_scan(job, params):
     plan = hp.assign_numbers(
         hp.build_plan(files, include_divider=params.get("divider", "none"),
                       a3_back=params.get("a3_back", "skip"),
-                      do_hide=bool(params.get("do_hide"))),
+                      ),
         start_num=int(params.get("start_num", 1)),
     )
     job["result"] = [_plan_row(f) for f in plan]
@@ -511,6 +511,7 @@ def _plan_row(f: dict) -> dict:
         "pgct_pages": f.get("pgct_pages") or [],
         "pgct_phys": f.get("pgct_phys") or [],
         "div_skip": f.get("div_skip", 0),
+        "a3_bad": f.get("a3_bad") or [],
         "override": f.get("override") or {},
         "expect_hide": f.get("expect_hide") or [],
         "stray_hide": f.get("stray_hide") or [],
@@ -565,7 +566,6 @@ def run_pagenum_apply(job, params):
         progress=lambda d, t, s: job.__setitem__("progress", {"done": d, "total": t, "stage": s}),
         dry_run=bool(params.get("dry_run")),
         extra_clear=bool(params.get("extra_clear")),
-        do_hide=bool(params.get("do_hide")),
     )
 
 
@@ -696,7 +696,6 @@ class Handler(BaseHTTPRequestHandler):
                 hp.build_plan(files,
                               include_divider=body.get("divider", "none"),
                               a3_back=body.get("a3_back", "skip"),
-                              do_hide=bool(body.get("do_hide")),
                               overrides=body.get("overrides") or {}),
                 start_num=int(body.get("start_num", 1)),
             )
