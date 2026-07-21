@@ -227,16 +227,22 @@ export function init(section, { bridge, toast }) {
   <div class="panel">
     <h2>고품질 변환 (브리지)</h2>
     <p class="desc">HWP·HWPX·스캔 PDF(OCR)·대량 배치는 로컬 브리지의 convert_core 엔진으로 처리합니다
-      — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 선택 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
+      — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 대상 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
+    <p class="help" style="margin-top:-6px">
+      <b>내용만 필요하면</b> 한글 문서(HWP·HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
+      다만 <b>쪽번호처럼 "문서 안 어디에 있는지"가 중요한 경우에는 PDF로 먼저 변환한 뒤 MD 변환</b>을 권합니다.
+      한글 문서는 쪽 나눔이 파일에 저장되지 않고 한글이 화면에 그릴 때 정해지므로, 변환 결과에 쪽번호를 남길 수 없습니다.
+    </p>
     <div id="mb-locked" class="placeholder" style="margin-bottom:var(--space-2)">
       ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
     </div>
     <div id="mb-form" style="display:none">
       <div class="field">
-        <label>대상 폴더 <span class="req">*</span> (하위 폴더 포함 일괄 변환)</label>
+        <label>변환 대상 <span class="req">*</span> — 폴더(하위 포함) 또는 파일 여러 개</label>
         <div class="input-row">
-          <input type="text" id="mb-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
+          <input type="text" id="mb-dir" readonly placeholder="[폴더 선택] 또는 [파일 선택]을 누르세요">
           <button class="btn btn-secondary" id="mb-pick" type="button">폴더 선택</button>
+          <button class="btn btn-secondary" id="mb-pick-files" type="button">파일 선택</button>
         </div>
       </div>
       <div style="display:flex;gap:var(--space-2);align-items:center">
@@ -447,29 +453,43 @@ export function init(section, { bridge, toast }) {
   bridge.addEventListener("change", renderBridge);
   renderBridge();
 
+  /* 선택한 대상은 경로 배열로 들고 있는다 — 브리지 run_convert는 paths[]를
+     받으므로 폴더 1개든 파일 여러 개든 같은 경로로 처리된다. */
+  let mbPaths = [];
+  const mbShow = () => {
+    $("#mb-dir").value = mbPaths.length === 1 ? mbPaths[0]
+      : mbPaths.length ? `${mbPaths.length}개 선택 — ${mbPaths.map((p) => p.split(/[\\/]/).pop()).join(", ")}`
+      : "";
+  };
   $("#mb-pick").addEventListener("click", async () => {
     try {
       const r = await bridge.call("/pick", { method: "POST", body: { kind: "folder" }, timeoutMs: 120000 });
-      if (r.path) $("#mb-dir").value = r.path;
+      if (r.path) { mbPaths = [r.path]; mbShow(); }
+    } catch (e) { toast(e.message, "fail"); }
+  });
+  $("#mb-pick-files").addEventListener("click", async () => {
+    try {
+      const r = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
+        body: { kind: "files", patterns: "*.pdf *.hwp *.hwpx *.docx *.xlsx *.xls" } });
+      if (r.paths?.length) { mbPaths = r.paths; mbShow(); }
     } catch (e) { toast(e.message, "fail"); }
   });
   $("#mb-reset").addEventListener("click", () => {
     if (mbRunning) { toast("변환 중입니다 — 완료 후 초기화하세요", "warn"); return; }
-    $("#mb-dir").value = "";
+    mbPaths = []; $("#mb-dir").value = "";
     $("#mb-log").textContent = ""; $("#mb-log").classList.remove("active");
     $("#mb-prog").classList.remove("active"); $("#mb-fill").style.width = "0%";
   });
   $("#mb-run").addEventListener("click", async () => {
     if (mbRunning) return;
-    const dir = $("#mb-dir").value.trim();
-    if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
+    if (!mbPaths.length) { toast("변환할 폴더 또는 파일을 먼저 선택하세요", "fail"); return; }
     mbRunning = true;
     $("#mb-run").disabled = true;
     $("#mb-run").innerHTML = `<span class="spinner"></span> 변환 중…`;
     $("#mb-prog").classList.add("active");
     $("#mb-log").classList.add("active");
     try {
-      const job = await bridge.call("/jobs", { method: "POST", body: { type: "convert", paths: [dir] } });
+      const job = await bridge.call("/jobs", { method: "POST", body: { type: "convert", paths: mbPaths } });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => mbLog(line),
         onProgress: (p) => {

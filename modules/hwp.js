@@ -30,10 +30,13 @@ export function init(section, { bridge, toast }, kind) {
     <div id="hw-locked" class="placeholder" style="margin-bottom:var(--space-4)"></div>
     <div id="hw-form">
       <div class="field">
-        <label>대상 폴더 <span class="req">*</span></label>
+        <label>${kind === "pdf"
+          ? '변환 대상 <span class="req">*</span> — 폴더(하위 포함) 또는 파일 여러 개'
+          : '대상 폴더 <span class="req">*</span>'}</label>
         <div class="input-row">
-          <input type="text" id="hw-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
+          <input type="text" id="hw-dir" readonly placeholder="[폴더 선택]${kind === "pdf" ? " 또는 [파일 선택]" : ""}을 누르세요">
           <button class="btn btn-secondary" id="hw-pick" type="button">폴더 선택</button>
+          ${kind === "pdf" ? '<button class="btn btn-secondary" id="hw-pick-files" type="button">파일 선택</button>' : ""}
         </div>
         <p class="help">파일은 PC 안에서만 처리됩니다 — 웹으로 전송되지 않습니다.</p>
       </div>
@@ -156,12 +159,34 @@ export function init(section, { bridge, toast }, kind) {
       if (r.path) $(inputSel).value = r.path;
     } catch (e) { toast(e.message, "fail"); }
   };
-  $("#hw-pick").addEventListener("click", pickInto("#hw-dir"));
-  if (kind === "pdf") $("#hw-pick-out").addEventListener("click", pickInto("#hw-outdir"));
+  /* 대상은 경로 배열로 들고 있는다 — run_hwp2pdf가 paths[]를 받으므로
+     폴더 1개든 파일 여러 개든 같은 경로로 처리된다. */
+  let hwPaths = [];
+  const hwShow = () => {
+    $("#hw-dir").value = hwPaths.length === 1 ? hwPaths[0]
+      : hwPaths.length ? `${hwPaths.length}개 선택 — ${hwPaths.map((p) => p.split(/[\\/]/).pop()).join(", ")}`
+      : "";
+  };
+  $("#hw-pick").addEventListener("click", async () => {
+    try {
+      const r = await bridge.call("/pick", { method: "POST", body: { kind: "folder" }, timeoutMs: 120000 });
+      if (r.path) { hwPaths = [r.path]; hwShow(); }
+    } catch (e) { toast(e.message, "fail"); }
+  });
+  if (kind === "pdf") {
+    $("#hw-pick-files").addEventListener("click", async () => {
+      try {
+        const r = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
+          body: { kind: "files", patterns: "*.hwp *.hwpx" } });
+        if (r.paths?.length) { hwPaths = r.paths; hwShow(); }
+      } catch (e) { toast(e.message, "fail"); }
+    });
+    $("#hw-pick-out").addEventListener("click", pickInto("#hw-outdir"));
+  }
 
   $("#hw-reset").addEventListener("click", () => {
     if (running) { toast("실행 중입니다 — 완료 후 초기화하세요", "warn"); return; }
-    $("#hw-dir").value = "";
+    hwPaths = []; $("#hw-dir").value = "";
     if (kind === "pdf") $("#hw-outdir").value = "";
     if (kind === "pagenum") { $("#hw-start").value = "1"; $("#hw-hide").checked = false; }
     $("#hw-log").textContent = ""; $("#hw-log").classList.remove("active");
@@ -242,7 +267,7 @@ export function init(section, { bridge, toast }, kind) {
   if (kind === "pagenum") {
     $("#hw-scan").addEventListener("click", async () => {
       if (running) return;
-      const dir = $("#hw-dir").value.trim();
+      const dir = hwPaths[0] || "";
       if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
       running = true;
       const btn = $("#hw-scan");
@@ -295,8 +320,13 @@ export function init(section, { bridge, toast }, kind) {
 
   $("#hw-run").addEventListener("click", async () => {
     if (running) return;
-    const dir = $("#hw-dir").value.trim();
-    if (!dir) { toast("대상 폴더를 먼저 선택하세요", "fail"); return; }
+    // 쪽번호는 폴더 단위가 규칙이라 경로 1개, PDF 변환은 폴더·파일 다중을 받는다
+    const dir = hwPaths[0] || "";
+    if (!hwPaths.length) {
+      toast(kind === "pdf" ? "변환할 폴더 또는 파일을 먼저 선택하세요"
+                           : "대상 폴더를 먼저 선택하세요", "fail");
+      return;
+    }
     if (kind === "pagenum") {
       if (!scanned) { toast("먼저 [1. 스캔]을 실행하세요", "fail"); return; }
       const n = scanned.filter((r) => !r.skip).length;
@@ -312,7 +342,7 @@ export function init(section, { bridge, toast }, kind) {
     $("#hw-fill").classList.add("indeterminate");
     try {
       const body = kind === "pdf"
-        ? { type: "hwp2pdf", paths: [dir], out_dir: $("#hw-outdir").value.trim() || null }
+        ? { type: "hwp2pdf", paths: hwPaths, out_dir: $("#hw-outdir").value.trim() || null }
         : { type: "pagenum_apply", folder: dir, files: scanned,
             start_num: parseInt($("#hw-start").value, 10) || 1,
             // 스캔과 **동일한 옵션**을 반드시 함께 보낸다 — 빠지면 브리지가
