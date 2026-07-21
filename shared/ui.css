@@ -579,3 +579,37 @@ input:focus, textarea:focus, select:focus {
   background: rgba(0,0,0,.45); color: var(--text-muted);
 }
 :root[data-theme="dark"] .leaflet-control-attribution a { color: var(--text-muted); }
+
+/* ── 지오코딩 (SYS-36) ───────────────────────────────────────────────── */
+.gc-tools { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: flex-end; margin-bottom: var(--space-3); }
+#gc-map { height: 420px; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); overflow: hidden; }
+#gc-map-wrap { margin: var(--space-3) 0; display: flex; flex-direction: column; gap: var(--space-2); }
+:root[data-theme="dark"] #gc-map .leaflet-tile-pane { filter: brightness(0.78) contrast(1.05); }
+
+.gc-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin: var(--space-3) 0; }
+.gc-sep { width: 1px; height: 22px; background: var(--border); margin: 0 var(--space-1, 4px); }
+.gc-count { color: var(--text-muted); font-size: var(--text-sm); margin-left: auto; }
+
+.gc-table td { vertical-align: middle; }
+.gc-table tr.on { background: var(--accent-subtle); }
+.gc-table tr { cursor: pointer; }
+.gc-in { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gc-src { font-size: 10px; font-weight: var(--weight-semibold); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+.gc-src.up  { background: var(--accent-subtle); color: var(--accent); }
+.gc-src.map { background: color-mix(in srgb, #7a5af8 16%, transparent); color: #7a5af8; }
+
+.gc-name { width: 100%; min-width: 84px; padding: 3px 6px; font: inherit; font-size: var(--text-xs);
+  background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--text); }
+.gc-name:hover  { border-color: var(--border); }
+.gc-name:focus  { border-color: var(--input-border-focus); background: var(--input-bg); outline: none; }
+
+.gc-st { font-size: var(--text-xs); }
+.gc-st.ok   { color: var(--ok); }
+.gc-st.fail { color: var(--fail); font-weight: var(--weight-semibold); cursor: help; }
+.gc-st.run  { color: var(--warn); }
+
+.gc-del { appearance: none; background: transparent; border: 0; cursor: pointer;
+  color: var(--text-muted); font-size: 17px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
+.gc-del:hover { color: var(--fail); background: var(--fail-subtle); }
+.gc-del:focus-visible { outline: var(--focus-ring); }

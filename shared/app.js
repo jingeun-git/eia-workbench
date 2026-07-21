@@ -7,7 +7,7 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-const V = "3.25.0";
+const V = "3.26.0";
 
 /* ── 도구 레지스트리 ───────────────────────────────────────────────────
    init은 첫 활성화 시 1회 lazy 호출. needsBridge 도구는 미연결 시 잠금. */
@@ -29,6 +29,9 @@ const TOOLS = [
     load: () => import(`../modules/md.js?v=${V}`) },
   { id: "photo",  group: "collect", label: "사진 좌표",   needsBridge: true,
     load: () => import(`../modules/photo.js?v=${V}`) },
+  // 지오코딩은 vworld를 JSONP로 직접 부르므로 브리지가 필요 없다
+  { id: "geocode",group: "collect", label: "지오코딩",    needsBridge: false,
+    load: () => import(`../modules/geocode.js?v=${V}`) },
 
   { id: "parcel", group: "author",  label: "건축물대장",  needsBridge: true,
     load: () => import(`../modules/parcel.js?v=${V}`) },
