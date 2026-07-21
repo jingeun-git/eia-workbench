@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.20.0"
+BRIDGE_VERSION = "3.21.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -56,6 +56,41 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 BRIDGE_DIR = _base_dir()
+
+# --noconsole로 빌드하면 화면에 아무것도 안 나온다 — 문제가 생겨도 사용자는
+# "안 켜진다"만 알게 된다. 그래서 표준출력을 파일로도 흘린다(2026-07-21).
+class _Tee:
+    def __init__(self, stream, path):
+        self._s = stream
+        try:
+            self._f = open(path, "a", encoding="utf-8", errors="replace")
+        except Exception:
+            self._f = None
+
+    def write(self, t):
+        if self._s:
+            try: self._s.write(t)
+            except Exception: pass
+        if self._f:
+            try: self._f.write(t); self._f.flush()
+            except Exception: pass
+        return len(t)
+
+    def flush(self):
+        for x in (self._s, self._f):
+            try: x and x.flush()
+            except Exception: pass
+
+
+if getattr(sys, "frozen", False):
+    _logp = BRIDGE_DIR / "bridge.log"
+    try:
+        if _logp.exists() and _logp.stat().st_size > 2_000_000:
+            _logp.unlink()                       # 무한히 자라지 않게
+    except Exception:
+        pass
+    sys.stdout = _Tee(sys.stdout, _logp)
+    sys.stderr = _Tee(sys.stderr, _logp)
 TOOLS_DIR  = BRIDGE_DIR.parent.parent            # 99.Tools/
 CONFIG     = BRIDGE_DIR / "bridge_config.json"
 
@@ -768,6 +803,56 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "unknown endpoint"}, 404)
 
 # ── 기동 ─────────────────────────────────────────────────────────────────────
+def _make_tray(srv, port: int):
+    """트레이 아이콘을 만든다. 못 만들면 None을 돌려 콘솔 모드로 떨어진다.
+
+    종료 수단이 사라지면 안 되므로, 트레이가 없으면 창을 없애지 않는다 —
+    백그라운드로만 돌면 사용자가 끌 방법이 없어진다.
+    """
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+
+    try:
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse((6, 6, 58, 58), fill=(27, 76, 140, 255))      # 남색 원
+        d.text((22, 20), "E", fill=(255, 255, 255, 255))
+
+        def open_web(*_):
+            try:
+                webbrowser.open(f"{WEB_URL}#bt={TOKEN}&bp={port}")
+            except Exception:
+                pass
+
+        def copy_token(*_):
+            """토큰을 클립보드로 — 자동 페어링이 막힌 환경의 수동 등록용."""
+            try:
+                import tkinter as tk
+                r = tk.Tk(); r.withdraw()
+                r.clipboard_clear(); r.clipboard_append(TOKEN); r.update()
+                r.destroy()
+            except Exception:
+                pass
+
+        def quit_all(ic, *_):
+            ic.visible = False
+            ic.stop()
+
+        menu = pystray.Menu(
+            pystray.MenuItem(f"워크벤치 열기 (v{BRIDGE_VERSION})", open_web, default=True),
+            pystray.MenuItem("브리지 토큰 복사", copy_token),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("종료", quit_all),
+        )
+        return pystray.Icon("eia_workbench_bridge", img,
+                            f"EIA Workbench 브리지 v{BRIDGE_VERSION} — 127.0.0.1:{port}", menu)
+    except Exception:
+        return None
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="EIA Workbench 로컬 브리지")
@@ -839,12 +924,31 @@ def main():
         except Exception:
             pass
     print()
-    print("  이 창을 켜 둔 동안에만 브리지 기능이 활성화됩니다. 종료: Ctrl+C")
+
+    # ── 트레이 상주 (검은 창 없이 백그라운드) ──────────────────────────
+    # 배포 도구인데 콘솔 창을 계속 켜 두게 하는 것은 결함이다(2026-07-21 사용자 지적).
+    # 서버를 스레드로 돌리고 트레이 아이콘을 띄운다. 트레이를 못 쓰는 환경
+    # (pystray 미설치 등)에서는 종전대로 콘솔에서 돈다 — 종료 수단이 없어지면
+    # 안 되므로 조용히 창만 없애지는 않는다.
+    icon = _make_tray(srv, port)
+    if icon is None:
+        print("  이 창을 켜 둔 동안에만 브리지 기능이 활성화됩니다. 종료: Ctrl+C")
+        print("-" * 64, flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            print("\n  종료했습니다.")
+        return
+
+    print("  트레이(작업표시줄 오른쪽 아래)에 상주합니다 — 종료는 트레이 메뉴에서.")
     print("-" * 64, flush=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        srv.serve_forever()
+        icon.run()                      # 트레이가 주 스레드를 잡는다
     except KeyboardInterrupt:
-        print("\n  종료했습니다.")
+        pass
+    finally:
+        srv.shutdown()
 
 if __name__ == "__main__":
     main()

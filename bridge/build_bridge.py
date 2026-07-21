@@ -80,6 +80,9 @@ _RUNTIME_DEPS = [
     "chardet", "pdfplumber", "fitz", "docx", "openpyxl", "pandas", "numpy", "PIL",
     "bs4", "requests",
     "win32com", "win32com.client", "pythoncom", "pywintypes", "win32print",
+    # 트레이 상주 — 콘솔 창 없이 백그라운드로 돌리기 위한 것.
+    # 없으면 콘솔 모드로 폴백하므로 빌드가 깨지지는 않는다.
+    "pystray", "pystray._win32",
 ]
 # OCR(full 빌드에서만) — lite에서는 LITE_EXCLUDES가 걷어낸다
 _OCR_DEPS = ["easyocr", "pytesseract", "torch", "torchvision"]
@@ -94,6 +97,13 @@ def check_env():
         import PyInstaller  # noqa
     except ImportError:
         print("✗ PyInstaller 미설치 — 설치: pip install pyinstaller")
+        sys.exit(1)
+
+    try:
+        import pystray  # noqa
+    except ImportError:
+        print("✗ pystray 미설치 — 트레이 상주가 빠져 종료할 방법이 없는 exe가 됩니다.")
+        print("  설치: pip install pystray pillow")
         sys.exit(1)
 
     missing = [p for p in BUNDLE_SRC if not p.exists()]
@@ -127,7 +137,10 @@ def build(full: bool):
     name = "EIAWorkbenchBridge" + ("-full" if full else "")
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile", "--console",
+        # 콘솔 창을 띄우지 않는다 — 트레이에 상주한다(2026-07-21).
+        # 트레이를 못 만들면 코드가 콘솔 모드로 떨어지지만, --noconsole 빌드에서는
+        # 그 출력이 보이지 않으므로 로그는 파일로도 남긴다(아래 _log_to_file).
+        "--onefile", "--noconsole",
         "--name", name,
         "--paths", str(stage),
         "--distpath", str(HERE / "dist"),
@@ -172,6 +185,10 @@ def build(full: bool):
     print("   3) 웹 UI 브리지 안내 모달의 다운로드 링크를 해당 Release URL로 갱신")
     print()
     print("  ※ 원본 도구(convert_core 등)를 수정하면 재빌드해야 반영됩니다.")
+    print()
+    print("  ※ 콘솔 창 없이 **트레이에 상주**합니다 — 종료는 트레이 메뉴에서.")
+    print("     pystray 미설치 환경에서 빌드하면 트레이가 빠져 조용히 떠 있게 되므로,")
+    print("     빌드 전 `pip install pystray pillow`를 확인하세요.")
     print()
     print("  ▶ 배포 전 반드시 기능 동일성을 확인하세요 — 빌드 성공은 합격이 아닙니다:")
     print(f"      python verify_bundle.py dist/{name}.exe"
