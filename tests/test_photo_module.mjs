@@ -11,8 +11,11 @@
  */
 
 let failures = 0;
-const check = (label, fn) => {
-  try { fn(); console.log(`  ✓ ${label}`); }
+/* ⚠ init이 async다 — 검사 함수는 **반드시 프로미스를 반환**해야 한다.
+   `() => { init(...); }` 처럼 버리면 예외가 사라져 무엇을 넣어도 통과하는
+   무의미한 검사가 된다(2026-07-21 실제로 그렇게 만들었다가 변이 주입으로 발견). */
+const check = async (label, fn) => {
+  try { await fn(); console.log(`  ✓ ${label}`); }
   catch (e) { console.log(`  ✗ ${label} — ${e.message}`); failures++; }
 };
 
@@ -58,6 +61,8 @@ class El {
     return new El("div");
   }
   querySelectorAll() { return []; }
+  get offsetWidth() { return 100; }
+  get scrollWidth() { return 100; }
 }
 
 const root = new El("section");
@@ -98,35 +103,35 @@ const { init } = await import("../modules/photo.js");
 
 console.log("photo.js 초기화 경로");
 
-check("브리지 연결 + 전 기능 가용", () => {
-  init(new El("section"), {
+await check("브리지 연결 + 전 기능 가용", () => {
+  return init(new El("section"), {
     bridge: makeBridge("ok", { photo: true }),
-    toast,
+    toast, V: 'test',
   });
 });
 
-check("브리지 미연결 (탭을 열어도 죽지 않아야 한다)", () => {
-  init(new El("section"), {
-    bridge: makeBridge("off", {}), toast,
+await check("브리지 미연결 (탭을 열어도 죽지 않아야 한다)", () => {
+  return init(new El("section"), {
+    bridge: makeBridge("off", {}), toast, V: 'test', V: 'test',
   });
 });
 
-check("vworld 키가 없는 상태 (지도는 OSM 폴백)", () => {
-  init(new El("section"), {
+await check("vworld 키가 없는 상태 (지도는 OSM 폴백)", () => {
+  return init(new El("section"), {
     bridge: makeBridge("ok", { photo: true }),
-    toast,
+    toast, V: 'test',
   });
 });
 
-check("구버전 브리지 — photo 기능 자체가 없음", () => {
-  init(new El("section"), {
-    bridge: makeBridge("ok", { photo: false }), toast,
+await check("구버전 브리지 — photo 기능 자체가 없음", () => {
+  return init(new El("section"), {
+    bridge: makeBridge("ok", { photo: false }), toast, V: 'test', V: 'test',
   });
 });
 
-check("브리지 상태가 도중에 바뀜 (change 이벤트)", () => {
+await check("브리지 상태가 도중에 바뀜 (change 이벤트)", () => {
   const b = makeBridge("off", {});
-  init(new El("section"), { bridge: b, toast });
+  const p = init(new El("section"), { bridge: b, toast, V: 'test' });
   b.state = "ok";
   b.info.features = { photo: true };
   b.fire();

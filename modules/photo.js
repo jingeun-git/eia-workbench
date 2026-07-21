@@ -17,10 +17,14 @@
  * 직선 변으로 그려진다). 부채꼴 길이는 줌에 연동된다 — 로그에서 같은 사진의 끝점이
  * 24.77km → 4.96km로 바뀌는 것이 확인된다.
  */
-import { createMap, baseSwitcherHtml, bindBaseSwitcher, destination as dest } from "../shared/mapview.js";
-import { keys } from "../shared/keys.js";
 
-export function init(section, { bridge, toast }) {
+/* 공용 모듈도 버전을 붙여 부른다 — 붙이지 않으면 브라우저가 옛 파일을
+   계속 써서, 고쳐도 화면이 안 바뀐다(2026-07-21 실사고). */
+export async function init(section, { bridge, toast, V }) {
+  const { createMap, baseSwitcherHtml, bindBaseSwitcher, destination: dest } =
+    await import(`../shared/mapview.js?v=${V}`);
+  const { keys } = await import(`../shared/keys.js?v=${V}`);
+
   section.innerHTML = `
   <div class="panel">
     <h2>사진 좌표</h2>

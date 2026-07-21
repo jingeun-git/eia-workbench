@@ -16,14 +16,19 @@
  * 값만 보고 알 수 없다. 잘못 고르면 전국이 수백 km 어긋난 채 **예외 없이**
  * 결과가 나오므로, 반드시 사용자가 드롭다운으로 고른다(사용자 지시).
  */
-import { createMap, baseSwitcherHtml, bindBaseSwitcher } from "../shared/mapview.js";
-import { keys } from "../shared/keys.js";
-import { toCoord, toAddress, toWgs84, fromWgs84, parseCoord, CRS_LIST } from "../shared/geocode.js";
 
 const SRC_UPLOAD = "업로드";
 const SRC_MAP = "지도지정";
 
-export function init(section, { bridge, toast }) {
+/* 공용 모듈도 버전을 붙여 부른다 — 붙이지 않으면 브라우저가 옛 파일을
+   계속 써서, 고쳐도 화면이 안 바뀐다(2026-07-21 실사고). */
+export async function init(section, { bridge, toast, V }) {
+  const { createMap, baseSwitcherHtml, bindBaseSwitcher } =
+    await import(`../shared/mapview.js?v=${V}`);
+  const { keys } = await import(`../shared/keys.js?v=${V}`);
+  const { toCoord, toAddress, toWgs84, fromWgs84, parseCoord, CRS_LIST } =
+    await import(`../shared/geocode.js?v=${V}`);
+
   section.innerHTML = `
   <div class="panel">
     <h2>지오코딩</h2>
@@ -85,8 +90,8 @@ export function init(section, { bridge, toast }) {
         <div class="progress-track"><div class="progress-fill" id="gc-fill"></div></div>
       </div>
 
-      <div class="table-wrap active" id="gc-tblwrap">
-        <table class="data-table gc-table">
+      <div class="table-wrap active gc-scroll" id="gc-tblwrap">
+        <table class="data-table gc-table" id="gc-table">
           <thead><tr>
             <th style="width:34px"><input type="checkbox" id="gc-all"></th>
             <th style="width:76px">출처</th>
@@ -279,6 +284,8 @@ export function init(section, { bridge, toast }) {
     // 행 삭제
     section.querySelectorAll(".gc-del").forEach((b) =>
       b.addEventListener("click", () => removeIds([+b.dataset.id])));
+    section.querySelectorAll(".gc-chk").forEach((c) =>
+      c.addEventListener("change", syncRunLabel));
 
     const n = rows.length;
     const done = rows.filter((r) => r.status === "완료").length;
@@ -289,6 +296,8 @@ export function init(section, { bridge, toast }) {
     $("#gc-tblwrap").style.display = n ? "" : "none";
     $("#gc-export").disabled = !done;
     $("#gc-retry").disabled = !fail || busy;
+    syncRunLabel();
+    initResizers();
   }
   const stCls = (s) => s === "완료" ? "ok" : s === "실패" ? "fail" : s === "조회중" ? "run" : "";
 
@@ -299,8 +308,10 @@ export function init(section, { bridge, toast }) {
     render(); drawMarkers();
   }
 
-  $("#gc-all").addEventListener("change", (e) =>
-    section.querySelectorAll(".gc-chk").forEach((c) => { c.checked = e.target.checked; }));
+  $("#gc-all").addEventListener("change", (e) => {
+    section.querySelectorAll(".gc-chk").forEach((c) => { c.checked = e.target.checked; });
+    syncRunLabel();
+  });
 
   $("#gc-delsel").addEventListener("click", () => {
     const ids = [...section.querySelectorAll(".gc-chk:checked")].map((c) => +c.value);
@@ -429,6 +440,7 @@ export function init(section, { bridge, toast }) {
     const hasCoord = Boolean(gLat && gLon);
 
     $("#gc-map-panel").innerHTML = `
+      <div id="gc-reco"></div>
       <b>불러온 열 ${cols.length}개 — 무엇으로 조회할지 골라주세요</b>
       <p class="help" style="margin:4px 0 10px">
         열 이름으로 후보를 제안했지만 <b>확인은 직접</b> 해주세요.
@@ -456,10 +468,49 @@ export function init(section, { bridge, toast }) {
       </div>`;
     $("#gc-map-panel").style.display = "";
 
+    /* 파일을 열자마자 **어떤 좌표계를 써야 하는지 먼저 알린다.**
+       "이 파일은 4326"이라는 걸 도구가 알면서 사용자에게 안 알려주면
+       아무 소용이 없다(2026-07-21 사용자 지적). */
+    const reco = () => {
+      const el = $("#gc-reco");
+      const mode = section.querySelector('input[name="gc-mode"]:checked').value;
+      if (mode !== "coord") { el.innerHTML = ""; return; }
+      const cl = $("#gc-col-lat").value, co = $("#gc-col-lon").value;
+      const f0 = cl && co ? table.find((r) => !Number.isNaN(parseCoord(r[cl]))) : null;
+      if (!f0) { el.innerHTML = ""; return; }
+      const a = parseCoord(f0[cl]), b = parseCoord(f0[co]);
+      const want = looksGeographic(a, b) ? 4326 : looksPlanar(a, b) ? null : null;
+      if (want === 4326) {
+        const cur = epsg();
+        el.innerHTML = cur === 4326
+          ? `<div class="gc-reco ok">✓ <b>이 파일은 위경도(EPSG:4326)</b>입니다 — 좌표계가 맞게 설정돼 있습니다.</div>`
+          : `<div class="gc-reco">📍 <b>이 파일의 좌표는 위경도입니다 → EPSG:4326을 쓰세요</b><br>`
+            + `<span class="gc-dim">값이 ${a}, ${b} 처럼 두 자리 소수입니다. 지금 설정된 EPSG:${cur}는 `
+            + `미터 단위 평면좌표라 이대로 조회하면 전부 실패합니다.</span> `
+            + `<button type="button" class="btn btn-primary gc-fixcrs" data-epsg="4326">EPSG:4326으로 바꾸기</button></div>`;
+      } else if (looksPlanar(a, b)) {
+        el.innerHTML = epsg() === 4326
+          ? `<div class="gc-reco">📍 <b>이 파일의 좌표는 평면좌표(미터)입니다</b><br>`
+            + `<span class="gc-dim">값이 ${Math.round(a).toLocaleString()} 처럼 큽니다. 원점(중부·서부·동부)은 `
+            + `자료 출처에 따라 다르니 확인 후 골라주세요 — 국내 자료는 대개 <b>EPSG:5186 중부원점</b>입니다.</span> `
+            + `<button type="button" class="btn btn-primary gc-fixcrs" data-epsg="5186">EPSG:5186으로 바꾸기</button></div>`
+          : `<div class="gc-reco ok">✓ <b>평면좌표로 보입니다</b> — 원점이 EPSG:${epsg()}가 맞는지만 확인해 주세요.</div>`;
+      } else {
+        el.innerHTML = "";
+      }
+      const fx = el.querySelector(".gc-fixcrs");
+      if (fx) fx.addEventListener("click", () => {
+        $("#gc-crs").value = fx.dataset.epsg;
+        syncCrsHeader();
+        sync();
+      });
+    };
+
     const sync = () => {
       const mode = section.querySelector('input[name="gc-mode"]:checked').value;
       $("#gc-col-lat").disabled = $("#gc-col-lon").disabled = mode !== "coord";
       $("#gc-col-addr").disabled = mode !== "addr";
+      reco();
       preview(mode);
     };
     section.querySelectorAll('input[name="gc-mode"]').forEach((r) =>
@@ -694,10 +745,33 @@ export function init(section, { bridge, toast }) {
     }
   }
 
+  /** 체크한 행이 있으면 **그것만** 조회한다. 하나도 없으면 전체를 본다.
+   *  이전에는 체크를 무시하고 항상 전체를 돌려서, 몇 건만 시험해보려 해도
+   *  244건이 전부 나갔다(2026-07-21 사용자 지적). */
+  function targets() {
+    const picked = new Set([...section.querySelectorAll(".gc-chk:checked")].map((c) => +c.value));
+    const pool = picked.size ? rows.filter((r) => picked.has(r.id)) : rows;
+    return { list: pool.filter((r) => r.status === "대기" || r.status === "실패"),
+             scoped: picked.size > 0 };
+  }
+
+  /** 버튼에 무엇이 조회될지 적어둔다 — 누르기 전에 알 수 있어야 한다 */
+  function syncRunLabel() {
+    const { list, scoped } = targets();
+    $("#gc-run").textContent = list.length
+      ? `조회 실행 (${scoped ? "선택 " : ""}${list.length}건)` : "조회 실행";
+    $("#gc-run").disabled = busy || !list.length;
+  }
+
   $("#gc-run").addEventListener("click", () => {
-    const t = rows.filter((r) => r.status === "대기");
-    if (!t.length) { toast("조회할 대기 항목이 없습니다", "warn"); return; }
-    runAll(t);
+    const { list, scoped } = targets();
+    if (!list.length) {
+      toast(scoped ? "고른 행은 이미 조회가 끝났습니다" : "조회할 항목이 없습니다", "warn");
+      return;
+    }
+    list.forEach((r) => { r.status = "대기"; r.reason = ""; });
+    log(`${scoped ? "선택한 " : "전체 "}${list.length}건 조회 시작`);
+    runAll(list);
   });
   $("#gc-retry").addEventListener("click", () => {
     const t = rows.filter((r) => r.status === "실패");
@@ -749,7 +823,74 @@ export function init(section, { bridge, toast }) {
     toast(`${out.length}건을 엑셀로 저장했습니다`, "ok");
   });
 
+  /* ── 칼럼 너비 조절 ────────────────────────────────────────────────
+     열이 12개라 화면을 넘친다. 좌우 스크롤(CSS)만으로는 "주소가 잘려서 안
+     보인다"가 해결되지 않아, 머리행 경계를 끌어 폭을 바꿀 수 있게 한다.
+     table-layout:fixed라야 지정한 폭이 실제로 지켜진다. */
+  function initResizers() {
+    const table = $("#gc-table");
+    if (!table) return;
+    const ths = [...table.querySelectorAll("thead th")];
+    // 현재 렌더된 폭을 고정값으로 굳힌다 — 안 그러면 첫 드래그에서 전체가 튄다
+    ths.forEach((th) => { if (!th.style.width) th.style.width = `${th.offsetWidth}px`; });
+
+    ths.forEach((th, i) => {
+      if (i === ths.length - 1) return;          // 마지막 열(삭제 버튼)은 제외
+      if (th.querySelector(".gc-resizer")) return;
+      const h = document.createElement("span");
+      h.className = "gc-resizer";
+      h.title = "끌어서 너비 조절 · 두 번 누르면 내용에 맞춤";
+      th.appendChild(h);
+
+      let x0 = 0, w0 = 0;
+      const move = (ev) => {
+        const w = Math.max(40, w0 + (ev.clientX - x0));
+        th.style.width = `${w}px`;
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.classList.remove("gc-resizing");
+        saveWidths();
+      };
+      h.addEventListener("mousedown", (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        x0 = ev.clientX; w0 = th.offsetWidth;
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+        document.body.classList.add("gc-resizing");
+      });
+      // 두 번 누르면 그 열의 가장 긴 내용에 맞춘다
+      h.addEventListener("dblclick", (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        let max = th.scrollWidth;
+        table.querySelectorAll(`tbody tr`).forEach((tr) => {
+          const td = tr.children[i];
+          if (td) max = Math.max(max, td.scrollWidth + 20);
+        });
+        th.style.width = `${Math.min(520, Math.max(48, max))}px`;
+        saveWidths();
+      });
+    });
+  }
+
+  /* 조절한 폭은 기억한다 — 표를 다시 그릴 때마다 초기화되면 쓸 수 없다 */
+  const WKEY = "eiaw.gc.colw";
+  function saveWidths() {
+    const ws = [...$("#gc-table").querySelectorAll("thead th")].map((t) => t.style.width || "");
+    try { localStorage.setItem(WKEY, JSON.stringify(ws)); } catch (_) {}
+  }
+  function restoreWidths() {
+    let ws;
+    try { ws = JSON.parse(localStorage.getItem(WKEY) || "null"); } catch (_) { return; }
+    if (!Array.isArray(ws)) return;
+    [...$("#gc-table").querySelectorAll("thead th")].forEach((t, i) => {
+      if (ws[i]) t.style.width = ws[i];
+    });
+  }
+
   /* ── 시작 ────────────────────────────────────────────────────────── */
+  restoreWidths();
   if (checkKey()) { ensureMap(); syncCrsHeader(); }
   // 설정에서 키를 넣고 오면 다시 확인한다
   addEventListener("storage", () => { if (checkKey()) { ensureMap(); syncCrsHeader(); } });

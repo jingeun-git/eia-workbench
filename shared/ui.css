@@ -645,3 +645,36 @@ input:focus, textarea:focus, select:focus {
   font-family: var(--font-sans); line-height: 1.6;
 }
 .gc-mismatch .btn { margin-top: 6px; min-height: 30px; padding: 4px 10px; font-size: var(--text-xs); }
+
+/* ── 지오코딩 표: 좌우 스크롤 + 칼럼 너비 조절 ────────────────────────
+   열이 12개라 화면을 넘친다. 페이지 전체가 가로로 밀리지 않도록
+   표 자신이 스크롤한다. */
+.gc-scroll { overflow-x: auto; overflow-y: visible; max-width: 100%; }
+.gc-scroll .gc-table { table-layout: fixed; min-width: 1180px; }
+.gc-table th { position: relative; }
+.gc-table th, .gc-table td {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gc-table th { white-space: normal; }   /* 머리글은 두 줄까지 허용 */
+
+.gc-resizer {
+  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  cursor: col-resize; user-select: none; z-index: 2;
+}
+.gc-resizer::after {
+  content: ""; position: absolute; top: 20%; right: 3px;
+  width: 1px; height: 60%; background: var(--border-strong);
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease-out);
+}
+.gc-resizer:hover::after { opacity: 1; }
+body.gc-resizing { cursor: col-resize; user-select: none; }
+body.gc-resizing * { cursor: col-resize !important; }
+
+/* 권장 좌표계 안내 — 도구가 아는 것을 사용자에게도 알려준다 */
+.gc-reco {
+  margin-bottom: 10px; padding: 10px 12px;
+  background: var(--warn-subtle); border-left: 3px solid var(--warn);
+  border-radius: 4px; line-height: 1.6;
+}
+.gc-reco.ok { background: var(--ok-subtle); border-left-color: var(--ok); }
+.gc-reco .btn { margin-top: 8px; min-height: 30px; padding: 4px 12px; font-size: var(--text-xs); }

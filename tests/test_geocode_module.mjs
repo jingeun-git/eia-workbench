@@ -11,8 +11,11 @@
  */
 
 let failures = 0;
-const check = (label, fn) => {
-  try { fn(); console.log(`  ✓ ${label}`); }
+/* ⚠ init이 async다 — 검사 함수는 **반드시 프로미스를 반환**해야 한다.
+   `() => { init(...); }` 처럼 버리면 예외가 사라져 무엇을 넣어도 통과하는
+   무의미한 검사가 된다(2026-07-21 실제로 그렇게 만들었다가 변이 주입으로 발견). */
+const check = async (label, fn) => {
+  try { await fn(); console.log(`  ✓ ${label}`); }
   catch (e) { console.log(`  ✗ ${label} — ${e.message}`); failures++; }
 };
 
@@ -58,6 +61,8 @@ class El {
     return new El("div");
   }
   querySelectorAll() { return []; }
+  get offsetWidth() { return 100; }
+  get scrollWidth() { return 100; }
 }
 
 const root = new El("section");
@@ -105,20 +110,20 @@ const { init } = await import("../modules/geocode.js");
 
 console.log("geocode.js 초기화 경로");
 
-check("vworld 키가 없을 때 — 안내만 뜨고 죽지 않는다", () => {
+await check("vworld 키가 없을 때 — 안내만 뜨고 죽지 않는다", () => {
   localStorage.removeItem("eiaw.key.vworld");
-  init(new El("section"), { bridge: bridgeStub, toast });
+  return init(new El("section"), { bridge: bridgeStub, toast, V: 'test' });
 });
 
-check("vworld 키가 있을 때 — 지도까지 초기화된다", () => {
+await check("vworld 키가 있을 때 — 지도까지 초기화된다", () => {
   localStorage.setItem("eiaw.key.vworld", "TESTKEY");
-  init(new El("section"), { bridge: bridgeStub, toast });
+  return init(new El("section"), { bridge: bridgeStub, toast, V: 'test' });
 });
 
-check("좌표계를 바꿔도 죽지 않는다 (헤더·표 재렌더)", () => {
+await check("좌표계를 바꿔도 죽지 않는다 (헤더·표 재렌더)", () => {
   localStorage.setItem("eiaw.key.vworld", "TESTKEY");
   const el = new El("section");
-  init(el, { bridge: bridgeStub, toast });
+  return init(el, { bridge: bridgeStub, toast, V: 'test' });
   const crs = el.querySelector("#gc-crs");
   crs.value = "4326";
 });
