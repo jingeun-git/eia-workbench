@@ -636,3 +636,12 @@ input:focus, textarea:focus, select:focus {
   border-radius: 4px; font-family: var(--font-mono); font-size: var(--text-xs);
   line-height: 1.7; max-height: 120px; overflow: auto;
 }
+
+/* 좌표계 불일치 경고 — 조용히 지나가면 엉뚱한 좌표가 그대로 쌓인다 */
+.gc-mismatch {
+  margin-bottom: 8px; padding: 8px 10px;
+  background: var(--fail-subtle); border-left: 3px solid var(--fail);
+  border-radius: 4px; color: var(--text);
+  font-family: var(--font-sans); line-height: 1.6;
+}
+.gc-mismatch .btn { margin-top: 6px; min-height: 30px; padding: 4px 10px; font-size: var(--text-xs); }

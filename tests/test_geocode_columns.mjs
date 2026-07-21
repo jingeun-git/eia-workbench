@@ -65,11 +65,15 @@ for (const key of ["lat", "lon", "x", "y", "addr", "name"]) {
   if (!m) throw new Error(`geocode.js에서 GUESS.${key} 패턴을 찾지 못했습니다`);
   GUESS[key] = eval(m[1]);
 }
-const inKorea = (lat, lon) => lat > 32 && lat < 40 && lon > 123 && lon < 133;
-{
-  const m = src.match(/const inKorea = \(lat, lon\) =>([^;]+);/);
-  if (!m) throw new Error("geocode.js에서 inKorea를 찾지 못했습니다");
-}
+/* 규칙은 소스에서 뽑아 쓴다 — 두 벌이 되면 한쪽만 고쳐져 조용히 어긋난다 */
+const pull = (re, what) => {
+  const m = src.match(re);
+  if (!m) throw new Error(`geocode.js에서 ${what}을 찾지 못했습니다`);
+  return eval(`(${m[1]})`);
+};
+const inKorea = pull(/const inKorea = (\(lat, lon\) =>[^;]+);/, "inKorea");
+const looksGeographic = pull(/const looksGeographic =\s*(\(a, b\) =>[\s\S]*?);\n/, "looksGeographic");
+const looksPlanar = pull(/const looksPlanar = (\(a, b\) =>[^;]+);/, "looksPlanar");
 const guess = (cols, re) => cols.find((c) => re.test(String(c).trim())) || "";
 
 /* ── 실사고 파일 (없으면 같은 구조의 축약본) ─────────────────────── */
@@ -162,6 +166,39 @@ check("좌표계를 틀리게 고르면(5186 값을 5187로) 걸러지거나 크
   const wrong = toWgs84(152256.978, 218485.874, 5187);
   const km = Math.hypot((wrong[0] - right[0]) * 111, (wrong[1] - right[1]) * 89);
   if (km < 50) throw new Error(`차이가 ${km.toFixed(0)}km밖에 안 된다 — 검사가 무의미`);
+});
+
+console.log("\n④ 좌표계 불일치 감지 — 2026-07-21 2차 실사고");
+
+check("경위도 값 + 평면좌표계 선택을 잡아낸다 (이번 사고 값)", () => {
+  // 파일은 WGS84(37.606291, 126.965916)인데 좌표계를 5186으로 둔 상황
+  if (!looksGeographic(37.606291, 126.965916))
+    throw new Error("경위도로 인식하지 못한다");
+});
+
+check("진짜 5186 평면좌표는 경위도로 오인하지 않는다", () => {
+  if (looksGeographic(152256.978, 218485.874))
+    throw new Error("평면좌표를 경위도로 오인한다");
+  if (!looksPlanar(152256.978, 218485.874))
+    throw new Error("평면좌표로 인식하지 못한다");
+});
+
+check("범위 검사만으로는 이번 사고를 못 잡았음을 확인 (강화가 필요했던 근거)", () => {
+  // 경위도를 5186 미터로 해석한 결과 — 서해 한복판
+  const [lat, lon] = toWgs84(37.606291, 126.965916, 5186);
+  if (Math.abs(lat - 32.575) > 0.01 || Math.abs(lon - 124.871) > 0.01)
+    throw new Error(`재현 실패: ${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+  // 좁힌 범위에서는 이제 걸러진다
+  if (inKorea(lat, lon))
+    throw new Error(`좁힌 범위에서도 통과한다: ${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+});
+
+check("범위를 좁혔어도 국내 실좌표는 통과한다 (과잉 차단 아님)", () => {
+  const spots = [[33.4996, 126.5312, "제주시"], [38.2070, 128.5918, "속초"],
+                 [34.5607, 126.4798, "송호리"], [37.5665, 126.9780, "서울"],
+                 [35.1796, 129.0756, "부산"], [37.4845, 130.9057, "울릉도"]];
+  for (const [la, lo, name] of spots)
+    if (!inKorea(la, lo)) throw new Error(`${name}이 범위 밖으로 판정됨`);
 });
 
 console.log(failures ? `\n  ✗ ${failures}건 실패` : "\n  ✓ 전부 통과");

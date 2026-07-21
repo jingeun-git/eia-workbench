@@ -45,6 +45,7 @@ export function init(section, { bridge, toast }) {
           <div class="input-row">
             <input type="text" id="gc-filename" readonly placeholder="A열에 주소 또는 좌표가 있는 파일">
             <button class="btn btn-secondary" id="gc-pickfile" type="button">파일 선택</button>
+            <button class="btn btn-secondary" id="gc-remap" type="button" style="display:none">열 매핑 수정</button>
             <input type="file" id="gc-file" accept=".csv,.xlsx,.xls" hidden>
           </div>
         </div>
@@ -321,7 +322,10 @@ export function init(section, { bridge, toast }) {
     // 되돌릴 수 없으므로 확인을 받는다
     if (!confirm(`목록 ${rows.length}건을 모두 지웁니다. 계속할까요?`)) return;
     rows = []; active = null; mapSeq = 0; uploadCols = [];
+    lastTable = null; pending = null;
     $("#gc-filename").value = "";
+    $("#gc-remap").style.display = "none";
+    $("#gc-map-panel").style.display = "none";
     render(); drawMarkers();
   });
 
@@ -397,7 +401,10 @@ export function init(section, { bridge, toast }) {
      숫자로 파싱**돼 좌표쌍으로 오인됐다. 결과는 캄차카 근처(57.6N 177.2E).
      이름으로 후보를 제안하되 **최종 선택은 사용자가** 한다. */
 
-  let pending = null;         // {table, cols}
+  /* 매핑을 적용해도 표를 버리지 않는다 — 사용자가 열 선택을 잘못했을 때
+     파일을 다시 고르게 하면 번거롭다(2026-07-21 사용자 요청). */
+  let pending = null;         // 매핑 화면이 열려 있는 동안의 {table, cols}
+  let lastTable = null;       // 마지막으로 불러온 표 (다시 열기용)
 
   const GUESS = {
     lat:  /^(wgs84)?\s*(위도|latitude|lat|y좌표|위도\(y\))/i,
@@ -463,7 +470,8 @@ export function init(section, { bridge, toast }) {
     $("#gc-mapcancel").addEventListener("click", () => {
       pending = null;
       $("#gc-map-panel").style.display = "none";
-      $("#gc-filename").value = "";
+      // 표는 남겨둔다 — [열 매핑 수정]으로 다시 열 수 있어야 한다
+      if (!lastTable) $("#gc-filename").value = "";
     });
     sync();
   }
@@ -478,6 +486,8 @@ export function init(section, { bridge, toast }) {
       const cl = $("#gc-col-lat").value, co = $("#gc-col-lon").value;
       if (!cl || !co) { $("#gc-preview").innerHTML = `<span class="gc-warn">위도·경도 열을 모두 고르세요</span>`; return; }
       const e = epsg();
+      const f0 = rows3.find((r) => !Number.isNaN(parseCoord(r[cl])));
+      const mis = f0 ? crsMismatch(parseCoord(f0[cl]), parseCoord(f0[co])) : null;
       html = rows3.map((r) => {
         const a = parseCoord(r[cl]), b = parseCoord(r[co]);
         if (Number.isNaN(a) || Number.isNaN(b)) return `<div class="gc-warn">숫자가 아닙니다: ${esc(r[cl])} / ${esc(r[co])}</div>`;
@@ -485,18 +495,52 @@ export function init(section, { bridge, toast }) {
         if (e !== 4326) { try { [la, lo] = toWgs84(a, b, e); } catch (_) { return `<div class="gc-warn">변환 실패</div>`; } }
         const bad = !inKorea(la, lo);
         return `<div${bad ? ' class="gc-warn"' : ""}>${esc(r[cl])}, ${esc(r[co])}`
-             + ` → 위도 ${la.toFixed(6)}, 경도 ${lo.toFixed(6)}${bad ? "  ⚠ 한국 밖입니다 — 열이나 좌표계를 확인하세요" : ""}</div>`;
+             + ` → 위도 ${la.toFixed(6)}, 경도 ${lo.toFixed(6)}${bad ? "  ⚠ 한국 밖" : ""}</div>`;
       }).join("");
+      if (mis) {
+        html = `<div class="gc-mismatch">⚠ <b>좌표계가 맞지 않습니다</b><br>${esc(mis.msg)}`
+             + (mis.want ? ` <button type="button" class="btn btn-secondary gc-fixcrs" data-epsg="${mis.want}">EPSG:${mis.want}로 바꾸기</button>` : "")
+             + `</div>` + html;
+      }
     } else {
       const ca = $("#gc-col-addr").value;
       if (!ca) { $("#gc-preview").innerHTML = `<span class="gc-warn">주소 열을 고르세요</span>`; return; }
       html = rows3.map((r) => `<div>${esc(String(r[ca] ?? "").slice(0, 70)) || '<span class="gc-warn">비어 있음</span>'}</div>`).join("");
     }
     $("#gc-preview").innerHTML = `<div class="gc-dim" style="margin-bottom:4px">미리보기 (앞 3행)</div>${html}`;
+    const fix = $("#gc-preview").querySelector(".gc-fixcrs");
+    if (fix) fix.addEventListener("click", () => {
+      $("#gc-crs").value = fix.dataset.epsg;
+      syncCrsHeader();
+      preview(mode);
+    });
   }
 
   /** 대한민국 대략 범위 — 결과가 여기를 벗어나면 열·좌표계 선택이 틀렸을 가능성이 높다 */
-  const inKorea = (lat, lon) => lat > 32 && lat < 40 && lon > 123 && lon < 133;
+  const inKorea = (lat, lon) => lat > 33 && lat < 39.5 && lon > 124.5 && lon < 132;
+
+  /* ── 좌표계 불일치 감지 ────────────────────────────────────────────
+     범위 검사만으로는 부족했다(2026-07-21 2차 실사고). 경위도 값을 5186
+     미터로 해석하면 32.6N 124.9E — **서해 한복판**이 나오는데, 넉넉히 잡은
+     범위 안이라 통과해버렸다.
+
+     그래서 변환 결과가 아니라 **입력값의 생김새**를 본다. 이쪽이 훨씬 결정적이다.
+       · 33~39 / 124~132 범위의 소수 → 경위도다. 평면좌표라면 이런 값이 나올 수
+         없다(가원점 때문에 최소 수만 단위다).
+       · 절댓값 10,000 이상 → 평면좌표다. 경위도라면 불가능한 크기다. */
+  const looksGeographic = (a, b) =>
+    Math.abs(a) > 32 && Math.abs(a) < 40 && Math.abs(b) > 123 && Math.abs(b) < 133;
+  const looksPlanar = (a, b) => Math.abs(a) > 10000 || Math.abs(b) > 10000;
+
+  /** 고른 좌표 열의 값과 선택한 좌표계가 어긋나면 사유를 돌려준다(맞으면 null) */
+  function crsMismatch(a, b) {
+    const e = epsg();
+    if (e === 4326 && looksPlanar(a, b))
+      return { want: null, msg: "값이 수만~수백만 단위입니다 — 경위도가 아니라 평면좌표로 보입니다. 좌표계를 5186 등으로 바꾸세요" };
+    if (e !== 4326 && looksGeographic(a, b))
+      return { want: 4326, msg: `값이 위경도로 보입니다(${a}, ${b}). 지금 좌표계가 EPSG:${e}(평면)라 미터로 해석돼 엉뚱한 곳이 됩니다` };
+    return null;
+  }
 
   function applyMapping() {
     if (!pending) return;
@@ -504,6 +548,14 @@ export function init(section, { bridge, toast }) {
     const mode = section.querySelector('input[name="gc-mode"]:checked').value;
     const cn = $("#gc-col-name").value;
     let n = 0, outside = 0;
+
+    // 다시 매핑하는 경우 — 같은 파일이 두 벌 쌓이지 않게 이전 업로드분을 걷어낸다.
+    // 지도로 찍은 지점은 파일과 무관하므로 건드리지 않는다.
+    const prev = rows.filter((r) => r.source === SRC_UPLOAD).length;
+    if (prev) {
+      rows = rows.filter((r) => r.source !== SRC_UPLOAD);
+      log(`이전 업로드분 ${prev}건을 교체합니다`);
+    }
 
     if (mode === "coord") {
       const cl = $("#gc-col-lat").value, co = $("#gc-col-lon").value;
@@ -535,8 +587,10 @@ export function init(section, { bridge, toast }) {
       }
     }
     uploadCols = pending.cols;
+    lastTable = pending.table;
     pending = null;
     $("#gc-map-panel").style.display = "none";
+    $("#gc-remap").style.display = "";
     log(`${n}건 추가 (${mode === "coord" ? "좌표 → 주소" : "주소 → 좌표"})`);
     if (outside) {
       log("⚠ 첫 행이 대한민국 범위 밖입니다 — 열 선택이나 좌표계를 확인하세요", "fail");
@@ -546,6 +600,12 @@ export function init(section, { bridge, toast }) {
     }
     render(); drawMarkers();
   }
+
+  $("#gc-remap").addEventListener("click", () => {
+    if (!lastTable) { toast("불러온 파일이 없습니다", "warn"); return; }
+    if (busy) { toast("조회 중에는 바꿀 수 없습니다", "warn"); return; }
+    showMapping(lastTable);
+  });
 
   /* ── 조회 ────────────────────────────────────────────────────────── */
   async function forward(r) {
