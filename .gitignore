@@ -37,3 +37,11 @@ Thumbs.db
 # 빌드 부산물 — PyInstaller 작업 폴더·산출물(수십 MB)
 bridge/_build_work/
 bridge/dist/
+
+# 빌드 부산물 — PyInstaller 스테이징(원본 복사본이라 커밋 의미 없음)
+bridge/_build_stage/
+
+# 실사업 좌표가 든 검증 자산 — 이 저장소는 Public이다.
+# test_photo_exif.py는 지오세터 대조용으로 실제 사업지 GPS 6점을 담고 있어
+# 로컬에만 둔다(기능 코드가 아니라 검증 스크립트라 공개해도 얻는 것이 없다).
+bridge/test_photo_exif.py

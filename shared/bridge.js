@@ -116,6 +116,24 @@ export class BridgeClient extends EventTarget {
     return res.json();
   }
 
+  /** 이미지 등 바이너리를 blob URL로 받는다 (썸네일·미리보기).
+   *  `<img src>`로 브리지를 직접 부르면 토큰을 쿼리에 실어야 하고, 그러면
+   *  토큰이 브라우저 이력에 남는다 — 다른 요청과 같이 헤더 인증을 유지한다.
+   *  ※ 반환된 URL은 다 쓴 뒤 URL.revokeObjectURL로 해제해야 누수가 없다. */
+  async blobUrl(path, { timeoutMs = 30000 } = {}) {
+    if (!this.base) throw new Error("브리지 미연결");
+    const res = await this._fetch(`${this.base}${path}`, {
+      method: "GET", timeoutMs,
+      headers: this.token ? { "Authorization": `Bearer ${this.token}` } : {},
+    });
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).error || ""; } catch (_) {}
+      throw new Error(detail || `이미지를 불러오지 못했습니다 (HTTP ${res.status})`);
+    }
+    return URL.createObjectURL(await res.blob());
+  }
+
   /** 장시간 작업 폴링 — 새 로그 라인·진행 상태를 콜백으로 전달, 종료 시 resolve.
    *  일시적 통신 오류는 재시도하되(OCR 등 수십 분 작업 중 한 번 끊겼다고 죽이지 않는다),
    *  연속 실패가 누적되면 중단한다. 브리지 재시작으로 작업 정보가 사라진 경우는 즉시 구분. */

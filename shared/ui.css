@@ -414,3 +414,141 @@ input:focus, textarea:focus, select:focus {
   .tabs { gap: var(--space-3); }
   .tab-group { flex: 1 1 100%; }
 }
+
+/* ── 사진 좌표 (SYS-33 ③) ─────────────────────────────────────────────
+   지오세터 배치를 따른다: 좌측에 썸네일 격자 + 큰 미리보기, 우측에 지도.
+   좁은 화면에서는 세로로 쌓아 지도가 뭉개지지 않게 한다. */
+.ph-split {
+  display: grid;
+  grid-template-columns: minmax(320px, 4fr) minmax(360px, 6fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .ph-split { grid-template-columns: 1fr; }
+}
+
+.ph-left { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.ph-right { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+
+.ph-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: var(--space-2);
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface-2, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.ph-cell {
+  position: relative;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px;
+  transition: border-color var(--motion-fast) var(--ease-out),
+              background var(--motion-fast) var(--ease-out);
+}
+.ph-cell:hover { background: var(--accent-subtle); }
+.ph-cell.on { border-color: var(--accent); background: var(--accent-subtle); }
+.ph-cell:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ph-cell.nogeo { opacity: 0.62; }
+
+.ph-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--log-bg);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.ph-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-thumb-fail {
+  font-size: var(--text-xs); color: var(--text-muted); text-align: center; padding: 4px;
+}
+.ph-spin {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  animation: ph-spin 0.7s linear infinite;
+}
+@keyframes ph-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ph-spin { animation-duration: 2.4s; }
+  .ph-cell { transition: none; }
+}
+
+.ph-cap {
+  margin-top: 3px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ph-cell .ph-chk {
+  position: absolute; top: 8px; left: 8px;
+  width: 17px; height: 17px; cursor: pointer;
+  accent-color: var(--accent);
+}
+.ph-badge {
+  position: absolute; top: 8px; left: 8px;
+  font-size: 10px; font-weight: var(--weight-semibold);
+  background: var(--warn-subtle); color: var(--warn);
+  padding: 2px 5px; border-radius: 3px;
+}
+
+.ph-preview {
+  flex: 1 1 auto;
+  min-height: 220px;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.ph-preview img { max-width: 100%; max-height: 420px; object-fit: contain; display: block; }
+.ph-preview-empty { color: var(--text-muted); font-size: var(--text-sm); }
+
+#ph-map {
+  flex: 1 1 auto;
+  min-height: 460px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  /* Leaflet 타일이 모서리를 넘지 않게 */
+  overflow: hidden;
+  z-index: var(--z-base);
+}
+/* 지도 타일은 다크 모드에서 그대로 두면 눈이 부시다. 색을 왜곡하지 않는
+   선에서 밝기만 낮춘다 — 지형 판독이 목적이라 색상 반전은 쓰지 않는다. */
+:root[data-theme="dark"] #ph-map .leaflet-tile-pane { filter: brightness(0.78) contrast(1.05); }
+
+.ph-readout {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: var(--space-2);
+  background: var(--log-bg);
+  border-radius: var(--radius-sm, 6px);
+  word-break: break-all;
+}
+
+/* 사진 좌표 — 내보내기 안내. 무엇이 저장되는지 미리 알려 "다시 내보내기"를 줄인다. */
+.ph-note {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--accent-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--text);
+}
+.ph-note ul { margin: var(--space-2) 0 0; padding-left: 1.15em; }
+.ph-note li { margin-bottom: 4px; }
+.ph-note p { margin: var(--space-2) 0 0; color: var(--text-muted); }
+.ph-note code {
+  font-family: var(--font-mono); font-size: 0.92em;
+  background: var(--log-bg); padding: 1px 4px; border-radius: 3px;
+}
+.ph-note .ph-note-warn { color: var(--warn); }

@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.22.0"
+BRIDGE_VERSION = "3.23.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -132,10 +132,24 @@ IS_WINDOWS = os.name == "nt"
 # ── 기능 가용성 탐지 (파일 실재·임포트 가능 여부로 판정 — 표기만으로 단정 금지) ──
 def detect_features():
     feats = {"convert": False, "ocr": False, "eiass": False,
-             "hwp2pdf": False, "pagenum": False, "pdf2excel": False}
+             "hwp2pdf": False, "pagenum": False, "pdf2excel": False,
+             "photo": False, "photo_shp": False, "photo_heic": False}
     try:
         import pdf2excel_core  # noqa
         feats["pdf2excel"] = True
+    except Exception:
+        pass
+    try:
+        import photo_exif  # noqa
+        feats["photo"] = True
+        # SHP 저장과 HEIC 읽기는 선택 의존이다. 없어도 사진 탭 자체는 돌아가고
+        # KML은 나가므로, 기능 전체를 끄지 않고 **무엇이 빠졌는지**를 알린다.
+        feats["photo_heic"] = bool(getattr(photo_exif, "HEIF_OK", False))
+        try:
+            import shapefile  # noqa
+            feats["photo_shp"] = True
+        except Exception:
+            pass
     except Exception:
         pass
     try:
@@ -253,7 +267,7 @@ def job_log(job, msg):
     job["log"].append(str(msg))
 
 # ── 폴더/파일 선택 (tkinter — 요청 스레드에서 개별 Tk 루트 생성) ─────────────
-def pick_dialog(kind: str, patterns=None):
+def pick_dialog(kind: str, patterns=None, initial=None, initial_dir=None):
     import tkinter as tk
     from tkinter import filedialog
     root = tk.Tk()
@@ -262,6 +276,18 @@ def pick_dialog(kind: str, patterns=None):
     try:
         if kind == "folder":
             path = filedialog.askdirectory(title="EIA Workbench — 폴더 선택")
+            paths = [path] if path else []
+        elif kind == "save":
+            # 저장 위치 지정 — 아직 없는 파일을 고르는 것이라 askopen으로는 안 된다.
+            # patterns는 [(설명, 확장자), …] 형태로 받는다.
+            ft = patterns if isinstance(patterns, list) else [("모든 파일", "*.*")]
+            ft = [tuple(x) for x in ft] + [("모든 파일", "*.*")]
+            path = filedialog.asksaveasfilename(
+                title="EIA Workbench — 저장 위치 지정",
+                defaultextension=ft[0][1].replace("*", "") if ft else "",
+                initialfile=initial or "",
+                initialdir=initial_dir or "",
+                filetypes=ft)
             paths = [path] if path else []
         else:
             ft = [("대상 파일", patterns or "*.*"), ("모든 파일", "*.*")]
@@ -409,6 +435,85 @@ def run_eiass_dl(job, params):
             shutil.rmtree(work_root, ignore_errors=True)
     else:
         job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
+
+
+# ── 사진 좌표 ────────────────────────────────────────────────────────────
+# 지오세터(GeoSetter)가 하던 일을 워크벤치로 옮긴 것이다. 계산 근거와 지오세터
+# 실행 로그와의 정량 대조는 photo_exif.py / test_photo_exif.py에 있다.
+
+def photo_scan(params):
+    """폴더의 사진에서 촬영지점·방향을 뽑는다.
+
+    좌표가 없는 사진도 **목록에서 지우지 않고** 사유와 함께 돌려준다 —
+    조용히 빠지면 사용자는 몇 장이 누락됐는지조차 모른다.
+    """
+    import photo_exif as px
+    from dataclasses import asdict
+
+    folder = Path(params.get("folder") or "")
+    if not path_allowed(folder):
+        raise RuntimeError("승인된 폴더가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
+    if not folder.is_dir():
+        raise RuntimeError(f"폴더가 없습니다: {folder}")
+
+    pts = px.scan_folder(folder, recursive=bool(params.get("recursive")))
+    rows = [asdict(p) for p in pts]
+    geo = sum(1 for p in pts if p.has_geo)
+    return {"ok": True, "folder": str(folder), "photos": rows,
+            "total": len(rows), "with_geo": geo,
+            "no_dir": sum(1 for p in pts if p.has_geo and p.direction is None)}
+
+
+def photo_thumbnail(src: Path, size: int) -> bytes:
+    """썸네일 JPEG 바이트. EXIF 회전을 반영해 세로사진이 눕지 않게 한다.
+
+    HEIC도 여기서 JPEG로 바뀌어 나가므로 브라우저가 그대로 표시할 수 있다
+    (브라우저는 HEIC를 디코드하지 못한다 — 브리지 경유를 택한 이유 중 하나).
+    """
+    import io
+    from PIL import Image, ImageOps
+
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im)
+        im.thumbnail((size, size), Image.LANCZOS)
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=82, optimize=True)
+        return buf.getvalue()
+
+
+def photo_export(params):
+    """선택한 사진들을 KML 또는 SHP로 내보낸다."""
+    import photo_exif as px
+
+    fmt = (params.get("format") or "kml").lower()
+    out = Path(params.get("out") or "")
+    if not out.parent.is_dir():
+        raise RuntimeError(f"저장 폴더가 없습니다: {out.parent}")
+    if not path_allowed(out.parent):
+        raise RuntimeError("승인된 폴더가 아닙니다 — [저장 위치]를 다시 지정하세요")
+
+    # 웹이 보낸 dict를 그대로 다시 PhotoPoint로 만든다. 재스캔하지 않는 이유는
+    # 사용자가 목록에서 고른 **그 부분집합**을 내보내야 하기 때문이다.
+    pts = []
+    for d in params.get("photos") or []:
+        pts.append(px.PhotoPoint(**{k: v for k, v in d.items()
+                                    if k in px.PhotoPoint.__dataclass_fields__}))
+    geo = [p for p in pts if p.has_geo]
+    if not geo:
+        raise RuntimeError("좌표를 가진 사진이 없습니다")
+
+    epsg = int(params.get("epsg") or 5186)
+    if fmt == "kml":
+        p = px.export_kml(geo, out, wedge_km=float(params.get("wedge_km") or 0.15))
+    elif fmt == "shp":
+        p = px.export_shp(geo, out, epsg=epsg)
+    elif fmt == "csv":
+        p = px.export_csv(geo, out, epsg=epsg)
+    else:
+        raise RuntimeError(f"알 수 없는 형식: {fmt}")
+    return {"ok": True, "path": str(p), "count": len(geo)}
 
 
 def run_pdf2excel_scan(job, params):
@@ -809,6 +914,28 @@ class Handler(BaseHTTPRequestHandler):
                         "result": job.get("result") if job["status"] == "done" else None,
                         "error": job.get("error")})
             return
+        if url.path == "/photo/thumb":
+            # 썸네일·미리보기. `<img src>`로 직접 부르면 토큰을 쿼리에 실어야 하고
+            # 그러면 토큰이 브라우저 이력·로그에 남는다 — 다른 엔드포인트와 같이
+            # 헤더 인증을 유지하고, 웹은 fetch로 받아 blob URL로 붙인다.
+            q = parse_qs(url.query)
+            src = Path((q.get("path") or [""])[0])
+            try:
+                size = max(64, min(2400, int((q.get("size") or ["320"])[0])))
+            except ValueError:
+                size = 320
+            if not path_allowed(src) or not src.is_file():
+                self._json({"ok": False, "error": "허용되지 않은 경로입니다"}, 403)
+                return
+            try:
+                body = photo_thumbnail(src, size)
+            except Exception as e:
+                self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+                return
+            self._headers(200, ctype="image/jpeg", length=len(body))
+            self.wfile.write(body)
+            return
+
         if url.path == "/proxy":
             target = (parse_qs(url.query).get("url") or [""])[0]
             try:
@@ -833,15 +960,34 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path == "/pick":
             patterns = body.get("patterns")
-            paths = pick_dialog(body.get("kind", "folder"), patterns)
+            paths = pick_dialog(body.get("kind", "folder"), patterns,
+                                initial=body.get("initial"),
+                                initial_dir=body.get("initial_dir"))
             for p in paths:
                 root = Path(p)
+                # 저장 위치는 아직 파일이 없다 — is_dir()가 False라 부모를 잡는데,
+                # 그게 정확히 승인해야 할 폴더다.
                 root = root if root.is_dir() else root.parent
                 if root not in ALLOWED_ROOTS:
                     ALLOWED_ROOTS.append(root.resolve())
             self._json({"ok": True,
                         "path": paths[0] if len(paths) == 1 else None,
                         "paths": paths})
+            return
+
+        if url.path == "/photo/scan":
+            # EXIF만 읽으므로 픽셀 디코드가 없어 빠르다 — 작업큐를 쓰지 않는다.
+            try:
+                self._json(photo_scan(body))
+            except Exception as e:
+                self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 400)
+            return
+
+        if url.path == "/photo/export":
+            try:
+                self._json(photo_export(body))
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)}, 400)
             return
 
         if url.path == "/replan":
