@@ -29,6 +29,7 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -44,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.14.0"
+BRIDGE_VERSION = "3.15.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -241,7 +242,15 @@ def run_eiass_dl(job, params):
         raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
 
     r = edr.EIASSDocResolver()
-    base_dir = out_root / edr._safe_filename(code)
+
+    # ZIP으로 묶을 때는 **대상 폴더에 개별 파일을 아예 만들지 않는다.**
+    #   예전에는 대상 폴더에 받아둔 뒤 zip을 만들고 지웠는데, OneDrive 동기화
+    #   폴더에서 삭제가 실패해 빈 폴더가 남고 원본이 어긋나는 일이 반복됐다
+    #   (2026-07-21). 임시 폴더에 받아 zip만 대상 폴더에 두면
+    #   "지우다 실패" 자체가 생길 수 없다.
+    want_zip = bool(params.get("zip"))
+    work_root = Path(tempfile.mkdtemp(prefix="eiaw_zip_")) if want_zip else out_root
+    base_dir = work_root / edr._safe_filename(code)
     saved = []          # (Path, zip 내 상대경로)
     ok = fail = 0
 
@@ -307,49 +316,28 @@ def run_eiass_dl(job, params):
                 dl(d, base_dir, f"{code}/")
 
     job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
-    if params.get("zip") and saved:
+    if want_zip:
         import shutil, zipfile
-        # 같은 파일이 두 번 잡히는 경우가 있어(재실행·중복 선택) 중복을 제거한다.
-        uniq, seen = [], set()
-        for p, arc in saved:
-            if arc not in seen:
-                seen.add(arc)
-                uniq.append((p, arc))
+        try:
+            if not saved:
+                raise RuntimeError("내려받은 파일이 없어 ZIP을 만들지 않았습니다")
+            uniq, seen = [], set()
+            for p, arc in saved:                 # 같은 파일이 두 번 잡히면 한 번만
+                if arc not in seen and p.exists():
+                    seen.add(arc)
+                    uniq.append((p, arc))
 
-        zip_path = out_root / f"{edr._safe_filename(code)}.zip"
-        written, missing = [], []
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            for p, arc in uniq:
-                if p.exists():
+            zip_path = out_root / f"{edr._safe_filename(code)}.zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+                for p, arc in uniq:
                     z.write(p, arcname=arc)
-                    written.append(p)
-                else:
-                    missing.append(arc)
-
-        # ⚠ **하나라도 못 담았으면 원본을 지우지 않는다.**
-        #   예전에는 zip이 비어 있는데 원본까지 지워 자료를 잃을 뻔했다(2026-07-21).
-        if missing:
-            job_log(job, f"  ✗ ZIP에 담지 못한 파일 {len(missing)}건 — 원본을 그대로 둡니다")
-            for m in missing[:5]:
-                job_log(job, f"     · {m}")
-            job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir} (ZIP 불완전)")
-            return
-
-        # 전부 담았을 때만 원본 정리. ignore_errors로 조용히 넘기지 않고 결과를 확인한다
-        # (OneDrive 동기화 폴더 등에서 삭제가 실패하면 빈 폴더만 남는다).
-        for p in written:
-            try:
-                p.unlink()
-            except Exception as e:
-                job_log(job, f"  ⚠ 원본 삭제 실패: {p.name} — {e}")
-        shutil.rmtree(base_dir, ignore_errors=True)
-        if base_dir.exists():
-            job_log(job, f"  ⚠ 폴더가 남아 있습니다: {base_dir} — 직접 삭제하세요")
-
-        size = zip_path.stat().st_size
-        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} "
-                     f"({len(written)}건 · {size >> 20} MB) — 개별 파일은 정리했습니다")
-        job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {zip_path}")
+            size = zip_path.stat().st_size
+            job_log(job, f"  ✓ ZIP 번들: {zip_path.name} "
+                         f"({len(uniq)}건 · {size >> 20} MB)")
+            job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {zip_path}")
+        finally:
+            # 임시 폴더는 대상 폴더 밖(시스템 temp)이라 정리 실패 위험이 없다
+            shutil.rmtree(work_root, ignore_errors=True)
     else:
         job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
 
