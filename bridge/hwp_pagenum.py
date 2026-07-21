@@ -213,6 +213,13 @@ def assign_numbers(plan, start_num: int = 1):
             marks = [(visible[0][0], visible[0][1])] if visible else []
             force_odd = [p for p in force_odd if p not in targets]
 
+        # ⚠ 같은 쪽에 새 쪽번호와 쪽 번호 제어를 **둘 다** 걸면 안 된다.
+        #   새 쪽번호가 41을 지정한 뒤 제어가 '직후 홀수'로 다시 밀어 43이 되고,
+        #   그 뒤가 44·45로 어긋난다(2026-07-21 실사고: 4장이 44 대신 45로 끝남).
+        #   절대값이 이미 홀수로 계산돼 있으므로 그 쪽의 제어는 불필요하다.
+        _marked = {p for p, _ in marks}
+        force_odd = [p for p in force_odd if p not in _marked]
+
         out.append({**f, "start": (pages[0][1] if pages else cur),
                     "end": end, "pages": pages, "marks": marks, "pad": pad,
                     "expect_hide": sorted(expect), "stray_hide": stray,
