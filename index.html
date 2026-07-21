@@ -15,6 +15,7 @@
     <div class="brand">
       <b>EIA Workbench</b>
       <small>환경영향평가 통합 업무도구</small>
+      <span class="ver" id="web-ver" title="웹 버전 — 새로고침하면 항상 최신을 받아옵니다"></span>
     </div>
 
     <button id="bridge-chip" class="chip warn" aria-label="브리지 연결 상태">◌ 확인 중…</button>
@@ -54,6 +55,7 @@
 
 <footer class="shell-footer">
   <span>EIA Workbench</span>
+  <span id="foot-ver" class="foot-ver"></span>
 </footer>
 
 <!-- 설정 모달 -->
@@ -100,10 +102,18 @@
   <div class="modal">
     <h3 id="bridge-title">로컬 브리지</h3>
     <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
-      한컴(HWP) 작업과 한글·스캔 문서 변환·EIASS 사업코드 자동탐색은 PC에서 실행되는
-      <b>브리지 프로그램</b>이 담당합니다.<br><br>
-      <b>실행 방법</b>: <code>99.Tools\unified_workbench\bridge\run_bridge.bat</code> 더블클릭 — 끝.
-      브라우저가 자동으로 열리며 토큰이 스스로 등록됩니다.<br><br>
+      이 도구는 <b>두 부분</b>으로 되어 있습니다.<br><br>
+      <b>① 웹</b> — 지금 보고 계신 화면입니다. 설치도 실행도 없는 인터넷 주소이며,
+      새로고침하면 항상 최신을 받아옵니다. 왼쪽 위에 <b>웹 버전</b>이 표시됩니다.<br>
+      <b>② 브리지</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWP) 작업·한글/스캔 문서 변환·
+      EIASS 자동탐색·사진 폴더 읽기처럼 <b>브라우저가 할 수 없는 일</b>만 담당합니다.
+      상태칩에 <b>브리지 버전</b>이 표시됩니다.<br><br>
+      <b>두 버전 숫자가 다른 것이 정상입니다.</b> 별개 프로그램이라 각자 필요할 때만 올라갑니다 —
+      브리지는 PC에서 하는 작업이 바뀔 때만 갱신되므로 웹보다 낮은 것이 보통입니다.
+      맞지 않으면 상태칩에 <b style="color:var(--warn)">⚠ 갱신 필요</b>가 뜹니다.<br><br>
+      <b>브리지 실행</b>: <code>99.Tools\unified_workbench\bridge\run_bridge.bat</code> 더블클릭 — 끝.
+      브라우저가 자동으로 열리며 토큰이 스스로 등록됩니다.
+      (지오코딩·EIASS 수집·문서→MD 탭은 브리지 없이도 동작합니다)<br><br>
       상태칩이 <b style="color:var(--ok)">● 연결됨</b>으로 바뀌면 관련 탭이 활성화됩니다.
       <b style="color:var(--warn)">⚠ 진단 스텁 감지</b>가 뜨면 예전 PoC 스텁 창이 켜져 있는 것입니다
       — 그 창을 닫고 run_bridge.bat를 실행하세요.
@@ -123,6 +133,6 @@
 <!-- 지도(사진 좌표 탭). CDN을 쓰지 않는 원칙에 따라 동봉한다 — BSD-2, 176KB -->
 <script src="vendor/leaflet/leaflet.js"></script>
 <!-- ?v= 는 배포 시 갱신 — 없으면 브라우저가 옛 app.js를 계속 쓴다(2026-07-20) -->
-<script type="module" src="shared/app.js?v=3.29.0"></script>
+<script type="module" src="shared/app.js?v=3.30.0"></script>
 </body>
 </html>

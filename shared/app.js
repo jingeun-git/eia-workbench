@@ -7,7 +7,22 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.29.0";
+export const V = "3.30.0";
+
+/* 브리지가 마지막으로 **실제로 바뀐** 버전.
+   웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
+   브리지는 PC에서 하는 일(한컴·파일 접근)이 늘어날 때만 바뀐다.
+   여기 값을 웹 버전에 맞춰 올리면 안 된다 — 바뀐 것도 없는데 사용자에게
+   매번 재시작을 시키게 된다. **브리지 코드를 고칠 때만** 올린다. */
+const MIN_BRIDGE = "3.24.0";
+const cmpVer = (a, b) => {
+  const pa = String(a).split("."), pb = String(b).split(".");
+  for (let i = 0; i < 3; i++) {
+    const d = (+pa[i] || 0) - (+pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+};
 
 /* ── 도구 레지스트리 ───────────────────────────────────────────────────
    init은 첫 활성화 시 1회 lazy 호출. needsBridge 도구는 미연결 시 잠금. */
@@ -55,6 +70,15 @@ const inited = new Set();
 function applyTheme(mode) {              // "light" | "dark"
   document.documentElement.dataset.theme = mode === "dark" ? "dark" : "light";
 }
+/* 화면 어디에도 웹 버전이 없어서 "브리지 v3.24.0"을 웹 버전으로 오해했다
+   (2026-07-21 사용자 지적). 두 버전을 나란히 보이게 한다. */
+function initVersion() {
+  const v = $("#web-ver");
+  if (v) v.textContent = `웹 v${V}`;
+  const f = $("#foot-ver");
+  if (f) f.textContent = `웹 v${V} · 브리지는 별도 프로그램입니다 (run_bridge.bat)`;
+}
+
 function initTheme() {
   applyTheme(localStorage.getItem("eiaw.theme") || "light");
   $("#theme-toggle").addEventListener("click", () => {
@@ -125,12 +149,26 @@ function initBridgeChip() {
   const render = () => {
     const s = bridge.state;
     chip.className = "chip " + (s === "ok" ? "ok" : s === "checking" ? "warn" : "fail");
+    const bv = bridge.info?.bridge_version ?? "?";
+    const stale = s === "ok" && cmpVer(bv, MIN_BRIDGE) < 0;
     chip.textContent =
-      s === "ok"   ? `● 브리지 v${bridge.info?.bridge_version ?? "?"}` :
+      s === "ok"   ? `● 브리지 v${bv}${stale ? " ⚠ 갱신 필요" : ""}` :
       s === "stub" ? "⚠ 진단 스텁 감지 — 클릭" :
       s === "off"  ? "○ 브리지 미연결" : "◌ 확인 중…";
     if (s === "stub")
       chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 run_bridge.bat를 실행하세요";
+    // 버전이 둘이라 "안 맞는 것 아닌가" 하는 오해가 생긴다(2026-07-21 사용자 지적).
+    // 숫자만 보여주지 말고 **맞는지 아닌지**를 말해준다.
+    else if (s === "ok") {
+      chip.classList.toggle("warn", stale);
+      chip.classList.toggle("ok", !stale);
+      chip.title = stale
+        ? `브리지가 오래됐습니다 — v${MIN_BRIDGE} 이상이 필요합니다(현재 v${bv}).\n`
+          + `열려 있는 브리지를 닫고 run_bridge.bat을 다시 실행하세요.`
+        : `웹 v${V} · 브리지 v${bv} — 호환됩니다.\n`
+          + `두 버전은 별개 프로그램이라 숫자가 다른 것이 정상입니다.\n`
+          + `브리지는 PC에서 하는 작업(한컴·파일 접근)이 바뀔 때만 올라갑니다.`;
+    }
     // 브리지가 여러 개 떠 있으면 최신을 골랐음을 알린다(구버전 창 방치 감지)
     if (s === "ok" && bridge.duplicates?.length) {
       chip.textContent += " ⚠";
@@ -213,6 +251,7 @@ function initPairing() {
 }
 
 /* ── 부트 ─────────────────────────────────────────────────────────── */
+initVersion();
 initTheme();
 initPairing();   // bridge.start() 전에 토큰부터 확보
 initTabs();

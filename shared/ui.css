@@ -678,3 +678,12 @@ body.gc-resizing * { cursor: col-resize !important; }
 }
 .gc-reco.ok { background: var(--ok-subtle); border-left-color: var(--ok); }
 .gc-reco .btn { margin-top: 8px; min-height: 30px; padding: 4px 12px; font-size: var(--text-xs); }
+
+/* 웹 버전 표기 — 브리지 버전(상태칩)과 헷갈리지 않게 라벨을 함께 보여준다 */
+.brand .ver {
+  margin-left: 8px; padding: 2px 7px; border-radius: 10px;
+  font-size: 11px; font-weight: var(--weight-medium);
+  background: var(--accent-subtle); color: var(--accent);
+  white-space: nowrap;
+}
+.foot-ver { color: var(--text-muted); font-size: var(--text-xs); margin-left: 10px; }
