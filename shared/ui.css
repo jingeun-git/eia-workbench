@@ -798,6 +798,12 @@ body.gc-resizing * { cursor: col-resize !important; }
 
 .ed-col-grip { text-align: center; color: var(--text-dim); font-size: 11px; line-height: 1; margin-bottom: 3px; cursor: grab; }
 .ed-col-label { font-weight: var(--weight-semibold); margin-bottom: 4px; text-align: center; }
+/* 행/열 전환 모드 — 지점명이 헤더(th) 안으로 들어올 때의 라벨(편집 가능) */
+.ed-site-label {
+  font-weight: var(--weight-medium); margin-bottom: 4px; text-align: center;
+  min-height: 1.4em; outline: none;
+}
+.ed-site-label:focus { background: var(--accent-subtle); border-radius: 4px; }
 .ed-unit { font-weight: 400; color: var(--text-muted); font-size: var(--text-xs); }
 .ed-col-sub { display: flex; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; justify-content: center; }
 .ed-avg-select { flex: 1; min-width: 64px; height: 26px; font-size: var(--text-xs); padding: 0 4px; }
@@ -841,6 +847,8 @@ body.ed-resizing * { cursor: col-resize !important; }
 }
 .ed-cell:focus, .ed-row-label:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-subtle); }
 .ed-exceed { background: var(--fail-subtle); color: var(--fail); font-weight: var(--weight-semibold); }
+/* 토양 우려기준/대책기준처럼 2단계 초과가 있는 분야 — 대책기준 초과는 더 진하게 */
+.ed-exceed2 { background: var(--fail); color: #fff; font-weight: var(--weight-bold); }
 .ed-nostd { background: var(--warn-subtle); color: var(--text-muted); }
 .ed-row-del {
   appearance: none; border: 0; background: none; cursor: pointer;

@@ -18,6 +18,7 @@ const FIELDS = [
   { code: "river_life", label: "하천(생활환경기준)", file: "river_life.json" },
   { code: "lake_health", label: "호소(사람건강보호기준)", file: "lake_health.json" },
   { code: "lake_life", label: "호소(생활환경기준)", file: "lake_life.json" },
+  { code: "groundwater", label: "지하수질", file: "groundwater.json" },
 ];
 
 function cssVar(name, fallback) {
@@ -104,9 +105,13 @@ export async function init(section, { toast, bridge, V }) {
              averaging: def?.averaging || null, custom: false, overrideValue: null, unitScale: 1 };
   }
   function makeColumnFromRegionItem(item) {
-    // 토양처럼 "지역구분(행)×항목(열)" 매트릭스인 경우 — 항목 자체가 지역별 값(values)을 가짐
-    return { id: `c${++colSeq}`, code: item.code, label: item.label, unit: item.unit || standards.unit || "",
-             custom: false, values: item.values };
+    // 토양처럼 "지역구분(행)×항목(열)" 매트릭스인 경우 — 항목 자체가 지역별 값(values)을 가짐.
+    // dualStandard가 있는 분야(토양 우려/대책기준)는 2차 기준값 맵도 함께 옮겨야 한다 —
+    // 안 옮기면 secondaryStandard()가 항상 null을 반환해 1단계 판정만 걸린다(실제 발견한 버그).
+    const col = { id: `c${++colSeq}`, code: item.code, label: item.label, unit: item.unit || standards.unit || "",
+                  custom: false, values: item.values };
+    if (standards.dualStandard) col[standards.dualStandard.action] = item[standards.dualStandard.action];
+    return col;
   }
   function makeCustomColumn(label) {
     return { id: `c${++colSeq}`, code: null, label: label || `열${columns.length + 1}`,
@@ -135,6 +140,7 @@ export async function init(section, { toast, bridge, V }) {
   let chartDebounce = null;
   let cornerWidth = null; // 측정지점 열 너비(드래그로 조절, px 문자열)
   let regionColWidth = null;
+  let transposed = false; // 행/열 전환 — true면 행=조사항목, 열=조사지점
   let showTitle = true, showLegend = false;
   let yManual = false, yMin = null, yMax = null, yStep = null;
 
@@ -188,17 +194,41 @@ export async function init(section, { toast, bridge, V }) {
     const db = dbStandard(col);
     if (col.overrideValue != null)
       return { value: col.overrideValue, unit: db?.unit || (col.unitScale === 1000 ? "ppb" : col.unit) || "",
-                averaging: db?.averaging || "사용자지정", source: "custom", direction: "max" };
-    if (db) return { ...db, source: "db", direction: "max" };
+                averaging: db?.averaging || "사용자지정", source: "custom", direction: db?.direction || "max" };
+    if (db) return { ...db, source: "db", direction: db.direction || "max" };
     return null;
   }
-  function judge(col, row, value) {
-    if (value == null) return "";
-    const std = effectiveStandard(col, row);
-    if (!std) return "ed-nostd";
-    return isExceed(std, value) ? "ed-exceed" : "ed-ok";
+  /* 토양처럼 우려기준·대책기준이 함께 있는 분야 — 대책기준(더 엄격도가 낮은 상위 임계값) */
+  function secondaryStandard(col, row) {
+    const dual = standards.dualStandard;
+    if (!dual || !isRegionMode() || columnsFixed()) return null;
+    const val = col[dual.action]?.[row?.region];
+    if (val == null) return null;
+    const region = standards.regions.find((r) => r.code === row?.region);
+    return { value: val, unit: col.unit || standards.unit || "", averaging: region?.label, source: "db", direction: "max" };
   }
-
+  function tooltipFor(col, row) {
+    const std = effectiveStandard(col, row);
+    if (!std) return "";
+    const std2 = secondaryStandard(col, row);
+    if (std2) return `${standards.dualStandard.concernLabel} ${fmtStd(std)} / ${standards.dualStandard.actionLabel} ${fmtStd(std2)}`;
+    return `기준 ${fmtStd(std)}`;
+  }
+  /* 판정 등급: -2=기준미등록 -1=값없음 0=정상 1=1차기준초과(우려기준 등) 2=2차기준초과(대책기준) */
+  function judgeLevel(col, row, value) {
+    if (value == null) return -1;
+    const std = effectiveStandard(col, row);
+    if (!std) return -2;
+    const std2 = secondaryStandard(col, row);
+    if (std2 && isExceed(std2, value)) return 2;
+    return isExceed(std, value) ? 1 : 0;
+  }
+  function judge(col, row, value) {
+    const lvl = judgeLevel(col, row, value);
+    if (lvl === -1) return "";
+    if (lvl === -2) return "ed-nostd";
+    return lvl === 2 ? "ed-exceed2" : lvl === 1 ? "ed-exceed" : "ed-ok";
+  }
   /* ── 마크업 ────────────────────────────────────────────────────────── */
   section.innerHTML = `
   <div class="panel">
@@ -224,6 +254,7 @@ export async function init(section, { toast, bridge, V }) {
     <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-3)">
       <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
       <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
+      <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
       <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
     </div>
   </div>
@@ -347,6 +378,7 @@ export async function init(section, { toast, bridge, V }) {
   }
 
   function renderGrid() {
+    if (transposed) { renderGridTransposed(); return; }
     const thead = $("#ed-thead-row");
     thead.innerHTML = "";
     // tbody 각 행은 [드래그핸들, 측정지점명, (지역구분,) 항목…, 삭제] 순 — 헤더도 칸 수를
@@ -512,8 +544,8 @@ export async function init(section, { toast, bridge, V }) {
         const td = document.createElement("td");
         const val = row.values[col.id];
         td.className = `ed-cell ${judge(col, row, val)}`;
-        const std = effectiveStandard(col, row);
-        if (std) td.title = `기준 ${fmtStd(std)}`;
+        const tip = tooltipFor(col, row);
+        if (tip) td.title = tip;
         td.contentEditable = "true";
         td.dataset.row = row.id;
         td.dataset.col = col.id;
@@ -535,6 +567,202 @@ export async function init(section, { toast, bridge, V }) {
       tbody.appendChild(tr);
     }
     attachCellEvents();
+  }
+
+  /* 행/열 전환 — 행=조사항목(columns), 열=조사지점(rows). 데이터 모델(columns/rows,
+     values는 항상 site.values[col.id])은 그대로 두고 DOM 배치만 뒤집는다 — 표를
+     새로 만들지 않고 그대로 보여주는 방식만 바꾸는 것이라 판정·차트 로직은 무변경.
+     너비 드래그 조절은 이 모드에서는 생략한다(행 높이 조절은 실익이 적어 단순화). */
+  function renderGridTransposed() {
+    const thead = $("#ed-thead-row");
+    thead.innerHTML = "";
+    const dragTh = document.createElement("th");
+    dragTh.style.width = "22px";
+    thead.appendChild(dragTh);
+    const corner = document.createElement("th");
+    corner.textContent = "조사항목";
+    corner.style.width = cornerWidth || "140px";
+    thead.appendChild(corner);
+
+    for (const row of rows) {
+      const th = document.createElement("th");
+      th.dataset.row = row.id;
+      th.style.width = "128px";
+      th.title = "드래그해서 지점 순서 변경";
+      const regionOptions = isRegionMode()
+        ? `<select class="ed-region-select">${standards.regions.map((r) =>
+            `<option value="${r.code}" ${r.code === row.region ? "selected" : ""}>${escapeHtml(r.label)}</option>`).join("")}</select>`
+        : "";
+      th.innerHTML = `
+        <div class="ed-col-grip">⋮⋮</div>
+        <div class="ed-site-label" contenteditable="true">${escapeHtml(row.label)}</div>
+        ${regionOptions}
+        <button type="button" class="ed-col-del" title="지점 삭제">×</button>`;
+      th.draggable = true;
+      th.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/ed-row", row.id));
+      th.addEventListener("dragover", (e) => e.preventDefault());
+      th.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData("text/ed-row");
+        if (!srcId || srcId === row.id) return;
+        const from = rows.findIndex((r) => r.id === srcId);
+        const to = rows.findIndex((r) => r.id === row.id);
+        const [moved] = rows.splice(from, 1);
+        rows.splice(to, 0, moved);
+        renderGrid(); scheduleCharts();
+      });
+      th.querySelector(".ed-site-label").addEventListener("input", (e) => { row.label = e.target.textContent.trim(); });
+      const regionSel = th.querySelector(".ed-region-select");
+      if (regionSel) regionSel.addEventListener("change", () => { row.region = regionSel.value; renderGrid(); scheduleCharts(); });
+      th.querySelector(".ed-col-del").addEventListener("click", () => {
+        rows = rows.filter((r) => r.id !== row.id);
+        renderGrid(); scheduleCharts();
+      });
+      thead.appendChild(th);
+    }
+    const delTh = document.createElement("th");
+    delTh.style.width = "34px";
+    thead.appendChild(delTh);
+
+    const tbody = $("#ed-tbody");
+    tbody.innerHTML = "";
+    for (const col of columns) {
+      const tr = document.createElement("tr");
+      tr.dataset.col = col.id;
+
+      const handleTd = document.createElement("td");
+      handleTd.className = "ed-row-drag";
+      handleTd.textContent = "⋮⋮";
+      handleTd.title = "드래그해서 항목 순서 변경";
+      handleTd.draggable = true;
+      handleTd.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/ed-col", col.id));
+      handleTd.addEventListener("dragover", (e) => e.preventDefault());
+      handleTd.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData("text/ed-col");
+        if (!srcId || srcId === col.id) return;
+        const from = columns.findIndex((c) => c.id === srcId);
+        const to = columns.findIndex((c) => c.id === col.id);
+        const [moved] = columns.splice(from, 1);
+        columns.splice(to, 0, moved);
+        renderGrid(); scheduleCharts();
+      });
+      tr.appendChild(handleTd);
+
+      const labelTd = document.createElement("td");
+      labelTd.className = "ed-row-label";
+      buildGroupCellContent(labelTd, col);
+      tr.appendChild(labelTd);
+
+      for (const row of rows) {
+        const td = document.createElement("td");
+        const val = row.values[col.id];
+        td.className = `ed-cell ${judge(col, row, val)}`;
+        const tip = tooltipFor(col, row);
+        if (tip) td.title = tip;
+        td.contentEditable = "true";
+        td.dataset.row = row.id;
+        td.dataset.col = col.id;
+        td.textContent = val == null ? "" : String(val);
+        tr.appendChild(td);
+      }
+
+      if (!columnsFixed()) {
+        const delTd = document.createElement("td");
+        const delBtn = document.createElement("button");
+        delBtn.type = "button"; delBtn.className = "ed-row-del"; delBtn.title = "항목 삭제";
+        delBtn.textContent = "×";
+        delBtn.addEventListener("click", () => {
+          columns = columns.filter((c) => c.id !== col.id);
+          rows.forEach((r) => delete r.values[col.id]);
+          refreshAddSelect(); renderGrid(); scheduleCharts();
+        });
+        delTd.appendChild(delBtn);
+        tr.appendChild(delTd);
+      } else {
+        tr.appendChild(document.createElement("td"));
+      }
+
+      tbody.appendChild(tr);
+    }
+    attachCellEvents();
+  }
+
+  /* item/region 항목의 라벨+컨트롤(평균시간·ppm/ppb·기준입력·삭제)을 만든다.
+     정상모드 th(컬럼헤더)와 전환모드 td(행헤더)에서 똑같이 재사용 — 리사이즈만
+     정상모드 th 쪽에서 별도로 addResizer()를 붙인다(전환모드는 리사이즈 생략). */
+  function buildGroupCellContent(el, col) {
+    if (isRegionMode() && columnsFixed()) {
+      el.innerHTML = `<div class="ed-col-label">${escapeHtml(col.label)}${standards.unit ? ` <span class="ed-unit">(${escapeHtml(standards.unit)})</span>` : ""}</div>`;
+      return;
+    }
+    if (isRegionMode() && !columnsFixed()) {
+      el.innerHTML = `
+        <div class="ed-col-grip">⋮⋮</div>
+        <div class="ed-col-label">${escapeHtml(col.label)}${col.unit ? ` <span class="ed-unit">(${escapeHtml(col.unit)})</span>` : ""}</div>
+        <button type="button" class="ed-col-del" title="항목 삭제">×</button>`;
+      attachColDrag(el, col);
+      el.querySelector(".ed-col-del").addEventListener("click", () => {
+        columns = columns.filter((c) => c.id !== col.id);
+        rows.forEach((r) => delete r.values[col.id]);
+        refreshAddSelect(); renderGrid(); scheduleCharts();
+      });
+      return;
+    }
+    // item 모드
+    const std = effectiveStandard(col, null);
+    const dispUnit = col.unitScale === 1000 ? "ppb" : col.unit;
+    const avgOptions = (!col.custom && standards.items.find((i) => i.code === col.code)?.standards.length > 1)
+      ? standards.items.find((i) => i.code === col.code).standards.map((s) =>
+          `<option value="${s.averaging}" ${s.averaging === col.averaging ? "selected" : ""}>${s.averaging}</option>`).join("")
+      : "";
+    const unitToggle = isPpmItem(col)
+      ? `<select class="ed-unitscale-select">
+           <option value="1" ${col.unitScale !== 1000 ? "selected" : ""}>ppm</option>
+           <option value="1000" ${col.unitScale === 1000 ? "selected" : ""}>ppb</option>
+         </select>`
+      : "";
+    el.innerHTML = `
+      <div class="ed-col-grip">⋮⋮</div>
+      <div class="ed-col-label">${escapeHtml(col.label)}${dispUnit ? ` <span class="ed-unit">(${escapeHtml(dispUnit)})</span>` : ""}</div>
+      <div class="ed-col-sub">
+        ${avgOptions ? `<select class="ed-avg-select">${avgOptions}</select>` : ""}
+        ${unitToggle}
+      </div>
+      <div class="ed-col-std">
+        기준<input type="number" class="ed-std-input" step="any" value="${std ? std.value : ""}" placeholder="미등록">
+        ${std ? `<span class="ed-std-unit">${escapeHtml(std.unit)}</span>` : ""}
+        ${col.overrideValue != null ? `<button type="button" class="ed-std-reset" title="기준DB 기본값으로">↺</button>` : ""}
+      </div>
+      <button type="button" class="ed-col-del" title="항목 삭제">×</button>`;
+    attachColDrag(el, col);
+    const avgSel = el.querySelector(".ed-avg-select");
+    if (avgSel) avgSel.addEventListener("change", () => { col.averaging = avgSel.value; renderGrid(); scheduleCharts(); });
+    const unitSel = el.querySelector(".ed-unitscale-select");
+    if (unitSel) unitSel.addEventListener("change", () => {
+      const newScale = parseInt(unitSel.value, 10);
+      const factor = newScale / (col.unitScale || 1);
+      if (factor !== 1) {
+        for (const row of rows) { const v = row.values[col.id]; if (v != null) row.values[col.id] = v * factor; }
+        if (col.overrideValue != null) col.overrideValue *= factor;
+      }
+      col.unitScale = newScale;
+      renderGrid(); scheduleCharts();
+    });
+    const stdInput = el.querySelector(".ed-std-input");
+    stdInput.addEventListener("change", () => {
+      const v = parseNum(stdInput.value);
+      const db = dbStandard(col);
+      col.overrideValue = (v != null && v !== db?.value) ? v : null;
+      renderGrid(); scheduleCharts();
+    });
+    const resetBtn = el.querySelector(".ed-std-reset");
+    if (resetBtn) resetBtn.addEventListener("click", () => { col.overrideValue = null; renderGrid(); scheduleCharts(); });
+    el.querySelector(".ed-col-del").addEventListener("click", () => {
+      columns = columns.filter((c) => c.id !== col.id);
+      rows.forEach((r) => delete r.values[col.id]);
+      refreshAddSelect(); renderGrid(); scheduleCharts();
+    });
   }
 
   /* 셀 값 편집 — 구조 변경이 아니므로 전체 재렌더 없이 값·판정 클래스만 갱신 */
@@ -569,13 +797,23 @@ export async function init(section, { toast, bridge, V }) {
       rows.push({ id: `r${++rowSeq}`, label: "", region: standards.regions?.[0]?.code || null, values: {} });
     return rows[idx];
   }
+  /* 붙여넣은 텍스트 격자를 뒤집는다 — 전환모드에서는 화면에 보이는 대로(줄=항목,
+     칸=지점) 복사했을 값을 데이터모델 기준(줄=지점,칸=항목)으로 맞추기 위함.
+     이렇게 해두면 아래 배치 로직은 방향과 무관하게 그대로 재사용된다. */
+  function transposeGrid(g) {
+    const nCols = Math.max(0, ...g.map((r) => r.length));
+    const out = [];
+    for (let c = 0; c < nCols; c++) { const line = []; for (let r = 0; r < g.length; r++) line.push(g[r][c] ?? ""); out.push(line); }
+    return out;
+  }
   function onPaste(e) {
     const target = e.target.closest("[data-row]");
     if (!target) return;
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
-    const grid = text.replace(/\r/g, "").split("\n").filter((l) => l.length).map((l) => l.split("\t"));
+    let grid = text.replace(/\r/g, "").split("\n").filter((l) => l.length).map((l) => l.split("\t"));
     if (!grid.length) return;
+    if (transposed) grid = transposeGrid(grid);
     const startRowIdx = rows.findIndex((r) => r.id === target.dataset.row);
     const startColIdx = columns.findIndex((c) => c.id === target.dataset.col);
     const baseColIdx = target.dataset.col === "-1" ? -1 : startColIdx;
@@ -688,7 +926,11 @@ export async function init(section, { toast, bridge, V }) {
       const canvas = card.querySelector("canvas");
       // item 모드는 전 지점 공통 기준 1개, region 모드는 지점(row)마다 다른 기준
       const stdOf = (i) => effectiveStandard(col, regionMode ? rows[i] : null);
-      const colors = data.map((v, i) => (isExceed(stdOf(i), v) ? failColor : chartColor));
+      const actionColor = "#9b1c1c"; // 대책기준(2차) 초과 — 우려기준 초과(failColor)보다 한 단계 진한 색
+      const colors = data.map((v, i) => {
+        const lvl = judgeLevel(col, regionMode ? rows[i] : null, v);
+        return lvl === 2 ? actionColor : lvl === 1 ? failColor : chartColor;
+      });
       const singleStd = !regionMode ? effectiveStandard(col, null) : null;
       const annotations = (singleStd && singleStd.direction !== "range") ? {
         stdLine: {
@@ -714,7 +956,7 @@ export async function init(section, { toast, bridge, V }) {
             annotation: { annotations },
             tooltip: regionMode ? {
               callbacks: {
-                afterLabel: (ctx) => { const s = stdOf(ctx.dataIndex); return s ? `기준 ${fmtStd(s)} (${s.averaging})` : "기준 미등록"; },
+                afterLabel: (ctx) => tooltipFor(col, rows[ctx.dataIndex]) || "기준 미등록",
               },
             } : undefined,
           },
@@ -783,6 +1025,11 @@ export async function init(section, { toast, bridge, V }) {
   $("#ed-reset").addEventListener("click", () => {
     initColumnsAndRows();
     refreshAddSelect(); renderGrid(); scheduleCharts();
+  });
+  $("#ed-transpose").addEventListener("click", () => {
+    transposed = !transposed;
+    $("#ed-transpose").setAttribute("aria-pressed", String(transposed));
+    renderGrid();
   });
 
   const drop = $("#ed-drop"), fileInput = $("#ed-file");
