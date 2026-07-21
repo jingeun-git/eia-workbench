@@ -7,7 +7,7 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.33.0";
+export const V = "3.34.0";
 
 /* 브리지가 마지막으로 **실제로 바뀐** 버전.
    웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
@@ -52,6 +52,10 @@ const TOOLS = [
     load: () => import(`../modules/parcel.js?v=${V}`) },
   { id: "pdf2xl", group: "author",  label: "PDF 표 → 엑셀", needsBridge: true,
     load: () => import(`../modules/pdf2excel.js?v=${V}`) },
+  // 환경질 분석은 브라우저만으로 완결(xlsx·붙여넣기·직접입력) — HWP/PDF 자동파싱만
+  // 브리지 연동 다음 단계(SYS-41 step 6)에서 추가로 열린다(md 탭과 동일한 하이브리드 패턴)
+  { id: "envdata", group: "author",  label: "환경질 분석",   needsBridge: false,
+    load: () => import(`../modules/envdata.js?v=${V}`) },
 
   { id: "pagenum",group: "finish",  label: "쪽번호",      needsBridge: true,
     load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },

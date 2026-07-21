@@ -766,6 +766,63 @@ body.gc-resizing * { cursor: col-resize !important; }
 .gc-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
 
 
+/* ── 환경질 측정 데이터 분석 (SYS-41) ─────────────────────────────────── */
+.ed-scroll { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
+.ed-table { border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); width: 100%; }
+.ed-table thead th {
+  position: sticky; top: 0; z-index: 3; background: var(--surface);
+  border-bottom: 2px solid var(--border-strong); border-right: 1px solid var(--border);
+  padding: 8px 28px 8px 8px; vertical-align: top; text-align: left; white-space: normal;
+}
+.ed-table thead th:last-child { border-right: 0; }
+.ed-table tbody td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  padding: 4px 8px;
+}
+.ed-table tbody td:last-child { border-right: 0; }
+.ed-table tbody tr:last-child td { border-bottom: 0; }
+
+.ed-col-label { font-weight: var(--weight-semibold); margin-bottom: 4px; }
+.ed-unit { font-weight: 400; color: var(--text-muted); font-size: var(--text-xs); }
+.ed-avg-select { width: 100%; height: 26px; font-size: var(--text-xs); margin-bottom: 4px; padding: 0 4px; }
+.ed-col-std { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 2px; }
+.ed-std-input { width: 64px; height: 24px; padding: 0 4px; font-size: var(--text-xs); }
+.ed-std-unit { white-space: nowrap; }
+.ed-std-reset { appearance: none; border: 0; background: none; cursor: pointer; color: var(--accent); font-size: 13px; }
+.ed-col-del {
+  position: absolute; top: 6px; right: 4px;
+  appearance: none; border: 0; background: none; cursor: pointer;
+  color: var(--text-muted); font-size: 15px; line-height: 1; padding: 2px 5px; border-radius: 4px;
+}
+.ed-col-del:hover { color: var(--fail); background: var(--fail-subtle); }
+
+.ed-row-drag { cursor: grab; text-align: center; color: var(--text-dim); width: 22px; user-select: none; }
+.ed-row-label { min-width: 100px; font-weight: var(--weight-medium); }
+.ed-cell { min-width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
+.ed-cell:focus, .ed-row-label:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-subtle); }
+.ed-exceed { background: var(--fail-subtle); color: var(--fail); font-weight: var(--weight-semibold); }
+.ed-nostd { background: var(--warn-subtle); color: var(--text-muted); }
+.ed-row-del {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  color: var(--text-muted); font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+}
+.ed-row-del:hover { color: var(--fail); background: var(--fail-subtle); }
+
+.ed-add-select { max-width: 220px; }
+
+.ed-chart-tools { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.ed-color-label, .ed-size-label { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-muted); }
+.ed-color-label input[type="color"] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; cursor: pointer; }
+.ed-size-label input[type="range"] { width: 140px; }
+
+.ed-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-4); }
+.ed-chart-card { padding: var(--space-3) var(--space-3) var(--space-4); }
+.ed-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.ed-chart-head h4 { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.ed-chart-head .btn { height: 26px; padding: 0 10px; font-size: var(--text-xs); }
+.ed-chart-canvas-wrap { position: relative; width: 100%; }
+
 /* ── 의견 수집 워터마크 ────────────────────────────────────────────────
    화면 우하단에 옅게 상주한다. 본문을 가리지 않도록 클릭은 링크에만 통과시킨다. */
 .feedback-mark {
