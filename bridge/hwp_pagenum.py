@@ -266,7 +266,11 @@ def assign_numbers(plan, start_num: int = 1):
             actual_gap = (_e - _s + 1) - total
             expect_gap = (1 if div_skip else 0)
             if a3_back == "skip":
-                expect_gap += sum(1 for _, _, is_a3 in pages if is_a3)
+                # A3는 뒷면 몫으로 번호를 하나 더 쓴다. 단 **마지막 쪽이 A3면 그
+                # 뒷면은 이 파일 범위 밖**이라 결번으로 세지 않는다 — 세면 정상
+                # 문서에도 경고가 뜬다(2026-07-21: 지역개황 A3가 끝 쪽인 경우 오탐).
+                a3_inside = [p for p, _, is_a3 in pages if is_a3 and p != total]
+                expect_gap += len(a3_inside)
             if actual_gap != expect_gap:
                 mismatch = (f"선택 조건과 맞지 않습니다(결번 {actual_gap}곳, 조건상 {expect_gap}곳). "
                             f"확인이 필요하며, 그대로 진행할 경우 쪽번호 밀림현상이 발생될 수 있습니다")
