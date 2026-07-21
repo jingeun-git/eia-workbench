@@ -17,6 +17,9 @@
  * 직선 변으로 그려진다). 부채꼴 길이는 줌에 연동된다 — 로그에서 같은 사진의 끝점이
  * 24.77km → 4.96km로 바뀌는 것이 확인된다.
  */
+import { createMap, baseSwitcherHtml, bindBaseSwitcher, destination as dest } from "../shared/mapview.js";
+import { keys } from "../shared/keys.js";
+
 export function init(section, { bridge, toast }) {
   section.innerHTML = `
   <div class="panel">
@@ -57,6 +60,7 @@ export function init(section, { bridge, toast }) {
             </div>
           </div>
           <div class="ph-right">
+            <div id="ph-bases" class="map-bases-wrap"></div>
             <div id="ph-map"></div>
             <div class="ph-readout" id="ph-readout">—</div>
           </div>
@@ -281,14 +285,27 @@ export function init(section, { bridge, toast }) {
   /* ── 지도 ─────────────────────────────────────────────────────── */
   async function ensureMap() {
     if (map) { map.invalidateSize(); return; }
-    const L = window.L;
-    if (!L) { log("✗ 지도 라이브러리를 불러오지 못했습니다", "fail"); return; }
+    let view;
+    try {
+      view = createMap($("#ph-map"), keys.vworld);
+    } catch (e) {
+      log(`✗ ${e.message}`, "fail");
+      return;
+    }
+    map = view.map;
 
-    map = L.map($("#ph-map"), { zoomControl: true }).setView([36.5, 127.8], 7);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
+    // 배경 전환 버튼을 지도 위에 얹는다
+    const sw = $("#ph-bases");
+    if (sw) {
+      sw.innerHTML = baseSwitcherHtml("ph", view.bases);
+      bindBaseSwitcher(section, "ph", view);
+      if (!view.usingVworld) {
+        sw.insertAdjacentHTML("beforeend",
+          `<span class="map-note">vworld 키를 넣으면 위성영상을 볼 수 있습니다 (⚙ 설정)</span>`);
+      }
+    }
+
+    const L = window.L;
     wedgeLayer = L.layerGroup().addTo(map);
     // 줌·팬마다 부채꼴 길이를 다시 계산한다 — 지오세터도 그렇게 한다
     // (updateFocusMarkerDirection이 반복 호출되며 끝점이 계속 바뀐다).
@@ -351,16 +368,6 @@ export function init(section, { bridge, toast }) {
       }).addTo(wedgeLayer);
     }
     L.polyline([apex, center], { color: "#e0342c", weight: 2 }).addTo(wedgeLayer);
-  }
-
-  /** 구면 직접문제 — 출발점에서 방위각·거리만큼 이동한 지점 */
-  function dest(lat, lon, bearing, km) {
-    const R = 6371.0088, rad = Math.PI / 180;
-    const br = bearing * rad, d = km / R, p1 = lat * rad, l1 = lon * rad;
-    const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(br));
-    const l2 = l1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(p1),
-                               Math.cos(d) - Math.sin(p1) * Math.sin(p2));
-    return [p2 / rad, ((l2 / rad + 540) % 360) - 180];
   }
 
   /* ── 양방향 선택 ─────────────────────────────────────────────── */

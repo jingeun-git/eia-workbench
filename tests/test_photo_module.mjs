@@ -70,6 +70,13 @@ globalThis.document = {
 };
 globalThis.window = globalThis;
 globalThis.URL = { createObjectURL: () => "blob:stub", revokeObjectURL() {} };
+// keys.js가 읽는다 — 없으면 지도 경로에서 터진다
+const _ls = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (_ls.has(k) ? _ls.get(k) : null),
+  setItem: (k, v) => _ls.set(k, String(v)),
+  removeItem: (k) => _ls.delete(k),
+};
 globalThis.L = undefined;   // 지도 라이브러리 없음 — 그래도 죽지 않아야 한다
 
 /* ── 브리지 스텁 ──────────────────────────────────────────────────── */
@@ -93,7 +100,7 @@ console.log("photo.js 초기화 경로");
 
 check("브리지 연결 + 전 기능 가용", () => {
   init(new El("section"), {
-    bridge: makeBridge("ok", { photo: true, photo_shp: true, photo_heic: true }),
+    bridge: makeBridge("ok", { photo: true }),
     toast,
   });
 });
@@ -104,9 +111,9 @@ check("브리지 미연결 (탭을 열어도 죽지 않아야 한다)", () => {
   });
 });
 
-check("photo는 있으나 pyshp 없음 (SHP만 잠금)", () => {
+check("vworld 키가 없는 상태 (지도는 OSM 폴백)", () => {
   init(new El("section"), {
-    bridge: makeBridge("ok", { photo: true, photo_shp: false, photo_heic: false }),
+    bridge: makeBridge("ok", { photo: true }),
     toast,
   });
 });
@@ -121,7 +128,7 @@ check("브리지 상태가 도중에 바뀜 (change 이벤트)", () => {
   const b = makeBridge("off", {});
   init(new El("section"), { bridge: b, toast });
   b.state = "ok";
-  b.info.features = { photo: true, photo_shp: true, photo_heic: false };
+  b.info.features = { photo: true };
   b.fire();
 });
 
