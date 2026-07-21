@@ -23,9 +23,43 @@ export class BridgeClient extends EventTarget {
   start() {
     this._probe();
     this._timer = setInterval(() => this._probe(), PING_INTERVAL);
+
+    /* 웹을 닫으면 브리지도 함께 끝난다 — 생애주기를 묶는다(사용자 지시).
+       유휴 감시(90초)만으로도 결국 종료되지만 그 사이 트레이에 남아 있는 것이
+       사용자에게는 "안 꺼진 것"으로 보인다. 닫히는 시점에 알려 곧바로 정리한다.
+
+       `pagehide`를 쓰는 이유: `beforeunload`는 모바일·탭 복원에서 안 불리는
+       경우가 있고, `unload`는 최신 브라우저가 무시한다.
+       `sendBeacon`은 페이지가 사라지는 중에도 전송이 보장되는 유일한 수단이라
+       일반 fetch로는 대체할 수 없다(헤더를 못 붙여 토큰은 본문으로 보낸다). */
+    addEventListener("pagehide", () => {
+      if (!this.base || !this.token) return;
+      try { navigator.sendBeacon(`${this.base}/bye`, this.token); } catch (_) {}
+    });
   }
 
   async _probe() {
+    /* ── 연결된 뒤에는 **그 브리지 하나만** 확인한다 ──────────────────
+       전에는 매번 6개 포트를 전부 두드렸는데, 브리지는 /ping을 받으면
+       "쓰이고 있다"고 보고 유휴 타이머를 되돌린다. 결과적으로 **자동 종료가
+       영원히 발동하지 않아** 실행할 때마다 인스턴스가 쌓였다(2026-07-21
+       타 PC 실측: 4개 누적). 안 쓰는 브리지에 ping을 끊으면 90초 뒤 스스로
+       종료한다 — 구버전 브리지에도 그대로 적용된다.
+       더 최신 브리지가 떴을 때를 놓치지 않도록 가끔 전 포트를 다시 훑는다.
+       재탐색 주기(5분)는 유휴 종료(90초)보다 길어야 중복이 살아나지 않는다. */
+    this._probeCount = (this._probeCount || 0) + 1;
+    const rescan = this.state !== "ok" || !this.base || this._probeCount % 20 === 0;
+
+    if (!rescan) {
+      try {
+        const res = await this._fetch(`${this.base}/ping`, { timeoutMs: 1500 });
+        if (res && res.ok) {
+          const info = await res.json();
+          if (info.features) { this.info = info; this._setState("ok"); return; }
+        }
+      } catch (_) { /* 끊겼으면 아래에서 다시 찾는다 */ }
+    }
+
     // 우선순위: 연결 중 포트 → 페어링 힌트 포트 → 순차 탐색
     const hinted = localStorage.getItem("eiaw.bridge.port");
     const all = PORTS.map((p) => `http://127.0.0.1:${p}`);
@@ -68,15 +102,23 @@ export class BridgeClient extends EventTarget {
       const changed = this.state !== "ok" || this.base !== best.base;
       this.base = best.base;
       this.info = best.info;
-      this.duplicates = found.length > 1
-        ? found.filter((f) => f !== best).map((f) => `${f.base} v${f.info.bridge_version}`)
-        : [];
+      /* 같은 버전이 여러 개면 **중복 실행**이고, 낮은 버전이 섞여 있으면
+         **구버전 잔존**이다. 둘은 원인도 조치도 다른데 예전에는 뭉뚱그려
+         "구버전"이라 불러서, 같은 버전 4개가 떠 있는데도 구버전이라고
+         표시됐다(2026-07-21 사용자 지적). */
+      const others = found.filter((f) => f !== best);
+      this.duplicates = others.map((f) => `${f.base} v${f.info.bridge_version}`);
+      this.duplicateKind = others.length
+        ? (others.every((f) => f.info.bridge_version === best.info.bridge_version)
+            ? "same" : "older")
+        : null;
       this._setState("ok", changed);
       return;
     }
     this.base = null;
     this.info = null;
     this.duplicates = [];
+    this.duplicateKind = null;
     this._setState(stubFound ? "stub" : "off");
   }
 

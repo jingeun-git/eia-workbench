@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.24.0"
+BRIDGE_VERSION = "3.25.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -246,6 +246,7 @@ JOB_LOCK = threading.Lock()
 #     그 사이 사용자가 탭을 닫아 두는 경우가 실제로 있다.
 LAST_SEEN = time.time()
 IDLE_EXIT_SEC = 90          # ping 15초 간격 기준 6회 연속 유실
+BYE_GRACE_SEC = 8           # 웹이 /bye를 보낸 뒤 실제 종료까지 (다른 탭이 살아 있으면 취소됨)
 
 
 def path_allowed(p: Path) -> bool:
@@ -476,7 +477,11 @@ def photo_thumbnail(src: Path, size: int) -> bytes:
 
 
 def photo_export(params):
-    """선택한 사진들을 KML 또는 SHP로 내보낸다."""
+    """선택한 사진들을 CSV 또는 KML로 내보낸다.
+
+    SHP는 2026-07-21 사용자 지시로 제거했다 — CSV를 QGIS [구분 텍스트 레이어
+    추가]로 불러오면 점 레이어가 되므로 실익이 없고, pyshp 의존도 사라진다.
+    """
     import photo_exif as px
 
     fmt = (params.get("format") or "kml").lower()
@@ -881,6 +886,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._headers(204, length=0)
 
+    def _bye(self):
+        """웹 탭이 닫혔다는 신호. 유휴 타이머를 거의 끝까지 당겨 곧 종료시킨다.
+
+        **즉시 죽이지 않는 이유**: 탭을 여러 개 열어둔 경우가 있다. 하나를 닫아도
+        다른 탭이 살아 있으면 그쪽 ping이 곧 LAST_SEEN을 되돌려 종료가 취소된다.
+        90초를 기다리지 않으면서도 오작동하지 않는 지점이 이 방식이다.
+
+        sendBeacon은 헤더를 붙일 수 없어 토큰을 **본문으로** 받는다.
+        토큰이 틀리면 무시한다 — 남이 우리 브리지를 끄지 못하게.
+        """
+        global LAST_SEEN
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n).decode("utf-8", "replace").strip() if n else ""
+        except Exception:
+            body = ""
+        if body == TOKEN:
+            LAST_SEEN = time.time() - max(0, IDLE_EXIT_SEC - BYE_GRACE_SEC)
+        self._headers(204, length=0)
+
     def do_GET(self):
         global LAST_SEEN
         LAST_SEEN = time.time()
@@ -941,6 +966,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_SEEN
+        # /bye는 헤더 인증을 쓸 수 없다(sendBeacon 제약) — 본문 토큰으로 검사한다.
+        # LAST_SEEN을 갱신하기 **전에** 처리해야 한다. 갱신하면 작별의 의미가 사라진다.
+        if urlparse(self.path).path == "/bye":
+            self._bye()
+            return
         LAST_SEEN = time.time()
         if not self._auth_ok():
             self._json({"ok": False, "error": "unauthorized"}, 401)
@@ -1121,6 +1151,26 @@ def _make_tray(srv, port: int):
         return None
 
 
+def _find_running_bridge():
+    """이미 떠 있는 브리지를 찾는다. 반환: (포트, 버전) 또는 None.
+
+    포트가 열려 있다는 것만으로는 부족하다 — 다른 프로그램이거나 PoC 스텁일
+    수 있다. `/ping`을 실제로 불러 **기능 목록을 주는지**로 우리 브리지임을
+    확인한다(스텁은 features가 없다).
+    """
+    import urllib.request
+
+    for p in PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/ping", timeout=1.5) as r:
+                d = json.loads(r.read())
+            if d.get("features") is not None:
+                return p, d.get("bridge_version", "?")
+        except Exception:
+            continue
+    return None
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="EIA Workbench 로컬 브리지")
@@ -1128,6 +1178,8 @@ def main():
                     help="사전 승인 폴더 (테스트·자동화용 — 웹의 [폴더 선택] 없이 접근 허용)")
     ap.add_argument("--no-browser", action="store_true",
                     help="시작 시 웹 UI 자동 열기 생략")
+    ap.add_argument("--force", action="store_true",
+                    help="이미 브리지가 떠 있어도 하나 더 띄운다 (진단용 — 권장하지 않음)")
     args = ap.parse_args()
     for a in args.allow:
         ALLOWED_ROOTS.append(Path(a).resolve())
@@ -1149,6 +1201,26 @@ def main():
             return s.connect_ex(("127.0.0.1", p)) == 0
         finally:
             s.close()
+
+    # ── 중복 실행 차단 ────────────────────────────────────────────────
+    # exe를 다시 더블클릭하면 예전에는 **다음 빈 포트에 새로 떠서** 인스턴스가
+    # 쌓였다(2026-07-21 타 PC 실측: 4개 누적, 상태칩에 경고). 이미 같은 버전
+    # 이상의 브리지가 돌고 있으면 새로 뜰 이유가 없다 — 브라우저만 열고 물러난다.
+    existing = _find_running_bridge()
+    if existing and not args.force:
+        ep, ever = existing
+        print("=" * 64)
+        print("  EIA Workbench 로컬 브리지")
+        print("=" * 64)
+        print(f"  이미 실행 중입니다 — 127.0.0.1:{ep} (v{ever})")
+        print("  새로 띄우지 않고 웹 UI만 엽니다.")
+        print("  ※ 굳이 하나 더 띄우려면 --force 를 붙이세요(권장하지 않습니다).")
+        if not args.no_browser:
+            try:
+                webbrowser.open(WEB_URL)
+            except Exception:
+                pass
+        return
 
     srv = None
     port = None

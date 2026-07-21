@@ -764,3 +764,19 @@ body.gc-resizing * { cursor: col-resize !important; }
 .gc-scrolltop::-webkit-scrollbar-track,
 .gc-scroll::-webkit-scrollbar-track { background: var(--log-bg); }
 .gc-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+
+
+/* ── 의견 수집 워터마크 ────────────────────────────────────────────────
+   화면 우하단에 옅게 상주한다. 본문을 가리지 않도록 클릭은 링크에만 통과시킨다. */
+.feedback-mark {
+  position: fixed; right: 14px; bottom: 10px; z-index: var(--z-sticky);
+  font-size: 11px; line-height: 1.4; color: var(--text-dim);
+  pointer-events: none; user-select: none;
+  text-align: right; max-width: min(92vw, 420px);
+}
+.feedback-mark a {
+  color: inherit; text-decoration: underline; text-underline-offset: 2px;
+  pointer-events: auto;          /* 메일 주소만 누를 수 있게 */
+}
+.feedback-mark a:hover { color: var(--text-muted); }
+@media (max-width: 760px) { .feedback-mark { position: static; margin: var(--space-4) var(--space-3); text-align: center; max-width: none; } }
