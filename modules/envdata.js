@@ -15,8 +15,12 @@ function escapeHtml(s) {
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function parseNum(text) {
-  const t = String(text ?? "").trim().replace(/,/g, "");
+  let t = String(text ?? "").trim();
   if (t === "") return null;
+  // 로케일 입력(숫자패드 등)에서 쉼표가 소수점으로 들어오는 경우 방어
+  // — 뒤에 1~2자리만 있으면 소수점, 3자리(천단위)면 구분자로 본다
+  if (/,\d{1,2}$/.test(t) && !/,\d{3}\b/.test(t)) t = t.replace(",", ".");
+  t = t.replace(/,/g, "");
   const n = parseFloat(t);
   return Number.isFinite(n) ? n : null;
 }
@@ -67,11 +71,16 @@ export async function init(section, { toast, bridge, V }) {
 
   /* ── 상태 (모듈 전역이 아니라 init 클로저 — 탭은 1회만 init되므로 충분) ── */
   let rowSeq = 0, colSeq = 0;
-  let columns = standards.items.map((item) => {
+  function makeColumnFromItem(item) {
     const def = item.standards.find((s) => s.default) || item.standards[0];
     return { id: `c${++colSeq}`, code: item.code, label: item.label, unit: def?.unit || "",
-             averaging: def?.averaging || null, custom: false, overrideValue: null };
-  });
+             averaging: def?.averaging || null, custom: false, overrideValue: null, unitScale: 1 };
+  }
+  function makeCustomColumn(label) {
+    return { id: `c${++colSeq}`, code: null, label: label || `열${columns.length + 1}`,
+             unit: "", averaging: null, custom: true, overrideValue: null, unitScale: 1 };
+  }
+  let columns = standards.items.map(makeColumnFromItem);
   let rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", values: {} }));
   let chartType = "bar";
   let chartColor = cssVar("--accent", "#2f6fed");
@@ -80,17 +89,26 @@ export async function init(section, { toast, bridge, V }) {
   let chartDebounce = null;
 
   /* ── 판정 로직 ─────────────────────────────────────────────────────── */
+  /* ppm 항목만 ppb 표시로 전환 가능(질량농도 항목은 ppb 개념이 없다) */
+  function isPpmItem(col) {
+    if (col.custom || !col.code) return false;
+    const item = standards.items.find((i) => i.code === col.code);
+    return item?.standards?.[0]?.unit === "ppm";
+  }
   function dbStandard(col) {
     if (col.custom || !col.code) return null;
     const item = standards.items.find((i) => i.code === col.code);
     if (!item) return null;
-    return item.standards.find((s) => s.averaging === col.averaging)
+    const raw = item.standards.find((s) => s.averaging === col.averaging)
         || item.standards.find((s) => s.default) || item.standards[0];
+    if (!raw) return null;
+    const scale = col.unitScale || 1;
+    return scale === 1000 ? { ...raw, value: raw.value * 1000, unit: "ppb" } : raw;
   }
   function effectiveStandard(col) {
     const db = dbStandard(col);
     if (col.overrideValue != null)
-      return { value: col.overrideValue, unit: db?.unit || col.unit || "",
+      return { value: col.overrideValue, unit: db?.unit || (col.unitScale === 1000 ? "ppb" : col.unit) || "",
                 averaging: db?.averaging || "사용자지정", source: "custom" };
     if (db) return { ...db, source: "db" };
     return null;
@@ -193,6 +211,12 @@ export async function init(section, { toast, bridge, V }) {
   function renderGrid() {
     const thead = $("#ed-thead-row");
     thead.innerHTML = "";
+    // tbody 각 행은 [드래그핸들, 측정지점명, 항목…, 삭제] 순 — 헤더도 칸 수를 정확히 맞춰야
+    // 컬럼이 한 칸씩 밀리지 않는다(2026-07-22 사용자 실사용 중 발견 — 헤더-바디 셀 수 불일치로
+    // 항목명·기준초과 표시가 전부 한 칸씩 어긋나 보였던 근본 원인).
+    const dragTh = document.createElement("th");
+    dragTh.style.width = "22px";
+    thead.appendChild(dragTh);
     const corner = document.createElement("th");
     corner.textContent = "측정지점";
     corner.style.minWidth = "110px";
@@ -201,14 +225,26 @@ export async function init(section, { toast, bridge, V }) {
     for (const col of columns) {
       const th = document.createElement("th");
       th.dataset.col = col.id;
+      th.title = "드래그해서 항목 순서 변경";
       const std = effectiveStandard(col);
+      const dispUnit = col.unitScale === 1000 ? "ppb" : col.unit;
       const avgOptions = (!col.custom && standards.items.find((i) => i.code === col.code)?.standards.length > 1)
         ? standards.items.find((i) => i.code === col.code).standards.map((s) =>
             `<option value="${s.averaging}" ${s.averaging === col.averaging ? "selected" : ""}>${s.averaging}</option>`).join("")
         : "";
+      const unitToggle = isPpmItem(col)
+        ? `<select class="ed-unitscale-select">
+             <option value="1" ${col.unitScale !== 1000 ? "selected" : ""}>ppm</option>
+             <option value="1000" ${col.unitScale === 1000 ? "selected" : ""}>ppb</option>
+           </select>`
+        : "";
       th.innerHTML = `
-        <div class="ed-col-label">${escapeHtml(col.label)}${col.unit ? ` <span class="ed-unit">(${escapeHtml(col.unit)})</span>` : ""}</div>
-        ${avgOptions ? `<select class="ed-avg-select">${avgOptions}</select>` : ""}
+        <div class="ed-col-grip">⋮⋮</div>
+        <div class="ed-col-label">${escapeHtml(col.label)}${dispUnit ? ` <span class="ed-unit">(${escapeHtml(dispUnit)})</span>` : ""}</div>
+        <div class="ed-col-sub">
+          ${avgOptions ? `<select class="ed-avg-select">${avgOptions}</select>` : ""}
+          ${unitToggle}
+        </div>
         <div class="ed-col-std">
           기준<input type="number" class="ed-std-input" step="any"
             value="${std ? std.value : ""}" placeholder="미등록">
@@ -220,6 +256,21 @@ export async function init(section, { toast, bridge, V }) {
 
       const avgSel = th.querySelector(".ed-avg-select");
       if (avgSel) avgSel.addEventListener("change", () => { col.averaging = avgSel.value; renderGrid(); scheduleCharts(); });
+
+      const unitSel = th.querySelector(".ed-unitscale-select");
+      if (unitSel) unitSel.addEventListener("change", () => {
+        const newScale = parseInt(unitSel.value, 10);
+        const factor = newScale / (col.unitScale || 1);
+        if (factor !== 1) {
+          for (const row of rows) {
+            const v = row.values[col.id];
+            if (v != null) row.values[col.id] = v * factor;
+          }
+          if (col.overrideValue != null) col.overrideValue *= factor;
+        }
+        col.unitScale = newScale;
+        renderGrid(); scheduleCharts();
+      });
 
       const stdInput = th.querySelector(".ed-std-input");
       stdInput.addEventListener("change", () => {
@@ -251,6 +302,7 @@ export async function init(section, { toast, bridge, V }) {
       const handleTd = document.createElement("td");
       handleTd.className = "ed-row-drag";
       handleTd.textContent = "⋮⋮";
+      handleTd.title = "드래그해서 지점 순서 변경";
       attachRowDrag(handleTd, row);
       tr.appendChild(handleTd);
 
@@ -312,8 +364,7 @@ export async function init(section, { toast, bridge, V }) {
 
   /* ── 붙여넣기 ──────────────────────────────────────────────────────── */
   function ensureCustomColumn(label) {
-    const col = { id: `c${++colSeq}`, code: null, label: label || `열${columns.length + 1}`,
-                  unit: "", averaging: null, custom: true, overrideValue: null };
+    const col = makeCustomColumn(label);
     columns.push(col);
     return col;
   }
@@ -355,15 +406,7 @@ export async function init(section, { toast, bridge, V }) {
       const h = String(header[i] || "").trim();
       if (!h) continue;
       const item = findItemByAlias(standards, h);
-      if (item) {
-        const def = item.standards.find((s) => s.default) || item.standards[0];
-        newColumns.push({ id: `c${++colSeq}`, code: item.code, label: item.label,
-                           unit: def?.unit || "", averaging: def?.averaging || null,
-                           custom: false, overrideValue: null });
-      } else {
-        newColumns.push({ id: `c${++colSeq}`, code: null, label: h, unit: "",
-                           averaging: null, custom: true, overrideValue: null });
-      }
+      newColumns.push(item ? makeColumnFromItem(item) : makeCustomColumn(h));
     }
     const newRows = [];
     for (let r = 1; r < aoa.length; r++) {
@@ -471,10 +514,7 @@ export async function init(section, { toast, bridge, V }) {
       if (name && name.trim()) ensureCustomColumn(name.trim());
     } else {
       const item = standards.items.find((i) => i.code === v);
-      const def = item.standards.find((s) => s.default) || item.standards[0];
-      columns.push({ id: `c${++colSeq}`, code: item.code, label: item.label,
-                     unit: def?.unit || "", averaging: def?.averaging || null,
-                     custom: false, overrideValue: null });
+      columns.push(makeColumnFromItem(item));
     }
     e.target.value = "";
     refreshAddSelect(); renderGrid(); scheduleCharts();
@@ -484,11 +524,7 @@ export async function init(section, { toast, bridge, V }) {
     renderGrid();
   });
   $("#ed-reset").addEventListener("click", () => {
-    columns = standards.items.map((item) => {
-      const def = item.standards.find((s) => s.default) || item.standards[0];
-      return { id: `c${++colSeq}`, code: item.code, label: item.label, unit: def?.unit || "",
-               averaging: def?.averaging || null, custom: false, overrideValue: null };
-    });
+    columns = standards.items.map(makeColumnFromItem);
     rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", values: {} }));
     refreshAddSelect(); renderGrid(); scheduleCharts();
   });

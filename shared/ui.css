@@ -783,9 +783,12 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-table tbody td:last-child { border-right: 0; }
 .ed-table tbody tr:last-child td { border-bottom: 0; }
 
+.ed-col-grip { text-align: center; color: var(--text-dim); font-size: 11px; line-height: 1; margin-bottom: 3px; cursor: grab; }
 .ed-col-label { font-weight: var(--weight-semibold); margin-bottom: 4px; }
 .ed-unit { font-weight: 400; color: var(--text-muted); font-size: var(--text-xs); }
-.ed-avg-select { width: 100%; height: 26px; font-size: var(--text-xs); margin-bottom: 4px; padding: 0 4px; }
+.ed-col-sub { display: flex; gap: 4px; margin-bottom: 4px; }
+.ed-avg-select { flex: 1; height: 26px; font-size: var(--text-xs); padding: 0 4px; }
+.ed-unitscale-select { width: 62px; height: 26px; font-size: var(--text-xs); padding: 0 4px; }
 .ed-col-std { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 2px; }
 .ed-std-input { width: 64px; height: 24px; padding: 0 4px; font-size: var(--text-xs); }
 .ed-std-unit { white-space: nowrap; }
