@@ -44,7 +44,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.13.0"
+BRIDGE_VERSION = "3.14.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -285,7 +285,11 @@ def run_eiass_dl(job, params):
         if not seqs:
             raise RuntimeError("다운로드할 파일을 선택하세요")
         docs = r.resolve(code, params.get("gubn", "auto"))
-        targets = [d for d in docs if str(d.file_seq) in seqs]
+        targets, _seen = [], set()
+        for d in docs:                       # 같은 FILE_SEQ가 두 번 잡히면 한 번만
+            if str(d.file_seq) in seqs and str(d.file_seq) not in _seen:
+                _seen.add(str(d.file_seq))
+                targets.append(d)
         if not targets:
             raise RuntimeError("선택한 FILE_SEQ가 현재 목록과 일치하지 않습니다 — 다시 조회하세요")
         # 절차(초안·본안·보완 등)별 하위 폴더로 나눠 저장한다.
@@ -305,18 +309,50 @@ def run_eiass_dl(job, params):
     job["progress"] = {"done": 1, "total": 1, "stage": "완료"}
     if params.get("zip") and saved:
         import shutil, zipfile
+        # 같은 파일이 두 번 잡히는 경우가 있어(재실행·중복 선택) 중복을 제거한다.
+        uniq, seen = [], set()
+        for p, arc in saved:
+            if arc not in seen:
+                seen.add(arc)
+                uniq.append((p, arc))
+
         zip_path = out_root / f"{edr._safe_filename(code)}.zip"
+        written, missing = [], []
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-            for p, arc in saved:
-                z.write(p, arcname=arc)
-        # ZIP으로 묶었으면 **개별 원문은 남기지 않는다**(2026-07-21 사용자 요구).
-        # 같은 파일이 두 벌로 남아 어느 쪽이 최신인지 헷갈리는 것을 막는다.
-        # ZIP 생성이 끝난 뒤에만 지운다 — 중간에 실패하면 원본이 그대로 남아야 한다.
+            for p, arc in uniq:
+                if p.exists():
+                    z.write(p, arcname=arc)
+                    written.append(p)
+                else:
+                    missing.append(arc)
+
+        # ⚠ **하나라도 못 담았으면 원본을 지우지 않는다.**
+        #   예전에는 zip이 비어 있는데 원본까지 지워 자료를 잃을 뻔했다(2026-07-21).
+        if missing:
+            job_log(job, f"  ✗ ZIP에 담지 못한 파일 {len(missing)}건 — 원본을 그대로 둡니다")
+            for m in missing[:5]:
+                job_log(job, f"     · {m}")
+            job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir} (ZIP 불완전)")
+            return
+
+        # 전부 담았을 때만 원본 정리. ignore_errors로 조용히 넘기지 않고 결과를 확인한다
+        # (OneDrive 동기화 폴더 등에서 삭제가 실패하면 빈 폴더만 남는다).
+        for p in written:
+            try:
+                p.unlink()
+            except Exception as e:
+                job_log(job, f"  ⚠ 원본 삭제 실패: {p.name} — {e}")
         shutil.rmtree(base_dir, ignore_errors=True)
-        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} ({len(saved)}건) — 개별 파일은 정리했습니다")
+        if base_dir.exists():
+            job_log(job, f"  ⚠ 폴더가 남아 있습니다: {base_dir} — 직접 삭제하세요")
+
+        size = zip_path.stat().st_size
+        job_log(job, f"  ✓ ZIP 번들: {zip_path.name} "
+                     f"({len(written)}건 · {size >> 20} MB) — 개별 파일은 정리했습니다")
         job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {zip_path}")
     else:
         job_log(job, f"─── 다운로드 완료: 성공 {ok} / 실패 {fail} → {base_dir}")
+
 
 def run_hwp2pdf(job, params):
     """convert_batch는 진행 dict를 yield하는 **제너레이터**다 — 순회해야 실행된다.
