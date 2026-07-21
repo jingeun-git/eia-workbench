@@ -55,6 +55,8 @@ export function init(section, { bridge, toast }) {
         원점을 잘못 고르면 오류 없이 수백 km 어긋난 결과가 나오기 때문입니다.
       </p>
 
+      <div id="gc-map-panel" class="gc-map-panel" style="display:none"></div>
+
       <div id="gc-map-wrap">
         <div id="gc-bases" class="map-bases-wrap"></div>
         <div id="gc-map"></div>
@@ -331,12 +333,9 @@ export function init(section, { bridge, toast }) {
     try {
       const table = await readTable(f);
       if (!table.length) { toast("빈 파일입니다", "fail"); return; }
-      uploadCols = Object.keys(table[0]);
-      const added = ingest(table);
       $("#gc-filename").value = f.name;
-      log(`파일 ${f.name} — ${added}건 추가 (열: ${uploadCols.join(", ")})`);
-      toast(`${added}건을 불러왔습니다 — [조회 실행]을 누르세요`, "ok");
-      render(); drawMarkers();
+      log(`파일 ${f.name} — ${table.length}행 · 열 ${Object.keys(table[0]).length}개`);
+      showMapping(table);          // 바로 넣지 않고 어느 열을 쓸지 먼저 정한다
     } catch (e) {
       log(`✗ ${e.message}`, "fail");
       toast(e.message, "fail");
@@ -345,37 +344,207 @@ export function init(section, { bridge, toast }) {
     }
   });
 
-  /** CSV·엑셀을 행 객체 배열로. xlsx.min.js가 둘 다 처리한다. */
+  /** CSV·엑셀을 행 객체 배열로.
+   *
+   *  ⚠ CSV 인코딩을 xlsx의 `codepage` 옵션에 맡기면 안 된다 — 벤더링한
+   *  xlsx.min.js에는 코드페이지 모듈(cpexcel.js)이 들어 있지 않고, 브라우저에는
+   *  require가 없어 **조용히 건너뛴다**. 실측(2026-07-21): 공공데이터포털
+   *  보호수 표준데이터(EUC-KR)를 UTF-8로 읽으면 첫 줄에만 치환문자가 206개
+   *  생겨 열 이름이 통째로 깨진다. 그러면 열 추정도 주소도 전부 무너진다.
+   *
+   *  그래서 CSV는 **직접 디코딩**한다. TextDecoder는 브라우저 기본 기능이라
+   *  추가 의존이 없다. xlsx에는 이미 정상인 문자열을 넘긴다.
+   *  엑셀(xlsx/xls)은 바이너리 포맷이 인코딩을 스스로 담고 있어 해당 없다.
+   */
   async function readTable(file) {
     if (!window.XLSX) throw new Error("엑셀 라이브러리를 불러오지 못했습니다");
     const buf = await file.arrayBuffer();
-    const wb = window.XLSX.read(buf, { type: "array", codepage: 949 });
+    const isCsv = /\.(csv|txt|tsv)$/i.test(file.name);
+
+    let wb;
+    if (isCsv) {
+      wb = window.XLSX.read(decodeText(new Uint8Array(buf)), { type: "string" });
+    } else {
+      wb = window.XLSX.read(buf, { type: "array" });
+    }
     const ws = wb.Sheets[wb.SheetNames[0]];
     return window.XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
   }
 
-  /** 첫 열을 입력으로 본다(사용자 지시: "A열에 주소 또는 위경도 좌표 기재").
-   *  두 번째 열이 숫자면 좌표 2열로 간주한다. */
-  function ingest(table) {
-    const cols = Object.keys(table[0]);
-    const c1 = cols[0], c2 = cols[1];
-    let n = 0;
-    for (const rec of table) {
-      const a = String(rec[c1] ?? "").trim();
-      if (!a) continue;
-      const b = c2 ? String(rec[c2] ?? "").trim() : "";
-      const na = parseCoord(a), nb = parseCoord(b);
-      const isPair = !Number.isNaN(na) && !Number.isNaN(nb);
-      addRow({
-        source: SRC_UPLOAD,
-        name: String(rec[cols.find((c) => /이름|명칭|지점|name/i.test(c))] ?? "").trim(),
-        input: isPair ? `${a}, ${b}` : a,
-        raw: rec,
-        _pair: isPair ? [na, nb] : null,
-      });
-      n++;
+  /** 바이트를 문자열로. UTF-8을 먼저 보고, 깨지면 국내 인코딩으로 되읽는다.
+   *  판단은 **치환문자(U+FFFD) 개수**로 한다 — 확장자·BOM보다 확실하다. */
+  function decodeText(bytes) {
+    // BOM이 있으면 UTF-8이 확실하다
+    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return new TextDecoder("utf-8").decode(bytes.subarray(3));
     }
-    return n;
+    const head = bytes.subarray(0, Math.min(bytes.length, 4096));
+    const count = (enc) => {
+      try { return (new TextDecoder(enc).decode(head).match(/�/g) || []).length; }
+      catch (_) { return Infinity; }
+    };
+    const utf8 = count("utf-8");
+    if (utf8 === 0) return new TextDecoder("utf-8").decode(bytes);
+    for (const enc of ["euc-kr", "windows-949"]) {
+      if (count(enc) < utf8) return new TextDecoder(enc).decode(bytes);
+    }
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  /* ── 열 매핑 ─────────────────────────────────────────────────────
+     자동 추정만으로 결정하지 않는다. 실사고(2026-07-21): 보호수 표준데이터는
+     29개 열이고 [0]개방자치단체코드=3000000·[1]관리번호=2024300...가 **둘 다
+     숫자로 파싱**돼 좌표쌍으로 오인됐다. 결과는 캄차카 근처(57.6N 177.2E).
+     이름으로 후보를 제안하되 **최종 선택은 사용자가** 한다. */
+
+  let pending = null;         // {table, cols}
+
+  const GUESS = {
+    lat:  /^(wgs84)?\s*(위도|latitude|lat|y좌표|위도\(y\))/i,
+    lon:  /^(wgs84)?\s*(경도|longitude|lon|lng|x좌표|경도\(x\))/i,
+    x:    /^(x|tm\s*x|동서|횡좌표)/i,
+    y:    /^(y|tm\s*y|남북|종좌표)/i,
+    addr: /(지번\s*주소|소재지지번주소|도로명\s*주소|소재지도로명주소|주소|address|소재지)/i,
+    name: /(이름|명칭|지점명|수목명|시설명|name)/i,
+  };
+  const guess = (cols, re) => cols.find((c) => re.test(String(c).trim())) || "";
+
+  function showMapping(table) {
+    const cols = Object.keys(table[0]);
+    pending = { table, cols };
+    const opts = (sel) => `<option value="">— 선택 안 함 —</option>` +
+      cols.map((c) => `<option value="${esc(c)}"${c === sel ? " selected" : ""}>${esc(c)}</option>`).join("");
+
+    const gLat = guess(cols, GUESS.lat) || guess(cols, GUESS.y);
+    const gLon = guess(cols, GUESS.lon) || guess(cols, GUESS.x);
+    const gAddr = guess(cols, GUESS.addr);
+    const gName = guess(cols, GUESS.name);
+    const hasCoord = Boolean(gLat && gLon);
+
+    $("#gc-map-panel").innerHTML = `
+      <b>불러온 열 ${cols.length}개 — 무엇으로 조회할지 골라주세요</b>
+      <p class="help" style="margin:4px 0 10px">
+        열 이름으로 후보를 제안했지만 <b>확인은 직접</b> 해주세요.
+        코드·관리번호처럼 숫자로 된 열이 좌표로 오인될 수 있습니다.
+      </p>
+      <div class="gc-map-row">
+        <label><input type="radio" name="gc-mode" value="coord"${hasCoord ? " checked" : ""}> 좌표로 조회 <span class="gc-dim">(좌표 → 주소)</span></label>
+        <select id="gc-col-lat" ${hasCoord ? "" : "disabled"}>${opts(gLat)}</select>
+        <span class="gc-dim">위도 / Y</span>
+        <select id="gc-col-lon" ${hasCoord ? "" : "disabled"}>${opts(gLon)}</select>
+        <span class="gc-dim">경도 / X</span>
+      </div>
+      <div class="gc-map-row">
+        <label><input type="radio" name="gc-mode" value="addr"${hasCoord ? "" : " checked"}> 주소로 조회 <span class="gc-dim">(주소 → 좌표)</span></label>
+        <select id="gc-col-addr">${opts(gAddr)}</select>
+      </div>
+      <div class="gc-map-row">
+        <span class="gc-dim" style="min-width:150px">지점 이름 열 (선택)</span>
+        <select id="gc-col-name">${opts(gName)}</select>
+      </div>
+      <div id="gc-preview" class="gc-preview"></div>
+      <div class="gc-map-row" style="margin-top:10px">
+        <button class="btn btn-primary" id="gc-mapok">이 설정으로 ${table.length}건 추가</button>
+        <button class="btn btn-secondary" id="gc-mapcancel">취소</button>
+      </div>`;
+    $("#gc-map-panel").style.display = "";
+
+    const sync = () => {
+      const mode = section.querySelector('input[name="gc-mode"]:checked').value;
+      $("#gc-col-lat").disabled = $("#gc-col-lon").disabled = mode !== "coord";
+      $("#gc-col-addr").disabled = mode !== "addr";
+      preview(mode);
+    };
+    section.querySelectorAll('input[name="gc-mode"]').forEach((r) =>
+      r.addEventListener("change", sync));
+    ["#gc-col-lat", "#gc-col-lon", "#gc-col-addr", "#gc-col-name"].forEach((id) =>
+      $(id).addEventListener("change", sync));
+    $("#gc-mapok").addEventListener("click", applyMapping);
+    $("#gc-mapcancel").addEventListener("click", () => {
+      pending = null;
+      $("#gc-map-panel").style.display = "none";
+      $("#gc-filename").value = "";
+    });
+    sync();
+  }
+
+  /* 미리보기 — 고른 열의 실제 값을 3행 보여준다. 이걸 봤다면 3000000이
+     좌표가 아니라는 것을 바로 알 수 있었다. */
+  function preview(mode) {
+    const { table } = pending;
+    const rows3 = table.slice(0, 3);
+    let html = "";
+    if (mode === "coord") {
+      const cl = $("#gc-col-lat").value, co = $("#gc-col-lon").value;
+      if (!cl || !co) { $("#gc-preview").innerHTML = `<span class="gc-warn">위도·경도 열을 모두 고르세요</span>`; return; }
+      const e = epsg();
+      html = rows3.map((r) => {
+        const a = parseCoord(r[cl]), b = parseCoord(r[co]);
+        if (Number.isNaN(a) || Number.isNaN(b)) return `<div class="gc-warn">숫자가 아닙니다: ${esc(r[cl])} / ${esc(r[co])}</div>`;
+        let la = a, lo = b;
+        if (e !== 4326) { try { [la, lo] = toWgs84(a, b, e); } catch (_) { return `<div class="gc-warn">변환 실패</div>`; } }
+        const bad = !inKorea(la, lo);
+        return `<div${bad ? ' class="gc-warn"' : ""}>${esc(r[cl])}, ${esc(r[co])}`
+             + ` → 위도 ${la.toFixed(6)}, 경도 ${lo.toFixed(6)}${bad ? "  ⚠ 한국 밖입니다 — 열이나 좌표계를 확인하세요" : ""}</div>`;
+      }).join("");
+    } else {
+      const ca = $("#gc-col-addr").value;
+      if (!ca) { $("#gc-preview").innerHTML = `<span class="gc-warn">주소 열을 고르세요</span>`; return; }
+      html = rows3.map((r) => `<div>${esc(String(r[ca] ?? "").slice(0, 70)) || '<span class="gc-warn">비어 있음</span>'}</div>`).join("");
+    }
+    $("#gc-preview").innerHTML = `<div class="gc-dim" style="margin-bottom:4px">미리보기 (앞 3행)</div>${html}`;
+  }
+
+  /** 대한민국 대략 범위 — 결과가 여기를 벗어나면 열·좌표계 선택이 틀렸을 가능성이 높다 */
+  const inKorea = (lat, lon) => lat > 32 && lat < 40 && lon > 123 && lon < 133;
+
+  function applyMapping() {
+    if (!pending) return;
+    const { table } = pending;
+    const mode = section.querySelector('input[name="gc-mode"]:checked').value;
+    const cn = $("#gc-col-name").value;
+    let n = 0, outside = 0;
+
+    if (mode === "coord") {
+      const cl = $("#gc-col-lat").value, co = $("#gc-col-lon").value;
+      if (!cl || !co) { toast("위도·경도 열을 모두 고르세요", "fail"); return; }
+      for (const rec of table) {
+        const a = parseCoord(rec[cl]), b = parseCoord(rec[co]);
+        if (Number.isNaN(a) || Number.isNaN(b)) continue;
+        addRow({ source: SRC_UPLOAD, name: String(rec[cn] ?? "").trim(),
+                 input: `${rec[cl]}, ${rec[co]}`, raw: rec, _pair: [a, b] });
+        n++;
+      }
+      // 첫 행으로 범위를 한 번 본다 — 전량 조회 후에 알면 늦다
+      const first = table.find((r) => !Number.isNaN(parseCoord(r[cl])));
+      if (first) {
+        const e = epsg();
+        let la = parseCoord(first[cl]), lo = parseCoord(first[co]);
+        try { if (e !== 4326) [la, lo] = toWgs84(la, lo, e); } catch (_) {}
+        if (!inKorea(la, lo)) outside = 1;
+      }
+    } else {
+      const ca = $("#gc-col-addr").value;
+      if (!ca) { toast("주소 열을 고르세요", "fail"); return; }
+      for (const rec of table) {
+        const a = String(rec[ca] ?? "").trim();
+        if (!a) continue;
+        addRow({ source: SRC_UPLOAD, name: String(rec[cn] ?? "").trim(),
+                 input: a, raw: rec });
+        n++;
+      }
+    }
+    uploadCols = pending.cols;
+    pending = null;
+    $("#gc-map-panel").style.display = "none";
+    log(`${n}건 추가 (${mode === "coord" ? "좌표 → 주소" : "주소 → 좌표"})`);
+    if (outside) {
+      log("⚠ 첫 행이 대한민국 범위 밖입니다 — 열 선택이나 좌표계를 확인하세요", "fail");
+      toast("좌표가 한국 밖입니다 — 열·좌표계를 확인하세요", "warn");
+    } else {
+      toast(`${n}건을 불러왔습니다 — [조회 실행]을 누르세요`, "ok");
+    }
+    render(); drawMarkers();
   }
 
   /* ── 조회 ────────────────────────────────────────────────────────── */
@@ -413,6 +582,13 @@ export function init(section, { bridge, toast }) {
     try {
       if (e === 4326) { r.lat = a; r.lon = b; }
       else { const [la, lo] = toWgs84(a, b, e); r.lat = la; r.lon = lo; }
+      // 한국 밖이면 vworld에 물어봐야 NOT_FOUND다 — 헛호출 대신 사유를 명확히 준다
+      if (!inKorea(r.lat, r.lon)) {
+        r.status = "실패";
+        r.reason = `변환 결과가 대한민국 밖입니다 (위도 ${r.lat.toFixed(4)}, 경도 ${r.lon.toFixed(4)}) `
+                 + `— 좌표 열 선택 또는 입력 좌표계(EPSG:${e})를 확인하세요`;
+        return false;
+      }
       return true;
     } catch (err) {
       r.status = "실패"; r.reason = err.message;
