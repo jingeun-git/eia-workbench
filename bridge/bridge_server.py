@@ -23,6 +23,7 @@ EIA Workbench 로컬 브리지 (SYS-29 7단계)
 기존 도구 폴더의 코드를 그대로 참조한다 — 복제 금지(두 벌 관리 방지).
 """
 
+import http.client
 import json
 import os
 import secrets
@@ -43,7 +44,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.10.1"
+BRIDGE_VERSION = "3.10.2"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -105,31 +106,50 @@ def detect_features():
             feats["pagenum"] = PAGENUM_MOD.exists()
     return feats
 
+_PROXY_LOCK = threading.Lock()
+_PROXY_CONN = {}          # host -> HTTPSConnection (재사용)
+
+
 def proxy_get(target: str):
-    """화이트리스트 호스트로만 GET을 대리 수행한다. 반환: (bytes, content-type)"""
+    """화이트리스트 호스트로만 GET을 대리 수행한다. 반환: (bytes, content-type)
+
+    ═══ 실측 근거 (2026-07-21, 연속 호출 기준) ═══
+      · 기본 Python-urllib UA  → HTTP 200 + **빈 본문** (헤더를 갖추면 해소)
+      · 요청마다 새 연결       → 5회 중 **0회 성공** (TLS 재수립이 상위에서 거부됨)
+      · 연결 재사용            → 5회 중 **5회 성공**
+    즉 필지 3번째부터 연속 실패하던 것은 주소·코드 문제가 아니라
+    **매 요청 새 연결을 맺은 탓**이었다. 호스트별 연결을 유지한다.
+    """
     from urllib.parse import urlparse as _up
-    from urllib.request import urlopen as _open
     u = _up(target)
     if u.scheme != "https" or u.hostname not in PROXY_HOSTS:
         raise RuntimeError(f"허용되지 않은 대상: {u.scheme}://{u.hostname}")
-    # ⚠ 공공데이터포털은 기본 Python-urllib UA에 대해 **HTTP 200 + 빈 본문**을 준다
-    #   (2026-07-21 실측: 기본 0 bytes / Accept·UA 지정 2525 bytes).
-    #   오류가 아니라 빈 응답이라 "조회 결과 없음"으로 오인되기 딱 좋다.
-    from urllib.request import Request as _Req
-    req = _Req(target, headers={
-        "Accept": "*/*",
-        "User-Agent": "Mozilla/5.0 (compatible; EIA-Workbench-Bridge)",
-        "Connection": "close",
-    })
-    # 헤더를 갖춰도 간헐적으로 빈 200이 온다 — 짧게 재시도한다.
+
+    path = u.path + ("?" + u.query if u.query else "")
+    headers = {"Accept": "*/*",
+               "User-Agent": "Mozilla/5.0 (compatible; EIA-Workbench-Bridge)"}
     last = None
-    for attempt in range(3):
-        with _open(req, timeout=25) as r:
-            body, last = r.read(), r
-        if body:
-            return body, last.headers.get("Content-Type", "application/xml")
-        time.sleep(0.4 * (attempt + 1))
-    raise RuntimeError("상위 API가 빈 응답만 반환했습니다(3회) — 잠시 후 다시 시도하세요")
+    with _PROXY_LOCK:                     # 스레드 서버라 연결을 직렬화한다
+        for attempt in range(4):
+            conn = _PROXY_CONN.get(u.hostname)
+            if conn is None:
+                conn = http.client.HTTPSConnection(u.hostname, timeout=25)
+                _PROXY_CONN[u.hostname] = conn
+            try:
+                conn.request("GET", path, headers=headers)
+                resp = conn.getresponse()
+                body = resp.read()
+                if body:
+                    return body, resp.getheader("Content-Type", "application/xml")
+                last = f"빈 응답 (HTTP {resp.status})"
+            except Exception as e:
+                last = f"{type(e).__name__}: {e}"
+                try: conn.close()
+                except Exception: pass
+                _PROXY_CONN.pop(u.hostname, None)   # 끊긴 연결은 버리고 새로 맺는다
+            if attempt < 3:
+                time.sleep(0.5 * (2 ** attempt))    # 0.5 → 1.0 → 2.0초
+    raise RuntimeError(f"상위 API 응답 실패(4회 재시도) — {last}")
 
 
 # ── 설정·토큰 ────────────────────────────────────────────────────────────────
