@@ -63,6 +63,8 @@ export function init(section, { bridge, toast }, kind) {
         </div>
       </div>
       <p class="help" style="margin-top:-8px">
+        표의 <b>간지</b> 열은 <b>그 파일만</b> 다르게 지정하는 예외 수단입니다 — 비워두면 위 설정을 따릅니다.
+        한 보고서 안에서 관행이 섞였을 때만 쓰세요.<br>
         <b>간지와 여백면은 항상 감추기 처리됩니다</b> — 물리로 존재하는 공백면은 반드시 숨겨야 하고,
         결번은 페이지 자체가 없어 감출 대상이 아닙니다.<br>
         양면 인쇄에서 <b>간지 뒷면</b>과 <b>A3 뒷면</b>은 비워 둡니다. 이때 작성 방식이 둘로 갈립니다 —
@@ -275,10 +277,10 @@ export function init(section, { bridge, toast }, kind) {
         <td class="num">${hideCell}</td>
         <td class="num">${r.is_chapter_head && !r.skip ? `
           <select class="plan-div" data-file="${r.name.replace(/"/g, "&quot;")}"
-                  title="이 파일만 간지 방식을 다르게 지정합니다">
+                  title="기본값은 위 [장별 간지] 설정입니다. 이 파일만 다르면 여기서 바꾸세요 — 1장이면 뒷면이 결번, 2장이면 뒷면이 공백면입니다">
             <option value=""${!r.override?.divider_mode ? " selected" : ""}>기본</option>
-            <option value="one"${r.override?.divider_mode === "one" ? " selected" : ""}>결번 있음</option>
-            <option value="two"${r.override?.divider_mode === "two" ? " selected" : ""}>결번 없음</option>
+            <option value="one"${r.override?.divider_mode === "one" ? " selected" : ""}>간지 1장</option>
+            <option value="two"${r.override?.divider_mode === "two" ? " selected" : ""}>간지 2장</option>
           </select>` : ""}</td>
         <td style="color:var(--text-muted)">${r.error || act}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
