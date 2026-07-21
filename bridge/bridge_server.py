@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.15.0"
+BRIDGE_VERSION = "3.16.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -59,9 +59,20 @@ BRIDGE_DIR = _base_dir()
 TOOLS_DIR  = BRIDGE_DIR.parent.parent            # 99.Tools/
 CONFIG     = BRIDGE_DIR / "bridge_config.json"
 
-CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
-EIASS_DIR    = TOOLS_DIR / "EIASS"
-HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
+# 참조 도구의 위치를 코드에 적지 않는다 — 폴더가 재편돼도 인덱스만 다시 만들면 된다.
+#   (2026-07-21 SYS-33: 경로 하드코딩 때문에 폴더 정리 범위를 줄여야 했다)
+# 리졸버를 못 찾는 환경(브리지만 떼어 배포 등)에서도 죽지 않게 종전 경로로 폴백한다.
+try:
+    sys.path.insert(0, str(next(p for p in BRIDGE_DIR.resolve().parents
+                                if (p / "CLAUDE_folder.md").exists())))
+    from claude_paths import resolve as _resolve
+    CONVERT_DIR = _resolve("convert_core").parent
+    EIASS_DIR   = _resolve("eiass_doc_resolver").parent
+    HWP2PDF_DIR = _resolve("hwp2pdf_core").parent
+except Exception:
+    CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
+    EIASS_DIR    = TOOLS_DIR / "EIASS"
+    HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
 # 차례(hwpContent)·끼워넣기(.Egg): 2026-07-20 사용자 지시로 기능 삭제
 # 쪽번호: SYS-31에서 hwp_pagenum.py로 전면 재구현(2026-07-21) — 구
 #   `배포용/hwpPageNum2.1`(exe·py) 의존은 제거됐다. 구 .py는 `import intro`인데
@@ -91,7 +102,14 @@ def detect_features():
         feats["ocr"] = bool(getattr(convert_core, "_HAS_OCR", False))
     except Exception:
         pass
-    feats["eiass"] = RESOLVER.exists()
+    # ⚠ 파일 존재로 판정하면 **번들 exe에서 항상 False**가 된다 — 번들은 모듈을
+    #   내장하지 실제 경로에 두지 않는다(2026-07-21 번들 시뮬레이션에서 확인).
+    #   다른 기능과 같이 '임포트 가능한가'로 판정하고, 실패 시에만 경로를 본다.
+    try:
+        import eiass_doc_resolver  # noqa
+        feats["eiass"] = True
+    except Exception:
+        feats["eiass"] = RESOLVER.exists()
     if IS_WINDOWS:
         try:
             import hwp2pdf_core  # noqa

@@ -36,21 +36,53 @@ except Exception:
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parent.parent            # 99.Tools/
 
-# 번들에 포함할 참조 도구 — bridge_server.py가 import/subprocess로 쓰는 것들
+# 참조 도구의 위치를 여기에 적지 않는다 — 폴더가 재편돼도 빌드가 깨지지 않아야 한다
+# (SYS-33). 리졸버를 못 찾는 환경에서는 종전 경로로 폴백한다.
+def _find(name: str, fallback: Path) -> Path:
+    try:
+        sys.path.insert(0, str(next(q for q in HERE.parents
+                                    if (q / "CLAUDE_folder.md").exists())))
+        from claude_paths import resolve
+        return resolve(name)
+    except Exception:
+        return fallback
+
+
+# 번들에 포함할 참조 도구 — bridge_server.py가 import로 쓰는 것들
 BUNDLE_SRC = [
-    TOOLS / "convert_to_md" / "convert_core.py",
-    TOOLS / "EIASS" / "eiass_doc_resolver.py",
-    TOOLS / "hwp2pdf" / "hwp2pdf_core.py",
+    _find("convert_core",       TOOLS / "convert_to_md" / "convert_core.py"),
+    _find("eiass_doc_resolver", TOOLS / "EIASS" / "eiass_doc_resolver.py"),
+    _find("hwp2pdf_core",       TOOLS / "hwp2pdf" / "hwp2pdf_core.py"),
 ]
-# 쪽번호: .py는 `import intro`를 하는데 intro.py가 저장소에 없어 실행 불가(2026-07-20 실측).
-# 자립형 exe를 데이터로 동봉한다. SYS-31 재구현이 끝나면 이 특례는 사라진다.
-PAGE_EXE = TOOLS / "배포용" / "hwpPageNum2.1" / "hwpPageNum2.1.exe"
+# 쪽번호는 브리지 자체 엔진(hwp_pagenum.py)이 처리한다 — bridge/ 안에 있어 자동 포함된다.
+# 구 `배포용/hwpPageNum2.1.exe` 동봉 특례는 SYS-31 재구현 완료로 폐지(2026-07-21,
+# 그 도구는 Trash로 이동됨). 여기에 남겨두면 빌드가 없는 파일을 찾다 실패한다.
 OPTIONAL_SRC = []
 
+# lite = OCR만 뺀 빌드다. **기능이 줄어드는 제외는 넣지 않는다.**
+#   ⚠ pandas를 빼면 excel_to_markdown()이 죽는다 — Excel 변환이 통째로 사라진다
+#     (2026-07-21 실측: convert_core가 pd.ExcelFile을 쓴다). 자립화 전후로
+#     기능이 달라지면 안 되므로 제외 목록에서 제거했다.
+#   torch/torchvision은 easyocr의 의존이라 함께 빠지고, 나머지는 convert_core가
+#   쓰지 않음을 실측으로 확인한 것들이다.
 LITE_EXCLUDES = [
-    "torch", "torchvision", "easyocr", "scipy", "sklearn",
-    "matplotlib", "pandas", "geopandas", "shapely",
+    "torch", "torchvision", "easyocr",          # OCR 계열 — lite의 유일한 축소 지점
+    "scipy", "sklearn", "matplotlib",           # convert_core 미사용(실측)
+    "geopandas", "shapely",                     # 〃
 ]
+
+
+# 참조 도구가 런타임에 늦게 import하는 모듈 — 소스에서 실측해 뽑았다.
+#   convert_core        : 문서 파싱·이미지·인코딩
+#   eiass_doc_resolver  : HTML 파싱
+#   hwp2pdf_core·hwp_pagenum : 한컴 COM
+_RUNTIME_DEPS = [
+    "chardet", "pdfplumber", "fitz", "docx", "openpyxl", "pandas", "numpy", "PIL",
+    "bs4", "requests",
+    "win32com", "win32com.client", "pythoncom", "pywintypes", "win32print",
+]
+# OCR(full 빌드에서만) — lite에서는 LITE_EXCLUDES가 걷어낸다
+_OCR_DEPS = ["easyocr", "pytesseract", "torch", "torchvision"]
 
 
 def check_env():
@@ -105,12 +137,19 @@ def build(full: bool):
         "--hidden-import", "convert_core",
         "--hidden-import", "eiass_doc_resolver",
         "--hidden-import", "hwp2pdf_core",
+        # 쪽번호 엔진은 bridge/ 안에 있어 --paths로 잡히지만, PyInstaller가
+        # 동적 import를 놓치지 않도록 명시한다
+        "--hidden-import", "hwp_pagenum",
     ]
-    if PAGE_EXE.exists():
-        cmd += ["--add-data", f"{PAGE_EXE};."]     # 쪽번호 자립 exe 동봉
+    # ⚠ 참조 도구들은 **함수 안에서 늦게 import**한다(기동 속도 때문). PyInstaller의
+    #   정적 분석은 이런 호출을 못 잡아 번들에서 ModuleNotFoundError로 죽는다 —
+    #   자립화 전후 기능이 같아야 하므로 실측한 목록을 전부 명시한다(2026-07-21).
+    for mod in _RUNTIME_DEPS:
+        cmd += ["--hidden-import", mod]
+    if full:
+        for mod in _OCR_DEPS:
+            cmd += ["--hidden-import", mod]
     else:
-        print("  ⚠ hwpPageNum2.1.exe 없음 — 쪽번호 기능은 비활성으로 빌드됩니다")
-    if not full:
         for m in LITE_EXCLUDES:
             cmd += ["--exclude-module", m]
     cmd.append(str(HERE / "bridge_server.py"))
@@ -133,6 +172,12 @@ def build(full: bool):
     print("   3) 웹 UI 브리지 안내 모달의 다운로드 링크를 해당 Release URL로 갱신")
     print()
     print("  ※ 원본 도구(convert_core 등)를 수정하면 재빌드해야 반영됩니다.")
+    print()
+    print("  ▶ 배포 전 반드시 기능 동일성을 확인하세요 — 빌드 성공은 합격이 아닙니다:")
+    print(f"      python verify_bundle.py dist/{name}.exe"
+          + ("  --expect-ocr" if full else ""))
+    print("    번들에서만 조용히 꺼지는 기능이 있어(경로 기반 탐지·지연 import·lite 제외),")
+    print("    저장소 실행본과 /ping 기능 목록을 대조합니다.")
 
 
 if __name__ == "__main__":
