@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.19.1"
+BRIDGE_VERSION = "3.20.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -484,8 +484,25 @@ def run_pagenum_scan(job, params):
 
 def _plan_row(f: dict) -> dict:
     """UI 표에 실을 요약 — 스캔과 재계획이 **같은 형식**을 내야 표가 어긋나지 않는다.
-    (무거운 pages 배열은 뺀다)"""
+
+    무거운 pages 배열은 빼되, **어떻게 그 번호가 나왔는지**는 함께 보낸다
+    (간지·결번·본문 구간). 표에 결과만 있으면 사용자가 검산할 수 없다.
+    """
+    pages = f.get("pages") or []
+    nums = [n for _, n, _ in pages]
+    detail = None
+    if nums:
+        inside = set(nums)
+        detail = {
+            "divider": nums[0] if f.get("divider") else None,
+            "gaps": [x for x in range(nums[0], nums[-1] + 1) if x not in inside],
+            "body": [nums[1], nums[-1]] if f.get("divider") and len(nums) > 1
+                    else [nums[0], nums[-1]],
+            # 마지막이 A3면 그 뒷면은 이 파일 범위 밖에서 결번으로 소비된다
+            "tail_a3_gap": (nums[-1] + 1) if pages[-1][2] else None,
+        }
     return {
+        "detail": detail,
         # 재계획(/replan)은 스캔 결과를 그대로 받아 다시 계산하므로, 스캔에만 있는
         # 키(path 등)가 없을 수 있다 — 없으면 빈 값으로 둔다(KeyError 방지).
         "name": f["name"], "path": f.get("path", ""), "chapter": f.get("chapter"),

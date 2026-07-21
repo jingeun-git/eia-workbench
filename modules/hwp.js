@@ -238,6 +238,7 @@ export function init(section, { bridge, toast }, kind) {
   function renderPlan(rows) {
     const tb = $("#hw-tbody");
     tb.innerHTML = "";
+    let prevEnd = null;                     // 앞 파일이 실제로 소비한 마지막 번호
     for (const r of rows) {
       const tr = document.createElement("tr");
       // 현재 상태와 적용 후를 나눠 보여준다 — 표의 숫자가 현황인지 예정인지
@@ -254,6 +255,18 @@ export function init(section, { bridge, toast }, kind) {
         r.expect_hide?.length ? `${r.expect_hide.join(",")}면` : "",
         stray.length ? `<span class="warn-mark" title="도구가 의도하지 않은 위치입니다 — 오기입 여부를 확인하세요">⚠ ${stray.join(",")}면</span>` : "",
       ].filter(Boolean).join(" ") || (r.hide_pages?.length ? `${r.hide_pages.join(",")}면` : "");
+      /* 결과만 보여주면 검산할 수 없다 — 간지·결번·본문 구간을 그대로 드러낸다.
+         "왜 이 번호가 나왔나"가 표에서 바로 읽혀야 사용자가 판단할 수 있다. */
+      const d = r.detail;
+      const calc = !d ? "" : [
+        d.divider != null ? `간지 <b>${d.divider}</b>` : "",
+        d.gaps?.length ? `결번 <b>${d.gaps.join(",")}</b>` : "",
+        `본문 <b>${d.body[0]}~${d.body[1]}</b>`,
+      ].filter(Boolean).join(" · ");
+      const tail = d?.tail_a3_gap
+        ? `<div class="plan-note">※ 마지막이 A3 — 뒷면 ${d.tail_a3_gap} 결번(다음 장에서 소비)</div>`
+        : "";
+
       const act = r.skip ? "번호 제외"
         : [r.is_chapter_head ? "장 시작" : "",
            r.divider ? (r.div_skip ? "간지 1장(결번)" : "간지 2장") : "",
@@ -276,9 +289,21 @@ export function init(section, { bridge, toast }, kind) {
           <span class="plan-end${same ? "" : " changed"}">~${r.end}${same ? " (동일)" : ""}</span>`}</td>
         <td class="num">${hideCell}</td>
 
-        <td style="color:var(--text-muted)">${r.error || act}${
-          r.mismatch ? `<div class="plan-warn">⚠ ${r.mismatch}</div>` : ""}</td>`;
+        <td>${r.error ? r.error : `
+          <div class="plan-calc">${calc}</div>
+          <div class="plan-tags">${act}</div>${tail}${
+          r.mismatch ? `<div class="plan-warn">⚠ ${r.mismatch}</div>` : ""}`}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
+      if (!r.skip && r.detail) {
+        // 장 시작 근거 — 앞 장이 홀수로 끝났으면 그 뒷면 1면이 결번이다
+        if (r.is_chapter_head && prevEnd != null) {
+          const odd = prevEnd % 2 === 1;
+          tr.querySelector(".plan-calc").insertAdjacentHTML("beforebegin",
+            `<div class="plan-note">앞 장 ${prevEnd}(${odd ? "홀수" : "짝수"}) 끝`
+            + `${odd ? ` → ${prevEnd + 1} 결번` : ""} → ${r.start} 시작</div>`);
+        }
+        prevEnd = r.detail.tail_a3_gap || r.end;
+      }
       tb.appendChild(tr);
     }
     /* 표에서 고친 값을 계획에 반영한다 — 사용자가 확인한 표가 곧 계획이다.

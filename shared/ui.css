@@ -393,3 +393,9 @@ input:focus, textarea:focus, select:focus {
   margin-top: 4px; color: var(--fail); font-size: var(--text-xs);
   line-height: 1.5; font-weight: 500;
 }
+
+/* 쪽번호 표 처리 열 — 결과가 아니라 '어떻게 나왔는지'를 보여준다 */
+.plan-calc { font-size: var(--text-sm); color: var(--text); line-height: 1.6; }
+.plan-calc b { font-weight: 600; }
+.plan-tags { margin-top: 3px; font-size: var(--text-xs); color: var(--text-dim); line-height: 1.5; }
+.plan-note { margin-top: 3px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
