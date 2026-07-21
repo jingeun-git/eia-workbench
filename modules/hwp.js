@@ -110,7 +110,7 @@ export function init(section, { bridge, toast }, kind) {
         <table class="result-table">
           <thead><tr>
             <th>파일</th><th>장</th><th>물리 쪽수</th><th>A3</th>
-            <th>현재 쪽번호</th><th>→ 적용 후</th><th>감추기</th><th>처리</th>
+            <th>현재 쪽번호</th><th>→ 적용 후</th><th>감추기</th><th>간지</th><th>처리</th>
           </tr></thead>
           <tbody id="hw-tbody"></tbody>
         </table>
@@ -192,7 +192,7 @@ export function init(section, { bridge, toast }, kind) {
     $("#hw-log").textContent = ""; $("#hw-log").classList.remove("active");
     $("#hw-prog").classList.remove("active"); $("#hw-fill").style.width = "0%";
     if (kind === "pagenum") {
-      scanned = null;
+      scanned = null; overrides = {};
       $("#hw-tbody").innerHTML = "";
       $("#hw-tblwrap").classList.remove("active");
       $("#hw-warn").style.display = "none";
@@ -219,6 +219,29 @@ export function init(section, { bridge, toast }, kind) {
 
   /* ── 쪽번호: 스캔 → 표 확인 → 적용 (SYS-31) ─────────────────────── */
   let scanned = null;                       // 스캔 결과(계획) — 적용 시 그대로 전달
+  let overrides = {};                       // 파일별 사용자 지정 {파일명: {start, divider_mode}}
+
+  /* 값 하나가 바뀌면 그 파일부터 뒤까지 번호가 밀린다 — 브리지에 재계산을 맡긴다.
+     문서를 다시 읽지 않으므로(순수 계산) 즉시 끝난다. 재스캔은 한컴을 띄워 수 분 걸린다. */
+  async function setOverride(file, key, value) {
+    const o = overrides[file] || (overrides[file] = {});
+    if (value == null) delete o[key]; else o[key] = value;
+    if (!Object.keys(o).length) delete overrides[file];
+    try {
+      const r = await bridge.call("/replan", { method: "POST", body: {
+        files: scanned,
+        start_num: parseInt($("#hw-start").value, 10) || 1,
+        divider: $("#hw-divider").value,
+        a3_back: $("#hw-a3back").value,
+        do_hide: $("#hw-hide").checked,
+        overrides,
+      }});
+      scanned = r.plan;
+      renderPlan(scanned);
+      const n = Object.keys(overrides).length;
+      toast(n ? `${n}개 파일을 직접 지정했습니다 — 표를 확인하세요` : "기본 계산으로 돌아왔습니다", "ok");
+    } catch (e) { toast(`재계산 실패: ${e.message}`, "fail"); }
+  }
 
   function renderPlan(rows) {
     const tb = $("#hw-tbody");
@@ -253,12 +276,35 @@ export function init(section, { bridge, toast }, kind) {
         <td class="num">${r.phys_pages ?? "-"}</td>
         <td class="num">${r.a3_count || ""}</td>
         <td class="num" style="color:var(--text-dim)">${cur}</td>
-        <td class="num"${same ? ' style="color:var(--text-dim)"' : ' style="font-weight:600"'}>${rng}${same ? " (동일)" : ""}</td>
+        <td class="num">${r.skip ? "—" : `
+          <input class="plan-start" type="number" min="1" step="1" value="${r.start}"
+                 data-file="${r.name.replace(/"/g, "&quot;")}"
+                 title="시작 쪽번호를 고치면 이 파일부터 다시 계산합니다">
+          <span class="plan-end${same ? "" : " changed"}">~${r.end}${same ? " (동일)" : ""}</span>`}</td>
         <td class="num">${hideCell}</td>
+        <td class="num">${r.is_chapter_head && !r.skip ? `
+          <select class="plan-div" data-file="${r.name.replace(/"/g, "&quot;")}"
+                  title="이 파일만 간지 방식을 다르게 지정합니다">
+            <option value=""${!r.override?.divider_mode ? " selected" : ""}>기본</option>
+            <option value="one"${r.override?.divider_mode === "one" ? " selected" : ""}>결번 있음</option>
+            <option value="two"${r.override?.divider_mode === "two" ? " selected" : ""}>결번 없음</option>
+          </select>` : ""}</td>
         <td style="color:var(--text-muted)">${r.error || act}</td>`;
       if (r.skip) tr.style.color = "var(--text-dim)";
       tb.appendChild(tr);
     }
+    /* 표에서 고친 값을 계획에 반영한다 — 사용자가 확인한 표가 곧 계획이다.
+       한 보고서 안에서도 관행이 섞이는 일이 있어(2026-07-21 원호리: 5개 파일은
+       간지 결번, 2개는 결번 없음) 전역 옵션 하나로는 맞출 수 없다. */
+    tb.querySelectorAll(".plan-start").forEach((el) =>
+      el.addEventListener("change", () => {
+        const v = parseInt(el.value, 10);
+        setOverride(el.dataset.file, "start", v > 0 ? v : null);
+      }));
+    tb.querySelectorAll(".plan-div").forEach((el) =>
+      el.addEventListener("change", () =>
+        setOverride(el.dataset.file, "divider_mode", el.value || null)));
+
     $("#hw-tblwrap").classList.add("active");
     $("#hw-warn").style.display = "";
     $("#hw-run").disabled = false;
@@ -349,7 +395,8 @@ export function init(section, { bridge, toast }, kind) {
             // 기본값으로 계획을 다시 세워 스캔 표와 다른 번호가 찍힌다(2026-07-20)
             divider: $("#hw-divider").value,
             a3_back: $("#hw-a3back").value,
-            do_hide: $("#hw-hide").checked };
+            do_hide: $("#hw-hide").checked,
+            overrides };
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
         onLog: (line) => log(line),

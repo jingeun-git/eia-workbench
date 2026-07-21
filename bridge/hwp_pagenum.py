@@ -65,7 +65,7 @@ def _div_mode(v) -> str:
 
 
 def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = "skip",
-               do_hide: bool = False):
+               do_hide: bool = False, overrides: dict | None = None):
     """include_divider: "none" | "one" | "two"  (하위호환으로 bool도 받는다)
          none — 간지 없음
          one  — 간지 1장만 (뒷면 공백 없음) → 뒷면 몫으로 번호를 하나 건너뛴다
@@ -95,6 +95,10 @@ def build_plan(files, include_divider=False, start_num: int = 1, a3_back: str = 
             "divider_mode": _div_mode(include_divider),
             "a3_back": a3_back if a3_back in ("skip", "blank") else "skip",
             "do_hide": bool(do_hide),
+            # 사용자가 표에서 고친 값 — 파일별로 전역 설정을 덮어쓴다.
+            # 한 보고서 안에서도 관행이 섞이는 일이 실제로 있어(2026-07-21 원호리:
+            # 5개 파일은 간지 결번, 2개는 결번 없음), 자동 판별보다 직접 지정이 확실하다.
+            "override": (overrides or {}).get(f["name"], {}),
         })
         if chapter is not None:
             prev_chapter = chapter
@@ -121,6 +125,10 @@ def assign_numbers(plan, start_num: int = 1):
         # R1: 장의 첫 파일은 홀수에서 시작
         if f["is_chapter_head"] and cur % 2 == 0:
             cur += 1
+        # 사용자가 시작번호를 직접 지정했으면 그 값을 그대로 쓴다(규칙보다 우선)
+        _ov_start = (f.get("override") or {}).get("start")
+        if isinstance(_ov_start, int) and _ov_start > 0:
+            cur = _ov_start
 
         total = f.get("phys_pages") or 0
         a3set = set(f.get("a3_pages") or [])
@@ -134,7 +142,9 @@ def assign_numbers(plan, start_num: int = 1):
         a3_back = f.get("a3_back", "skip")   # "skip"=결번 | "blank"=물리 공백 있음
         # 간지 뒷면: "간지 2장"이면 공백이 이미 물리 페이지로 있으므로 결번 불필요.
         # "간지 1장"이면 뒷면 몫으로 번호를 하나 건너뛴다.
-        div_skip = 1 if (f.get("divider") and f.get("divider_mode") == "one") else 0
+        ov = f.get("override") or {}
+        mode = ov.get("divider_mode") or f.get("divider_mode")
+        div_skip = 1 if (f.get("divider") and mode == "one") else 0
         pages = []
         n = cur
         prev_a3_content = False

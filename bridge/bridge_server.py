@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.16.1"
+BRIDGE_VERSION = "3.17.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -478,10 +478,18 @@ def run_pagenum_scan(job, params):
                       do_hide=bool(params.get("do_hide"))),
         start_num=int(params.get("start_num", 1)),
     )
-    # UI 표에 실을 요약(무거운 pages 배열은 제외)
-    job["result"] = [{
-        "name": f["name"], "path": f["path"], "chapter": f["chapter"],
-        "is_chapter_head": f["is_chapter_head"], "skip": f["skip"],
+    job["result"] = [_plan_row(f) for f in plan]
+    job_log(job, f"─── 스캔 완료: {len(files)}개 파일")
+
+
+def _plan_row(f: dict) -> dict:
+    """UI 표에 실을 요약 — 스캔과 재계획이 **같은 형식**을 내야 표가 어긋나지 않는다.
+    (무거운 pages 배열은 뺀다)"""
+    return {
+        # 재계획(/replan)은 스캔 결과를 그대로 받아 다시 계산하므로, 스캔에만 있는
+        # 키(path 등)가 없을 수 있다 — 없으면 빈 값으로 둔다(KeyError 방지).
+        "name": f["name"], "path": f.get("path", ""), "chapter": f.get("chapter"),
+        "is_chapter_head": f.get("is_chapter_head", False), "skip": f.get("skip", False),
         "phys_pages": f.get("phys_pages"), "a3_count": len(f.get("a3_pages") or []),
         "a3_pages": f.get("a3_pages") or [],
         "start": f["start"], "end": f["end"],
@@ -503,11 +511,11 @@ def run_pagenum_scan(job, params):
         "pgct_pages": f.get("pgct_pages") or [],
         "pgct_phys": f.get("pgct_phys") or [],
         "div_skip": f.get("div_skip", 0),
+        "override": f.get("override") or {},
         "expect_hide": f.get("expect_hide") or [],
         "stray_hide": f.get("stray_hide") or [],
         "error": f.get("error"),
-    } for f in plan]
-    job_log(job, f"─── 스캔 완료: {len(files)}개 파일")
+    }
 
 
 def _row_opt(rows, key, default):
@@ -676,6 +684,23 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True,
                         "path": paths[0] if len(paths) == 1 else None,
                         "paths": paths})
+            return
+
+        if url.path == "/replan":
+            # 표에서 값을 고치면 문서를 다시 읽지 않고 계획만 다시 세운다.
+            # 스캔은 한컴을 띄워 수 분이 걸리므로, 사용자가 숫자 하나 고칠 때마다
+            # 재스캔하게 두면 쓸 수 없다(순수 계산이라 즉시 끝난다).
+            import hwp_pagenum as hp
+            files = body.get("files") or []
+            plan = hp.assign_numbers(
+                hp.build_plan(files,
+                              include_divider=body.get("divider", "none"),
+                              a3_back=body.get("a3_back", "skip"),
+                              do_hide=bool(body.get("do_hide")),
+                              overrides=body.get("overrides") or {}),
+                start_num=int(body.get("start_num", 1)),
+            )
+            self._json({"ok": True, "plan": [_plan_row(f) for f in plan]})
             return
 
         if url.path == "/eiass/resolve":

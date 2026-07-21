@@ -371,3 +371,19 @@ input:focus, textarea:focus, select:focus {
 .cap-y { color: var(--ok); font-weight: 700; }
 .cap-n { color: var(--text-dim); }
 .cap-p { color: var(--text-muted); font-size: var(--text-xs); }
+
+/* 쪽번호 표 — 계획을 표에서 직접 고친다 */
+.plan-start {
+  width: 62px; padding: 3px 5px; text-align: right;
+  font: inherit; font-size: var(--text-sm);
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  background: var(--surface); color: var(--text);
+}
+.plan-start:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan-end { margin-left: 4px; color: var(--text-dim); }
+.plan-end.changed { color: var(--text); font-weight: 600; }
+.plan-div {
+  padding: 3px 4px; font-size: var(--text-xs);
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); color: var(--text-muted);
+}
