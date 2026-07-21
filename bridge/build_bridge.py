@@ -77,14 +77,14 @@ LITE_EXCLUDES = [
 #   convert_core        : 문서 파싱·이미지·인코딩
 #   eiass_doc_resolver  : HTML 파싱
 #   hwp2pdf_core·hwp_pagenum : 한컴 COM
-#   photo_exif          : 좌표 변환·SHP 쓰기·HEIC 읽기
-#     ⚠ pyproj·shapefile은 export_shp() **함수 안에서** import한다(선택 의존이라
-#       없어도 KML은 나가야 하기 때문). 정적 분석이 이런 지연 import를 놓치므로
-#       여기에 적지 않으면 번들에서 SHP 저장만 조용히 죽는다(2026-07-21).
+#   photo_exif          : 좌표 변환(CSV의 평면좌표)·HEIC 읽기
+#     ⚠ pyproj는 export_csv() **함수 안에서** import한다. 정적 분석이 이런
+#       지연 import를 놓치므로, 여기에 적지 않으면 번들에서 평면좌표 칸만
+#       조용히 비어 나간다(2026-07-21).
 _RUNTIME_DEPS = [
     "chardet", "pdfplumber", "fitz", "docx", "openpyxl", "pandas", "numpy", "PIL",
     "bs4", "requests",
-    "shapefile", "pyproj", "pillow_heif",
+    "pyproj", "pillow_heif",
     "win32com", "win32com.client", "pythoncom", "pywintypes", "win32print",
     # 트레이 상주 — 콘솔 창 없이 백그라운드로 돌리기 위한 것.
     # 없으면 콘솔 모드로 폴백하므로 빌드가 깨지지는 않는다.
@@ -110,18 +110,6 @@ def check_env():
     except ImportError:
         print("✗ pystray 미설치 — 트레이 상주가 빠져 종료할 방법이 없는 exe가 됩니다.")
         print("  설치: pip install pystray pillow")
-        sys.exit(1)
-
-    # 여기서 막지 않으면 검증을 **통과하면서** 기능이 빠진다.
-    # verify_bundle은 저장소 실행본과 번들의 기능 목록을 대조하는데, 빌드 PC에
-    # pyshp가 아예 없으면 양쪽 모두 photo_shp=False라 "일치"로 판정된다.
-    # 없는 것을 없다고 비교해봐야 아무것도 증명하지 못한다(2026-07-21).
-    try:
-        import shapefile  # noqa  (pyshp)
-    except ImportError:
-        print("✗ pyshp 미설치 — 사진 좌표 탭의 SHP 저장이 빠진 채로 빌드됩니다.")
-        print("  (저장소·번들 양쪽에서 빠지므로 번들 검증도 이를 잡지 못합니다)")
-        print("  설치: pip install pyshp")
         sys.exit(1)
 
     missing = [p for p in BUNDLE_SRC if not p.exists()]

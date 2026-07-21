@@ -1,6 +1,6 @@
 /* 사진 좌표 (SYS-33 ③) — 지오세터(GeoSetter) 기능 이식
  *
- * 현장사진의 EXIF에서 촬영지점·촬영방향을 읽어 지도에 표시하고, KML·SHP로
+ * 현장사진의 EXIF에서 촬영지점·촬영방향을 읽어 지도에 표시하고, CSV·KML로
  * 내보낸다. 계산은 브리지의 photo_exif.py가 전부 담당한다 — 이 파일은 UI만 맡는다.
  *
  * ── 지오세터 Map Log에서 확인한 동작 규칙 (2026-07-21) ──
@@ -23,7 +23,7 @@ export function init(section, { bridge, toast }) {
     <h2>사진 좌표</h2>
     <p class="desc">현장사진의 EXIF에서 <b>촬영지점과 촬영방향</b>을 읽어 지도에 표시합니다.
       지도의 지점을 누르면 그 사진이, 사진을 누르면 그 지점이 선택됩니다.
-      좌표는 <b>KML·SHP</b>로 내보낼 수 있습니다.</p>
+      좌표는 <b>CSV·KML</b>로 내보낼 수 있습니다.</p>
 
     <div id="ph-locked" class="placeholder" style="margin-bottom:var(--space-2)">
       ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
@@ -66,7 +66,6 @@ export function init(section, { bridge, toast }) {
           <div class="field" style="margin-bottom:0;flex:0 0 170px">
             <label for="ph-fmt">내보내기 형식</label>
             <select id="ph-fmt">
-              <option value="shp">SHP (셰이프파일)</option>
               <option value="csv">CSV (엑셀)</option>
               <option value="kml">KML (구글어스)</option>
             </select>
@@ -99,8 +98,8 @@ export function init(section, { bridge, toast }) {
         <div class="ph-note" id="ph-expinfo">
           <b>내보내면 이런 정보가 함께 저장됩니다</b>
           <ul>
-            <li><b>사진 파일명</b>이 속성으로 그대로 들어갑니다(SHP는 <code>NAME</code>,
-                CSV는 <code>파일명</code> 칸) — 지도에서 점을 눌러 어느 사진인지 바로 찾을 수 있습니다.</li>
+            <li><b>사진 파일명</b>이 속성으로 그대로 들어갑니다(CSV의 <code>파일명</code> 칸,
+                KML의 지점 이름) — 어느 사진의 좌표인지 바로 찾을 수 있습니다.</li>
             <li>촬영지점 <b>위도·경도</b>와 선택한 좌표계의 <b>평면좌표 X·Y</b>가 나란히 기록됩니다.</li>
             <li><b>방위각·수평화각·초점거리·고도·촬영시각·기기명·GPS 오차</b>와
                 사진 <b>원본 경로</b>가 함께 저장됩니다.</li>
@@ -147,16 +146,11 @@ export function init(section, { bridge, toast }) {
         : "⚠ 브리지에 photo_exif가 없습니다 — 브리지를 최신 버전으로 다시 실행하세요.";
       return;
     }
-    // 선택 의존이 빠졌으면 기능을 끄지 않고 **무엇이 빠졌는지** 알린다.
-    const notes = [];
-    if (!f.photo_shp) notes.push("SHP 저장 불가 (브리지에 pyshp 없음 — CSV·KML은 정상)");
-    if (!f.photo_heic) notes.push("HEIC 읽기 불가 (브리지에 pillow-heif 없음 — JPG는 정상)");
-    $("#ph-exphelp").innerHTML = notes.length
-      ? `⚠ ${notes.join(" · ")}`
-      : "SHP·CSV는 위 좌표계로 저장됩니다. KML은 규격상 WGS84 고정이라 좌표계 선택이 적용되지 않습니다.";
-    const shpOpt = $("#ph-fmt").querySelector('option[value="shp"]');
-    if (shpOpt) shpOpt.disabled = !f.photo_shp;
-    if (!f.photo_shp && $("#ph-fmt").value === "shp") $("#ph-fmt").value = "csv";
+    // HEIC 미지원 같은 사정은 상단에 상시 경고하지 않는다 — 실제로 그런 사진을
+    // 읽었을 때 **사진별 사유**로 정확히 표시되므로(스캔 결과 줄), 겪지도 않을
+    // 문제를 미리 경고하면 소음만 된다(2026-07-21 사용자 정정).
+    $("#ph-exphelp").textContent =
+      "CSV는 위 좌표계로 저장됩니다. KML은 규격상 WGS84 고정이라 좌표계 선택이 적용되지 않습니다.";
   };
   bridge.addEventListener("change", renderState);
   renderState();
@@ -164,9 +158,6 @@ export function init(section, { bridge, toast }) {
   /* KML은 WGS84 고정이라 좌표계 선택이 의미가 없다 — 숨기지 않고 흐리게 해서
      "왜 안 되는지"가 보이게 한다(사라지면 사용자는 고장으로 읽는다). */
   const FMT_NOTE = {
-    shp: "SHP는 <code>.shp·.shx·.dbf·.prj·.cpg</code> 5개 파일이 한 벌로 만들어집니다 — "
-       + "옮길 때는 반드시 다섯 개를 함께 옮겨야 QGIS에서 열립니다. "
-       + "속성의 한글은 UTF-8로 저장되고 <code>.cpg</code>가 그 사실을 알려줍니다.",
     csv: "CSV는 엑셀에서 바로 열리도록 UTF-8(BOM)으로 저장됩니다. "
        + "QGIS에서는 [구분 텍스트 레이어 추가]로 불러오면 점 레이어가 됩니다.",
     kml: "KML은 구글어스에서 바로 열립니다. 방위각이 있는 사진은 <b>화각 삼각형</b>도 "
@@ -441,7 +432,7 @@ export function init(section, { bridge, toast }) {
   $("#ph-selall").addEventListener("click", () => setAll(true));
   $("#ph-selnone").addEventListener("click", () => setAll(false));
 
-  const FMT_LABEL = { shp: "셰이프파일", csv: "CSV", kml: "KML" };
+  const FMT_LABEL = { csv: "CSV", kml: "KML" };
   const defaultName = () => {
     const base = (folder.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "photos");
     return `${base}_촬영지점.${$("#ph-fmt").value}`;

@@ -9,7 +9,7 @@
   · 촬영방향 (진북 기준 방위각)
   · 수평화각 (35mm 환산 초점거리로 계산 — 사진마다 다르다)
 
-그리고 KML·SHP로 내보낸다. 지도 위에 "어디서 어느 쪽을 보고 찍었는지"를
+그리고 KML·CSV로 내보낸다. 지도 위에 "어디서 어느 쪽을 보고 찍었는지"를
 부채꼴로 표시하기 위한 자료다.
 
 ## 화각 계산 근거 (실측 검증됨)
@@ -40,7 +40,7 @@ HEIC는 `pillow-heif`가 설치돼 있을 때만 열린다. 없으면 그 사실
 
     python photo_exif.py <폴더>                     좌표 목록 출력
     python photo_exif.py <폴더> --kml out.kml       KML 저장
-    python photo_exif.py <폴더> --shp out.shp --epsg 5186
+    python photo_exif.py <폴더> --csv out.csv --epsg 5186
 """
 from __future__ import annotations
 
@@ -384,71 +384,11 @@ def export_csv(points: list[PhotoPoint], out_path: str | Path,
     return out
 
 
-def export_shp(points: list[PhotoPoint], out_path: str | Path,
-               epsg: int = 5186) -> Path:
-    """SHP로 저장. 기본 좌표계는 EIA 표준인 EPSG:5186(중부원점).
-
-    DBF는 한글 인코딩이 함정이라 UTF-8로 쓰고 `.cpg`를 함께 남긴다 —
-    QGIS·ArcGIS 모두 .cpg를 보고 인코딩을 정한다.
-    """
-    try:
-        import shapefile  # pyshp
-    except ImportError as e:
-        raise RuntimeError("SHP 저장에는 pyshp가 필요합니다 (pip install pyshp)") from e
-
-    geo = [p for p in points if p.has_geo]
-    if not geo:
-        raise ValueError("좌표를 가진 사진이 없어 SHP를 만들 수 없습니다")
-
-    out = Path(out_path)
-    if out.suffix.lower() != ".shp":
-        out = out.with_suffix(".shp")
-
-    to_xy = None
-    if epsg != 4326:
-        try:
-            from pyproj import Transformer
-
-            to_xy = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
-        except ImportError as e:
-            raise RuntimeError(f"EPSG:{epsg} 변환에는 pyproj가 필요합니다") from e
-
-    w = shapefile.Writer(str(out), shapeType=shapefile.POINT, encoding="utf-8")
-    w.field("NAME", "C", 120)
-    w.field("LAT", "N", 18, 10)
-    w.field("LON", "N", 18, 10)
-    w.field("ALT", "N", 12, 3)
-    w.field("DIRECTION", "N", 10, 4)
-    w.field("FOV", "N", 10, 3)
-    w.field("FL35", "N", 8, 1)
-    w.field("TAKEN_AT", "C", 24)
-    w.field("CAMERA", "C", 80)
-    w.field("GPS_ERR", "N", 10, 2)
-
-    for p in geo:
-        x, y = (p.lon, p.lat) if to_xy is None else to_xy.transform(p.lon, p.lat)
-        w.point(x, y)
-        w.record(p.name, p.lat, p.lon, p.alt, p.direction, p.fov, p.fl35,
-                 p.taken_at or "", p.camera or "", p.gps_error)
-    w.close()
-
-    out.with_suffix(".cpg").write_text("UTF-8", encoding="ascii")
-    try:
-        from pyproj import CRS
-
-        out.with_suffix(".prj").write_text(
-            CRS.from_epsg(epsg).to_wkt("WKT1_ESRI"), encoding="utf-8")
-    except Exception:
-        pass  # .prj가 없어도 SHP 자체는 유효하다
-    return out
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="현장사진 EXIF → 촬영지점·방향 추출")
     ap.add_argument("folder", help="사진 폴더")
     ap.add_argument("-r", "--recursive", action="store_true", help="하위 폴더 포함")
     ap.add_argument("--kml", help="KML 저장 경로")
-    ap.add_argument("--shp", help="SHP 저장 경로")
     ap.add_argument("--csv", help="CSV 저장 경로")
     ap.add_argument("--epsg", type=int, default=5186, help="SHP 좌표계 (기본 5186)")
     ap.add_argument("--json", action="store_true", help="JSON으로 출력")
@@ -471,8 +411,6 @@ def main() -> int:
 
     if a.kml:
         print(f"KML 저장: {export_kml(geo, a.kml)}")
-    if a.shp:
-        print(f"SHP 저장: {export_shp(geo, a.shp, a.epsg)}")
     if a.csv:
         print(f"CSV 저장: {export_csv(geo, a.csv, a.epsg)}")
     return 0

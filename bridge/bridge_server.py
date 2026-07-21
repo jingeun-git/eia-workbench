@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.23.0"
+BRIDGE_VERSION = "3.24.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -133,7 +133,7 @@ IS_WINDOWS = os.name == "nt"
 def detect_features():
     feats = {"convert": False, "ocr": False, "eiass": False,
              "hwp2pdf": False, "pagenum": False, "pdf2excel": False,
-             "photo": False, "photo_shp": False, "photo_heic": False}
+             "photo": False}
     try:
         import pdf2excel_core  # noqa
         feats["pdf2excel"] = True
@@ -142,14 +142,6 @@ def detect_features():
     try:
         import photo_exif  # noqa
         feats["photo"] = True
-        # SHP 저장과 HEIC 읽기는 선택 의존이다. 없어도 사진 탭 자체는 돌아가고
-        # KML은 나가므로, 기능 전체를 끄지 않고 **무엇이 빠졌는지**를 알린다.
-        feats["photo_heic"] = bool(getattr(photo_exif, "HEIF_OK", False))
-        try:
-            import shapefile  # noqa
-            feats["photo_shp"] = True
-        except Exception:
-            pass
     except Exception:
         pass
     try:
@@ -507,8 +499,6 @@ def photo_export(params):
     epsg = int(params.get("epsg") or 5186)
     if fmt == "kml":
         p = px.export_kml(geo, out, wedge_km=float(params.get("wedge_km") or 0.15))
-    elif fmt == "shp":
-        p = px.export_shp(geo, out, epsg=epsg)
     elif fmt == "csv":
         p = px.export_csv(geo, out, epsg=epsg)
     else:
