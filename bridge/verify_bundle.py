@@ -70,8 +70,14 @@ def _launch_and_ping(cmd: list[str], label: str, wait: int = 40) -> dict | None:
         print("       3) 이벤트 뷰어 → 응용 프로그램 및 서비스 로그 →")
         print("          Microsoft → Windows → CodeIntegrity → Operational")
         print()
-        print("     ⚠ 이 PC에서 막힌다면 **받는 PC에서도 막힐 가능성이 높습니다.**")
-        print("       exe 배포 대신 Python + run_bridge.bat 방식을 검토하세요.")
+        print("     ※ 빌드 직후에만 막히는 경우가 많습니다 — Defender/SmartScreen이")
+        print("       처음 보는 서명 없는 파일을 클라우드 평판 조회 동안 잡아둡니다.")
+        print("       **몇 분 뒤 이 명령만 다시 돌려보세요**(재빌드 불필요):")
+        print("           python verify_bundle.py dist\\EIAWorkbenchBridge.exe")
+        print("       파일이 바뀌면 평판도 새로 매겨지므로 빌드할 때마다 반복될 수 있습니다.")
+        print()
+        print("     그래도 계속 막히면 정책 차단입니다. 받는 PC에서도 막힐 가능성이")
+        print("     높으니 exe 대신 Python + run_bridge.bat 배포를 검토하세요.")
         return None
     try:
         for _ in range(wait):
