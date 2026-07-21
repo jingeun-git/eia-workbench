@@ -1,0 +1,33 @@
+{
+  "field": "하천수질(사람건강보호기준)",
+  "type": "item",
+  "legal_basis": "환경정책기본법 시행령 별표1 (수질 및 수생태계 환경기준 中 하천 가목1, 제2조 관련)",
+  "enacted": "2025-10-01",
+  "verified_via": "law_client.py annex --mst 280511 --no 0001 (2026-07-22 직접 조회)",
+  "items": [
+    { "code": "Cd", "label": "카드뮴(Cd)", "aliases": ["카드뮴", "Cd"], "standards": [{ "averaging": "기준", "value": 0.005, "unit": "mg/L", "default": true }] },
+    { "code": "As", "label": "비소(As)", "aliases": ["비소", "As"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
+    { "code": "CN", "label": "시안(CN)", "aliases": ["시안", "CN"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.01)", "value": 0, "unit": "mg/L", "default": true }] },
+    { "code": "Hg", "label": "수은(Hg)", "aliases": ["수은", "Hg"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.001)", "value": 0, "unit": "mg/L", "default": true }] },
+    { "code": "OrgP", "label": "유기인", "aliases": ["유기인"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.0005)", "value": 0, "unit": "mg/L", "default": true }] },
+    { "code": "PCB", "label": "폴리클로리네이티드비페닐(PCB)", "aliases": ["PCB"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.0005)", "value": 0, "unit": "mg/L", "default": true }] },
+    { "code": "Pb", "label": "납(Pb)", "aliases": ["납", "Pb"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
+    { "code": "Cr6", "label": "6가크롬(Cr6+)", "aliases": ["6가크롬", "Cr6+"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
+    { "code": "ABS", "label": "음이온계면활성제(ABS)", "aliases": ["ABS", "음이온계면활성제"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
+    { "code": "CCl4", "label": "사염화탄소", "aliases": ["사염화탄소"], "standards": [{ "averaging": "기준", "value": 0.004, "unit": "mg/L", "default": true }] },
+    { "code": "DCA", "label": "1,2-디클로로에탄", "aliases": ["1,2-디클로로에탄", "디클로로에탄"], "standards": [{ "averaging": "기준", "value": 0.03, "unit": "mg/L", "default": true }] },
+    { "code": "PCE", "label": "테트라클로로에틸렌(PCE)", "aliases": ["PCE", "테트라클로로에틸렌"], "standards": [{ "averaging": "기준", "value": 0.04, "unit": "mg/L", "default": true }] },
+    { "code": "DCM", "label": "디클로로메탄", "aliases": ["디클로로메탄"], "standards": [{ "averaging": "기준", "value": 0.02, "unit": "mg/L", "default": true }] },
+    { "code": "Benzene", "label": "벤젠", "aliases": ["벤젠"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
+    { "code": "Chloroform", "label": "클로로포름", "aliases": ["클로로포름"], "standards": [{ "averaging": "기준", "value": 0.08, "unit": "mg/L", "default": true }] },
+    { "code": "DEHP", "label": "디에틸헥실프탈레이트(DEHP)", "aliases": ["DEHP"], "standards": [{ "averaging": "기준", "value": 0.008, "unit": "mg/L", "default": true }] },
+    { "code": "Sb", "label": "안티몬", "aliases": ["안티몬", "Sb"], "standards": [{ "averaging": "기준", "value": 0.02, "unit": "mg/L", "default": true }] },
+    { "code": "Dioxane", "label": "1,4-다이옥세인", "aliases": ["1,4-다이옥세인", "다이옥세인"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
+    { "code": "Formaldehyde", "label": "포름알데히드", "aliases": ["포름알데히드"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
+    { "code": "HCB", "label": "헥사클로로벤젠", "aliases": ["헥사클로로벤젠"], "standards": [{ "averaging": "기준", "value": 0.00004, "unit": "mg/L", "default": true }] }
+  ],
+  "notes": [
+    "시안·수은·유기인·PCB는 원문상 '검출되어서는 안 됨'(검출한계 명시)이다 — 이 표에서는 판정 편의상 0으로 두었으니(측정값>0이면 초과) 실제 정성적 판정은 시험성적서의 불검출 여부로 별도 확인할 것.",
+    "호소수질의 사람건강보호기준은 이 표와 동일하다(원문 '가목1)과 같다')."
+  ]
+}

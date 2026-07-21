@@ -13,6 +13,11 @@ const FIELDS = [
   { code: "air", label: "대기질", file: "air.json" },
   { code: "noise", label: "소음", file: "noise.json" },
   { code: "vibration", label: "진동", file: "vibration.json" },
+  { code: "soil", label: "토양오염도", file: "soil.json" },
+  { code: "river_health", label: "하천(사람건강보호기준)", file: "river_health.json" },
+  { code: "river_life", label: "하천(생활환경기준)", file: "river_life.json" },
+  { code: "lake_health", label: "호소(사람건강보호기준)", file: "lake_health.json" },
+  { code: "lake_life", label: "호소(생활환경기준)", file: "lake_life.json" },
 ];
 
 function cssVar(name, fallback) {
@@ -89,11 +94,19 @@ export async function init(section, { toast, bridge, V }) {
   /* ── 상태 (모듈 전역이 아니라 init 클로저 — 탭은 1회만 init되므로 충분) ── */
   let rowSeq = 0, colSeq = 0;
   const isRegionMode = () => standards.type === "region";
+  // columnsFixed:false(토양) — 컬럼이 대기질처럼 항목 추가/삭제 가능. 소음·진동·등급형
+  // 수질(하천·호소)은 컬럼이 고정(day/night 또는 pH·BOD… 등 정해진 항목 세트)이라 true.
+  const columnsFixed = () => isRegionMode() && standards.columnsFixed !== false;
 
   function makeColumnFromItem(item) {
     const def = item.standards.find((s) => s.default) || item.standards[0];
     return { id: `c${++colSeq}`, code: item.code, label: item.label, unit: def?.unit || "",
              averaging: def?.averaging || null, custom: false, overrideValue: null, unitScale: 1 };
+  }
+  function makeColumnFromRegionItem(item) {
+    // 토양처럼 "지역구분(행)×항목(열)" 매트릭스인 경우 — 항목 자체가 지역별 값(values)을 가짐
+    return { id: `c${++colSeq}`, code: item.code, label: item.label, unit: item.unit || standards.unit || "",
+             custom: false, values: item.values };
   }
   function makeCustomColumn(label) {
     return { id: `c${++colSeq}`, code: null, label: label || `열${columns.length + 1}`,
@@ -105,7 +118,7 @@ export async function init(section, { toast, bridge, V }) {
   function initColumnsAndRows() {
     rowSeq = 0; colSeq = 0;
     if (isRegionMode()) {
-      columns = standards.periods.map(makePeriodColumn);
+      columns = columnsFixed() ? standards.periods.map(makePeriodColumn) : standards.items.map(makeColumnFromRegionItem);
       rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", region: standards.regions[0]?.code || null, values: {} }));
     } else {
       columns = standards.items.map(makeColumnFromItem);
@@ -142,25 +155,48 @@ export async function init(section, { toast, bridge, V }) {
     const scale = col.unitScale || 1;
     return scale === 1000 ? { ...raw, value: raw.value * 1000, unit: "ppb" } : raw;
   }
+  /* 판정 방향 — 대부분 "이하"(max)지만 등급형 수질은 항목마다 다르다:
+     DO(용존산소)는 "이상"(min), pH는 범위(range: [최소,최대]). */
+  function isExceed(std, value) {
+    if (!std || value == null) return false;
+    const dir = std.direction || "max";
+    if (dir === "range") { const [mn, mx] = std.value; return value < mn || value > mx; }
+    if (dir === "min") return value < std.value;
+    return value > std.value;
+  }
+  function fmtStd(std) {
+    if (!std) return "";
+    if (std.direction === "range") return `${std.value[0]}~${std.value[1]}${std.unit}`;
+    return `${std.value}${std.unit}${std.direction === "min" ? " 이상" : " 이하"}`;
+  }
   function effectiveStandard(col, row) {
     if (isRegionMode()) {
       const region = standards.regions.find((r) => r.code === row?.region);
       if (!region) return null;
-      const val = region[col.code];
-      return val != null ? { value: val, unit: standards.unit, averaging: region.label, source: "db" } : null;
+      if (!columnsFixed()) {
+        // 토양형 — 항목(컬럼) 자신이 지역구분별 값을 갖는다
+        const val = col.values?.[row.region];
+        return val != null ? { value: val, unit: col.unit || standards.unit || "", averaging: region.label, source: "db", direction: "max" } : null;
+      }
+      const period = standards.periods.find((p) => p.code === col.code);
+      const raw = region[col.code];
+      if (raw == null) return null;
+      const isRange = Array.isArray(raw);
+      return { value: raw, unit: period?.unit || standards.unit || "", averaging: region.label,
+               source: "db", direction: isRange ? "range" : (period?.direction || "max") };
     }
     const db = dbStandard(col);
     if (col.overrideValue != null)
       return { value: col.overrideValue, unit: db?.unit || (col.unitScale === 1000 ? "ppb" : col.unit) || "",
-                averaging: db?.averaging || "사용자지정", source: "custom" };
-    if (db) return { ...db, source: "db" };
+                averaging: db?.averaging || "사용자지정", source: "custom", direction: "max" };
+    if (db) return { ...db, source: "db", direction: "max" };
     return null;
   }
   function judge(col, row, value) {
     if (value == null) return "";
     const std = effectiveStandard(col, row);
     if (!std) return "ed-nostd";
-    return value > std.value ? "ed-exceed" : "ed-ok";
+    return isExceed(std, value) ? "ed-exceed" : "ed-ok";
   }
 
   /* ── 마크업 ────────────────────────────────────────────────────────── */
@@ -239,12 +275,12 @@ export async function init(section, { toast, bridge, V }) {
     $("#ed-desc").textContent = isRegionMode()
       ? `측정 결과를 표에 입력하면 ${standards.legal_basis} 기준 초과 여부를 지점별 지역구분에 따라 자동 판별하고 그래프를 그립니다. xlsx·csv 업로드, 붙여넣기, 표 직접 입력을 모두 지원합니다.`
       : `측정 결과를 표에 입력하면 ${standards.legal_basis} 초과 여부를 자동 판별하고 항목별 그래프를 그립니다. xlsx·csv 업로드, 엑셀에서 복사한 내용 붙여넣기, 표 직접 입력을 모두 지원합니다. HWP·PDF 등록문서 자동인식은 브리지 연동 다음 업데이트에서 지원됩니다.`;
-    $("#ed-add-item").parentElement.style.display = isRegionMode() ? "none" : "";
+    $("#ed-add-item").parentElement.style.display = columnsFixed() ? "none" : "";
   }
 
   /* ── 항목 추가 셀렉트 채우기 (item 모드 전용) ─────────────────────── */
   function refreshAddSelect() {
-    if (isRegionMode()) return;
+    if (columnsFixed()) return;
     const sel = $("#ed-add-item");
     const used = new Set(columns.filter((c) => !c.custom).map((c) => c.code));
     sel.innerHTML = `<option value="">+ 항목 추가…</option>`
@@ -326,7 +362,7 @@ export async function init(section, { toast, bridge, V }) {
 
     if (isRegionMode()) {
       const regionTh = document.createElement("th");
-      regionTh.textContent = "지역구분";
+      regionTh.textContent = standards.regionLabel || "지역구분";
       regionTh.style.width = regionColWidth || "210px";
       addResizer(regionTh, (w) => { regionColWidth = w; });
       thead.appendChild(regionTh);
@@ -337,10 +373,29 @@ export async function init(section, { toast, bridge, V }) {
       th.dataset.col = col.id;
       th.style.width = col.width || "128px";
 
-      if (isRegionMode()) {
+      if (isRegionMode() && columnsFixed()) {
+        // 소음·진동·등급형 수질 — 컬럼이 고정(시간대/항목 세트)이라 삭제·평균시간 선택 없음
         th.title = "";
         th.innerHTML = `<div class="ed-col-label">${escapeHtml(col.label)}${standards.unit ? ` <span class="ed-unit">(${escapeHtml(standards.unit)})</span>` : ""}</div>`;
         addResizer(th, (w) => { col.width = w; });
+        thead.appendChild(th);
+        continue;
+      }
+      if (isRegionMode() && !columnsFixed()) {
+        // 토양형 — 대기질처럼 항목 추가·삭제·드래그는 되지만 지역구분별로 기준이 갈려
+        // 컬럼 하나에 고정된 "기준" 입력은 의미가 없다(행마다 다른 값을 봐야 한다).
+        th.title = "드래그해서 항목 순서 변경";
+        th.innerHTML = `
+          <div class="ed-col-grip">⋮⋮</div>
+          <div class="ed-col-label">${escapeHtml(col.label)}${col.unit ? ` <span class="ed-unit">(${escapeHtml(col.unit)})</span>` : ""}</div>
+          <button type="button" class="ed-col-del" title="항목 삭제">×</button>`;
+        attachColDrag(th, col);
+        addResizer(th, (w) => { col.width = w; });
+        th.querySelector(".ed-col-del").addEventListener("click", () => {
+          columns = columns.filter((c) => c.id !== col.id);
+          rows.forEach((r) => delete r.values[col.id]);
+          refreshAddSelect(); renderGrid(); scheduleCharts();
+        });
         thead.appendChild(th);
         continue;
       }
@@ -458,7 +513,7 @@ export async function init(section, { toast, bridge, V }) {
         const val = row.values[col.id];
         td.className = `ed-cell ${judge(col, row, val)}`;
         const std = effectiveStandard(col, row);
-        if (std) td.title = `기준 ${std.value}${std.unit}`;
+        if (std) td.title = `기준 ${fmtStd(std)}`;
         td.contentEditable = "true";
         td.dataset.row = row.id;
         td.dataset.col = col.id;
@@ -524,7 +579,7 @@ export async function init(section, { toast, bridge, V }) {
     const startRowIdx = rows.findIndex((r) => r.id === target.dataset.row);
     const startColIdx = columns.findIndex((c) => c.id === target.dataset.col);
     const baseColIdx = target.dataset.col === "-1" ? -1 : startColIdx;
-    const regionMode = isRegionMode();
+    const fixedCols = columnsFixed();
 
     grid.forEach((line, ri) => {
       const row = ensureRowAt(startRowIdx + ri);
@@ -532,8 +587,8 @@ export async function init(section, { toast, bridge, V }) {
         const colIdx = baseColIdx + ci;
         const text2 = cellText.trim();
         if (colIdx === -1) { row.label = text2; return; }
-        if (regionMode) {
-          if (colIdx < 0 || colIdx >= columns.length) return; // 열이 고정(낮/밤)이라 초과분은 무시
+        if (fixedCols) {
+          if (colIdx < 0 || colIdx >= columns.length) return; // 열이 고정(예: 낮/밤)이라 초과분은 무시
         } else {
           while (columns.length <= colIdx) ensureCustomColumn(`열${columns.length + 1}`);
         }
@@ -549,13 +604,14 @@ export async function init(section, { toast, bridge, V }) {
     if (!aoa.length) { toast("빈 파일입니다", "fail"); return; }
     const header = aoa[0];
     const regionMode = isRegionMode();
-    const newColumns = regionMode ? standards.periods.map(makePeriodColumn) : [];
-    if (!regionMode) {
+    const fixedCols = columnsFixed();
+    const newColumns = fixedCols ? standards.periods.map(makePeriodColumn) : [];
+    if (!fixedCols) {
       for (let i = 1; i < header.length; i++) {
         const h = String(header[i] || "").trim();
         if (!h) continue;
         const item = findItemByAlias(standards, h);
-        newColumns.push(item ? makeColumnFromItem(item) : makeCustomColumn(h));
+        newColumns.push(item ? (regionMode ? makeColumnFromRegionItem(item) : makeColumnFromItem(item)) : makeCustomColumn(h));
       }
     }
     const newRows = [];
@@ -564,8 +620,8 @@ export async function init(section, { toast, bridge, V }) {
       const label = String(line[0] || "").trim();
       if (!label) continue;
       const values = {};
-      if (regionMode) {
-        // 헤더에서 항목열의 위치를 낮/밤 별칭으로 찾는다(못 찾으면 순서대로 배정)
+      if (fixedCols) {
+        // 헤더에서 항목열의 위치를 낮/밤 등 별칭으로 찾는다(못 찾으면 순서대로 배정)
         newColumns.forEach((col, ci) => {
           const hi = header.findIndex((h, idx) => idx > 0 && findPeriodByAlias(standards, h)?.code === col.code);
           const val = hi > 0 ? line[hi] : line[ci + 1];
@@ -632,13 +688,13 @@ export async function init(section, { toast, bridge, V }) {
       const canvas = card.querySelector("canvas");
       // item 모드는 전 지점 공통 기준 1개, region 모드는 지점(row)마다 다른 기준
       const stdOf = (i) => effectiveStandard(col, regionMode ? rows[i] : null);
-      const colors = data.map((v, i) => { const s = stdOf(i); return (s && v != null && v > s.value) ? failColor : chartColor; });
+      const colors = data.map((v, i) => (isExceed(stdOf(i), v) ? failColor : chartColor));
       const singleStd = !regionMode ? effectiveStandard(col, null) : null;
-      const annotations = singleStd ? {
+      const annotations = (singleStd && singleStd.direction !== "range") ? {
         stdLine: {
           type: "line", yMin: singleStd.value, yMax: singleStd.value,
           borderColor: cssVar("--warn", "#c98a1c"), borderWidth: 2, borderDash: [6, 4],
-          label: { display: true, content: `기준 ${singleStd.value}${singleStd.unit}(${singleStd.averaging}${singleStd.source === "custom" ? "·사용자지정" : ""})`,
+          label: { display: true, content: `기준 ${fmtStd(singleStd)}(${singleStd.averaging}${singleStd.source === "custom" ? "·사용자지정" : ""})`,
                     position: "end", backgroundColor: cssVar("--warn", "#c98a1c"), color: "#fff", font: { size: 10 } },
         },
       } : {};
@@ -658,7 +714,7 @@ export async function init(section, { toast, bridge, V }) {
             annotation: { annotations },
             tooltip: regionMode ? {
               callbacks: {
-                afterLabel: (ctx) => { const s = stdOf(ctx.dataIndex); return s ? `기준 ${s.value}${s.unit} (${s.averaging})` : "기준 미등록"; },
+                afterLabel: (ctx) => { const s = stdOf(ctx.dataIndex); return s ? `기준 ${fmtStd(s)} (${s.averaging})` : "기준 미등록"; },
               },
             } : undefined,
           },
@@ -715,7 +771,7 @@ export async function init(section, { toast, bridge, V }) {
       if (name && name.trim()) ensureCustomColumn(name.trim());
     } else {
       const item = standards.items.find((i) => i.code === v);
-      columns.push(makeColumnFromItem(item));
+      columns.push(isRegionMode() ? makeColumnFromRegionItem(item) : makeColumnFromItem(item));
     }
     e.target.value = "";
     refreshAddSelect(); renderGrid(); scheduleCharts();
