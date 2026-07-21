@@ -344,3 +344,30 @@ input:focus, textarea:focus, select:focus {
   .panel { padding: var(--space-4) var(--space-4) var(--space-5); }
   .panel h2 { font-size: var(--text-lg); }
 }
+
+/* ── md 변환: 본문 + 우측 참고 카드 ────────────────────────────────
+   넓은 화면에서만 2단. 좁아지면 표가 본문 아래로 내려간다. */
+.md-layout { display: grid; gap: var(--space-4); align-items: start; }
+@media (min-width: 1100px) {
+  .md-layout { grid-template-columns: minmax(0, 1fr) 340px; }
+  .md-side { position: sticky; top: var(--space-4); }
+}
+.md-side .panel { margin-bottom: 0; }
+
+/* 지원 범위 표 — 값이 한눈에 갈리도록 기호에만 색을 준다 */
+.cap-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.cap-table th, .cap-table td {
+  padding: 7px 6px; border-bottom: 1px solid var(--border); text-align: left;
+}
+.cap-table thead th {
+  font-size: var(--text-xs); font-weight: 600; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong); white-space: nowrap;
+}
+.cap-table tbody th { font-weight: 400; color: var(--text); }
+.cap-table .num { text-align: center; }
+.cap-table code { font-size: .85em; }
+.cap-table tbody tr:last-child th,
+.cap-table tbody tr:last-child td { border-bottom: 0; }
+.cap-y { color: var(--ok); font-weight: 700; }
+.cap-n { color: var(--text-dim); }
+.cap-p { color: var(--text-muted); font-size: var(--text-xs); }

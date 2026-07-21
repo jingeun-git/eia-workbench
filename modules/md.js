@@ -182,7 +182,41 @@ function detectGarbledHangul(text) {
 /* ══ UI ══════════════════════════════════════════════════════════════ */
 
 export function init(section, { bridge, toast }) {
+  /* 형식별 지원 범위 — **코드에서 확인한 사실만 적는다.**
+     쪽번호는 pdf_to_markdown이 '## Page N'을 넣는 PDF에만 있고,
+     한글·Word는 쪽 나눔이 파일에 저장되지 않아 원리상 불가능하다.
+     표: HWPX <hp:tbl> · PDF find_tables() · Excel DataFrame · Word docx.table
+         (HWP는 pyhwp/COM이 평문만 뽑아 표가 문장으로 흩어진다) */
+  const CAPS = [
+    ["", "HWP", "HWPX", "PDF", "Excel", "Word"],
+    ["쪽번호 <code>## Page N</code>", 0, 0, 1, 0, 0],
+    ["표 → 마크다운 표", 0, 1, 1, 1, 1],
+    ["제목·목차(헤딩)", 0, 1, 1, "시트명", 1],
+    ["스캔 문서 OCR", "—", "—", 1, "—", "—"],
+    ["브라우저만으로 변환", 0, 0, 1, 1, 1],
+  ];
+  const cell = (v) =>
+    v === 1 ? '<span class="cap-y">○</span>' :
+    v === 0 ? '<span class="cap-n">✕</span>' :
+    `<span class="cap-p">${v}</span>`;
+  const capTable = `
+    <table class="cap-table">
+      <thead><tr>${CAPS[0].map((h, i) => `<th${i ? ' class="num"' : ""}>${h}</th>`).join("")}</tr></thead>
+      <tbody>${CAPS.slice(1).map((r) =>
+        `<tr><th>${r[0]}</th>${r.slice(1).map((v) => `<td class="num">${cell(v)}</td>`).join("")}</tr>`
+      ).join("")}</tbody>
+    </table>
+    <p class="help" style="margin-top:8px">
+      <b>쪽번호가 PDF에만 있는 이유</b> — 한글·Word는 쪽 나눔을 파일에 저장하지 않고
+      프로그램이 화면에 그릴 때 정합니다. 그래서 파일을 읽는 방식으로는 알 수 없습니다.
+      검토 지적처럼 <b>"몇 쪽인지"가 필요하면 PDF로 변환한 뒤 MD 변환</b>하세요.
+    </p>
+    <p class="help"><b>HWP와 HWPX가 다릅니다</b> — HWPX는 내부가 XML이라 목차·표를 그대로 읽지만,
+      구형 HWP는 평문만 추출돼 표가 문장으로 흩어집니다. 가능하면 HWPX로 저장해 변환하세요.</p>`;
+
   section.innerHTML = `
+  <div class="md-layout">
+  <div class="md-main">
   <div class="panel">
     <h2>문서 → 마크다운 변환</h2>
     <p class="desc">PDF·Word·Excel을 브라우저 안에서 마크다운으로 변환합니다 (파일은 업로드되지 않습니다).
@@ -256,6 +290,16 @@ export function init(section, { bridge, toast }) {
       </div>
       <div class="log" id="mb-log" aria-live="polite"></div>
     </div>
+  </div>
+  </div>
+
+  <aside class="md-side">
+    <div class="panel">
+      <h2 style="font-size:var(--text-base)">형식별 지원 범위</h2>
+      <p class="desc" style="margin-bottom:var(--space-3)">같은 문서라도 원본 형식에 따라 살릴 수 있는 정보가 다릅니다.</p>
+      ${capTable}
+    </div>
+  </aside>
   </div>`;
 
   const $ = (s) => section.querySelector(s);
