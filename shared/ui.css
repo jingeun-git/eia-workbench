@@ -907,6 +907,15 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); flex-shrink: 0; width: auto; }
 .ed-item-slice-info input[type="number"] { width: 70px; text-align: center; }
 
+/* 토양 우려/대책기준 전환 토글 — 표 전체 단위(지점별 아님, 2026-07-22) */
+.ed-soil-mode { display: flex; gap: 4px; flex-shrink: 0; }
+.ed-soil-mode-btn {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); border-radius: 999px; padding: 3px 12px; font-size: var(--text-xs);
+  cursor: pointer; white-space: nowrap;
+}
+.ed-soil-mode-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: var(--weight-semibold); }
+
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
 /* 전역 input[type=number] 기본룰(163행, width:100%+height:var(--input-height))이 명시도(attribute
    셀렉터)가 더 높아 클래스단독 셀렉터를 이겨버린다 — input.ed-slider-num으로 태그를 붙여
@@ -1040,6 +1049,15 @@ body.ed-resizing * { cursor: col-resize !important; }
 .ed-region-cell { min-width: 140px; }
 .ed-region-select {
   width: 100%; height: 30px; font-size: var(--text-xs); padding: 0 4px;
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--input-border); border-radius: 4px;
+}
+.ed-region-select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 관련기준(소음·진동 지점별 standardKey) 선택 + 생활소음일 때만 나오는 소음원 선택 —
+   한 셀에 세로로 쌓는다(2026-07-22, 조사지점 단위로만 적용, 항목·회차 단위 아님). */
+.ed-standard-cell { min-width: 120px; display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+.ed-standard-select, .ed-noisesource-select {
+  width: 100%; height: 26px; font-size: var(--text-xs); padding: 0 4px;
   background: var(--input-bg); color: var(--text); border: 1px solid var(--input-border); border-radius: 4px;
 }
 

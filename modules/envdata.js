@@ -209,11 +209,15 @@ export async function init(section, { toast, bridge, V }) {
   function makePeriodColumn(period) {
     return { id: `c${++colSeq}`, code: period.code, label: period.label, fixed: true };
   }
+  // standardKey — 조사지점(행/site)이 어떤 관련기준(환경기준=main 또는 additionalStandards의
+  // key)으로 판정받을지. noiseSource는 소음의 "생활소음" 기준을 고를 때만 쓰는 소음원 축.
+  // 지점의 속성이라 region과 동일하게 지점 단위로만 붙는다(항목·회차 단위 아님, 2026-07-22 사용자 확정).
+  function defaultRowFields() { return { standardKey: "main", noiseSource: null }; }
   function initColumnsAndRows() {
     rowSeq = 0; colSeq = 0;
     if (isRegionMode()) {
       columns = columnsFixed() ? standards.periods.map(makePeriodColumn) : standards.items.map(makeColumnFromRegionItem);
-      rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", region: standards.regions[0]?.code || null, values: {} }));
+      rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", region: standards.regions[0]?.code || null, ...defaultRowFields(), values: {} }));
     } else {
       columns = standards.items.map(makeColumnFromItem);
       rows = [1, 2, 3].map(() => ({ id: `r${++rowSeq}`, label: "", values: {} }));
@@ -243,6 +247,7 @@ export async function init(section, { toast, bridge, V }) {
   let savedSingle = null; // 다중분석 전환 시 단일분석 columns/rows를 잠시 보관
   let currentEditRoundId = null; // multiViewMode==="newRound"일 때 지금 채우고 있는 회차 id
   let refTabIndex = 0; // 분야별 기준값 패널 — 근거법령이 여럿일 때 탭 인덱스(분야 전환 시 0으로 리셋)
+  let soilStandardMode = "concern"; // 토양 전용 — "concern"(우려기준) | "action"(대책기준), 표 전체 단위 토글
   const defaultChartColor = cssVar("--accent", "#2f6fed");
   /* 그래프 옵션은 전역이 아니라 컬럼(항목)마다 따로 갖는다 — "그래프별 개별 설정"
      요청 반영. 처음 렌더될 때 col.chartOpts가 없으면 기본값으로 채운다. */
@@ -300,21 +305,98 @@ export async function init(section, { toast, bridge, V }) {
   // 지역이 열마다 달라진다 — 그때는 컬럼에 fixedRegion을 미리 못박아두고 우선 사용한다.
   // 단일분석 컬럼은 fixedRegion이 없으므로 항상 row.region으로 폴백(기존 동작 무변경).
   function regionOf(col, row) { return col.fixedRegion || row?.region; }
+  // standardKey/noiseSource도 region과 동일한 패턴 — 항목슬라이스 컬럼은 fixed*로 못박고,
+  // 그 외(단일분석·지점슬라이스·새회차)는 row(=지점)의 속성을 그대로 쓴다.
+  function standardKeyOf(col, row) { return col.fixedStandardKey || row?.standardKey || "main"; }
+  function noiseSourceOf(col, row) { return col.fixedNoiseSource ?? row?.noiseSource ?? null; }
+  // 관련기준(standardKey) 선택지 — 메인 기준(환경기준류) + additionalStandards 각 항목.
+  function standardOptions() {
+    return [{ key: "main", label: standards.mainTitle || "환경기준" },
+      ...(standards.additionalStandards || []).map((e) => ({ key: e.key, label: e.shortTitle || e.title }))];
+  }
+  // 선택된 관련기준에 맞는 지역구분 선택지 — main이면 standards.regions(가~라 등),
+  // additionalStandard면 그 항목의 regionLegend(가/나), 없으면(축사) 빈 배열(선택창 비활성화).
+  function regionOptionsFor(skey) {
+    skey = skey || "main"; // row.standardKey가 없는(구버전 데이터·다른 분야) 행은 main으로 취급
+    if (skey === "main") return standards.regions.map((r) => ({ code: r.code, label: r.label }));
+    const extra = standards.additionalStandards?.find((e) => e.key === skey);
+    if (!extra?.regionLegend) return [];
+    return Object.entries(extra.regionLegend).map(([code, label]) => ({ code, label: `${code}. ${label}` }));
+  }
+  // 생활소음을 골랐을 때만 필요한 소음원 선택지 — JSON rows에서 (소음원,세부) 조합을 그대로 추출.
+  function noiseSourceOptionsFor(skey) {
+    if (skey !== "living") return [];
+    const extra = standards.additionalStandards?.find((e) => e.key === "living");
+    if (!extra) return [];
+    const seen = new Set(), opts = [];
+    for (const r of extra.rows) {
+      const key = `${r[1]}::${r[2]}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      opts.push({ key, label: r[2] !== "—" ? `${r[1]}-${r[2]}` : r[1] });
+    }
+    return opts;
+  }
+  // 소음·진동에서 "관련기준"으로 환경기준이 아닌 도로·철도·생활소음·축사를 고른 지점의
+  // 값 조회 — additionalStandards[].rows를 지역(+생활소음이면 소음원)으로 매칭한다.
+  // rows shape: 도로/철도=[지역,주간,야간], 생활소음=[지역,소음원,세부,아침저녁,주간,야간],
+  // 축사=[구분,값,단위,비고](지역 없음, 소음/진동 필드별로 해당 구분명만 조회).
+  function altStandardValue(skey, col, row) {
+    const extra = standards.additionalStandards?.find((e) => e.key === skey);
+    if (!extra) return null;
+    const isDay = col.code === "day";
+    if (skey === "livestock") {
+      const label = standards.field === "소음" ? "가축피해 소음" : "가축피해 진동";
+      const hit = extra.rows.find((r) => r[0] === label);
+      if (!hit) return null;
+      return { value: hit[1], unit: hit[2], averaging: extra.shortTitle || extra.title, source: "db", direction: "max" };
+    }
+    const rcode = regionOf(col, row);
+    if (!rcode) return null;
+    if (skey === "living") {
+      const src = noiseSourceOf(col, row);
+      if (!src) return null;
+      const [srcMain, srcSub] = src.split("::");
+      const hit = extra.rows.find((r) => r[0] === rcode && r[1] === srcMain && r[2] === srcSub);
+      if (!hit) return null;
+      // [지역,소음원,세부,아침저녁,주간,야간] — 아침저녁(3)은 표 열 구조(낮/밤 2칸)와 안 맞아
+      // 구현 범위 밖(사용자 지시, 2026-07-22) — 주간(4)→낮, 야간(5)→밤에 매핑.
+      const val = isDay ? hit[4] : hit[5];
+      return { value: val, unit: standards.unit || "dB(A)", averaging: `${rcode}지역·${srcMain}${srcSub !== "—" ? "-" + srcSub : ""}`, source: "db", direction: "max" };
+    }
+    // road / rail: [지역,주간,야간]
+    const hit = extra.rows.find((r) => r[0] === rcode);
+    if (!hit) return null;
+    const val = isDay ? hit[1] : hit[2];
+    return { value: val, unit: standards.unit || "", averaging: `${rcode}지역(${extra.shortTitle})`, source: "db", direction: "max" };
+  }
   function effectiveStandard(col, row) {
     if (isRegionMode()) {
+      if (columnsFixed()) {
+        const skey = standardKeyOf(col, row);
+        if (skey !== "main") return altStandardValue(skey, col, row);
+        const region = standards.regions.find((r) => r.code === regionOf(col, row));
+        if (!region) return null;
+        const period = standards.periods.find((p) => p.code === col.code);
+        const raw = region[col.code];
+        if (raw == null) return null;
+        const isRange = Array.isArray(raw);
+        return { value: raw, unit: period?.unit || standards.unit || "", averaging: region.label,
+                 source: "db", direction: isRange ? "range" : (period?.direction || "max") };
+      }
+      // 토양형 — 항목(컬럼) 자신이 지역구분별 값을 갖는다. 우려/대책 두 기준을 한 셀에
+      // 늘 함께 보여주던 방식을 폐지하고, 표 상단 토글(soilStandardMode)로 하나만 판정한다
+      // (사용자 지시, 2026-07-22 — "선택형으로 전환, 우려 또는 대책 하나만 보기").
       const region = standards.regions.find((r) => r.code === regionOf(col, row));
       if (!region) return null;
-      if (!columnsFixed()) {
-        // 토양형 — 항목(컬럼) 자신이 지역구분별 값을 갖는다
-        const val = col.values?.[regionOf(col, row)];
-        return val != null ? { value: val, unit: col.unit || standards.unit || "", averaging: region.label, source: "db", direction: "max" } : null;
-      }
-      const period = standards.periods.find((p) => p.code === col.code);
-      const raw = region[col.code];
-      if (raw == null) return null;
-      const isRange = Array.isArray(raw);
-      return { value: raw, unit: period?.unit || standards.unit || "", averaging: region.label,
-               source: "db", direction: isRange ? "range" : (period?.direction || "max") };
+      const dual = standards.dualStandard;
+      const useAction = dual && soilStandardMode === "action";
+      const map = useAction ? col[dual.action] : col.values;
+      const val = map?.[regionOf(col, row)];
+      const label = dual ? (useAction ? dual.actionLabel : dual.concernLabel) : null;
+      return val != null
+        ? { value: val, unit: col.unit || standards.unit || "", averaging: label ? `${region.label} · ${label}` : region.label, source: "db", direction: "max" }
+        : null;
     }
     const db = dbStandard(col);
     if (col.overrideValue != null)
@@ -323,30 +405,18 @@ export async function init(section, { toast, bridge, V }) {
     if (db) return { ...db, source: "db", direction: db.direction || "max" };
     return null;
   }
-  /* 토양처럼 우려기준·대책기준이 함께 있는 분야 — 대책기준(더 엄격도가 낮은 상위 임계값) */
-  function secondaryStandard(col, row) {
-    const dual = standards.dualStandard;
-    if (!dual || !isRegionMode() || columnsFixed()) return null;
-    const val = col[dual.action]?.[regionOf(col, row)];
-    if (val == null) return null;
-    const region = standards.regions.find((r) => r.code === regionOf(col, row));
-    return { value: val, unit: col.unit || standards.unit || "", averaging: region?.label, source: "db", direction: "max" };
-  }
   function tooltipFor(col, row) {
     const std = effectiveStandard(col, row);
     if (!std) return "";
-    const std2 = secondaryStandard(col, row);
-    if (std2) return `${standards.dualStandard.concernLabel} ${fmtStd(std)} / ${standards.dualStandard.actionLabel} ${fmtStd(std2)}`;
     return `기준 ${fmtStd(std)}`;
   }
-  /* 판정 등급: -2=기준미등록 -1=값없음 0=정상 1=1차기준초과(우려기준 등) 2=2차기준초과(대책기준) */
+  /* 판정 등급: -2=기준미등록 -1=값없음 0=정상 1=초과 2=대책기준 초과(토양, 표준선택=대책일 때만) */
   function judgeLevel(col, row, value) {
     if (value == null) return -1;
     const std = effectiveStandard(col, row);
     if (!std) return -2;
-    const std2 = secondaryStandard(col, row);
-    if (std2 && isExceed(std2, value)) return 2;
-    return isExceed(std, value) ? 1 : 0;
+    if (!isExceed(std, value)) return 0;
+    return (isRegionMode() && !columnsFixed() && standards.dualStandard && soilStandardMode === "action") ? 2 : 1;
   }
   function judge(col, row, value) {
     const lvl = judgeLevel(col, row, value);
@@ -418,6 +488,7 @@ export async function init(section, { toast, bridge, V }) {
       <h3 style="margin:0">표</h3>
       <div style="display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap">
         <div class="ed-item-slice-info" id="ed-item-slice-info" style="display:none"></div>
+        <div class="ed-soil-mode" id="ed-soil-mode" style="display:none"></div>
         <label class="ed-chk-label">글자크기
           <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px">
           <input type="number" id="ed-font-size-num" min="70" max="150" value="100" class="ed-slider-num">%
@@ -643,7 +714,7 @@ export async function init(section, { toast, bridge, V }) {
   function addSiteToProject() {
     const label = prompt("추가할 조사지점 이름을 입력하세요");
     if (!label || !label.trim()) return;
-    activeProject.sites.push({ code: `s${Date.now()}`, label: label.trim(), region: standards.regions?.[0]?.code || null });
+    activeProject.sites.push({ code: `s${Date.now()}`, label: label.trim(), region: standards.regions?.[0]?.code || null, ...defaultRowFields() });
     saveProjects(FIELDS[fieldIdx].code, projects);
     renderSliceBanner();
     toast(`"${label.trim()}" 지점이 추가되었습니다`, "ok");
@@ -703,6 +774,25 @@ export async function init(section, { toast, bridge, V }) {
     });
   }
 
+  // 토양 우려/대책기준 전환 — 지점별이 아니라 표 전체 단위 토글이다(사용자 확정, 2026-07-22).
+  // 지역구분(1/2/3지역)은 우려·대책 양쪽에 법령상 완전히 동일해 지점 속성은 그대로 두고
+  // "그 지역에 어느 기준값 세트를 적용할지"만 바꾸는 것이라 표 전체 토글이 맞는 단위다.
+  function renderSoilModeToggle() {
+    const el = $("#ed-soil-mode");
+    if (!standards.dualStandard) { el.style.display = "none"; return; }
+    el.style.display = "";
+    const dual = standards.dualStandard;
+    el.innerHTML = `
+      <button type="button" class="ed-soil-mode-btn" data-mode="concern" aria-pressed="${soilStandardMode === "concern"}">${escapeHtml(dual.concernLabel)}</button>
+      <button type="button" class="ed-soil-mode-btn" data-mode="action" aria-pressed="${soilStandardMode === "action"}">${escapeHtml(dual.actionLabel)}</button>`;
+    el.querySelectorAll(".ed-soil-mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        soilStandardMode = btn.dataset.mode;
+        renderGrid(); scheduleCharts();
+      });
+    });
+  }
+
   function buildSliceColumnsAndRows() {
     const proj = activeProject;
     if (sliceAxis === "site") {
@@ -715,6 +805,7 @@ export async function init(section, { toast, bridge, V }) {
           });
       rows = proj.rounds.map((r) => ({
         id: r.id, label: r.label, region: site?.region || null,
+        standardKey: site?.standardKey || "main", noiseSource: site?.noiseSource || null,
         values: Object.fromEntries(columns.map((c) => [c.id, r.values[site?.code]?.[c.code] ?? null])),
       }));
     } else {
@@ -724,6 +815,8 @@ export async function init(section, { toast, bridge, V }) {
         base.label = site.label;
         base.siteCode = site.code;
         base.fixedRegion = site.region;
+        base.fixedStandardKey = site.standardKey || "main";
+        base.fixedNoiseSource = site.noiseSource || null;
         return base;
       });
       rows = proj.rounds.map((r) => ({
@@ -741,7 +834,11 @@ export async function init(section, { toast, bridge, V }) {
           const item = standards.items.find((i) => i.code === code);
           return isRegionMode() ? makeColumnFromRegionItem(item) : makeColumnFromItem(item);
         });
-    rows = proj.sites.map((site) => ({ id: site.code, label: site.label, region: site.region, values: {} }));
+    rows = proj.sites.map((site) => ({
+      id: site.code, label: site.label, region: site.region,
+      standardKey: site.standardKey || "main", noiseSource: site.noiseSource || null,
+      values: {},
+    }));
   }
 
   // 슬라이스 뷰(과거 회차) 셀을 고치면 프로젝트 큐브에도 즉시 되쓴다 — 읽기전용이면
@@ -756,6 +853,8 @@ export async function init(section, { toast, bridge, V }) {
       for (const row of rows) { // row = 지점(row.id = site.code)
         const site = activeProject.sites.find((s) => s.code === row.id);
         if (site && row.region != null) site.region = row.region;
+        if (site && row.standardKey != null) site.standardKey = row.standardKey;
+        if (site) site.noiseSource = row.noiseSource ?? null;
         round.values[row.id] = round.values[row.id] || {};
         for (const col of columns) round.values[row.id][col.code] = row.values[col.id] ?? null;
       }
@@ -769,6 +868,10 @@ export async function init(section, { toast, bridge, V }) {
       const site = activeProject.sites.find((s) => s.code === sliceKey);
       const changed = rows.find((r) => r.region != null && r.region !== site?.region);
       if (site && changed) site.region = changed.region;
+      const stdChanged = rows.find((r) => r.standardKey != null && r.standardKey !== site?.standardKey);
+      if (site && stdChanged) site.standardKey = stdChanged.standardKey;
+      const srcChanged = rows.find((r) => r.noiseSource !== undefined && r.noiseSource !== site?.noiseSource);
+      if (site && srcChanged) site.noiseSource = srcChanged.noiseSource;
     }
     for (const row of rows) {
       const round = activeProject.rounds.find((r) => r.id === row.id);
@@ -901,7 +1004,7 @@ export async function init(section, { toast, bridge, V }) {
     if (!name) { toast("프로젝트명을 입력해주세요", "warn"); return; }
     if (!siteNames.length) { toast("조사지점을 1개 이상 입력해주세요", "warn"); return; }
     const defaultRegion = standards.regions?.[0]?.code || null;
-    const sites = siteNames.map((label, i) => ({ code: `s${Date.now()}_${i}`, label, region: defaultRegion }));
+    const sites = siteNames.map((label, i) => ({ code: `s${Date.now()}_${i}`, label, region: defaultRegion, ...defaultRowFields() }));
     let itemCodes = [];
     if (!columnsFixed()) {
       itemCodes = [...$("#ed-np-items").querySelectorAll("input:checked")].map((el) => el.value);
@@ -984,8 +1087,58 @@ export async function init(section, { toast, bridge, V }) {
     });
   }
 
+  // 관련기준(select) + 생활소음일 때만 나오는 소음원(select) — 한 셀 안에 같이 둔다.
+  // 컬럼 수를 그때그때 바꾸면(사용자에 따라 소음원 열이 생기고 없어지고) 헤더 칸수가
+  // 안 맞는 사고가 재발하므로(2026-07-22 comment 참조), 열 자체는 고정하고 셀 내부만 바뀐다.
+  function buildStandardCell(row, onChange) {
+    const td = document.createElement("td");
+    td.className = "ed-standard-cell";
+    const stdSel = document.createElement("select");
+    stdSel.className = "ed-standard-select";
+    stdSel.innerHTML = standardOptions().map((o) =>
+      `<option value="${o.key}" ${o.key === row.standardKey ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("");
+    td.appendChild(stdSel);
+    const srcOpts = noiseSourceOptionsFor(row.standardKey);
+    const srcSel = document.createElement("select");
+    srcSel.className = "ed-noisesource-select";
+    srcSel.style.display = srcOpts.length ? "" : "none";
+    srcSel.innerHTML = srcOpts.map((o) =>
+      `<option value="${o.key}" ${o.key === row.noiseSource ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("");
+    td.appendChild(srcSel);
+    stdSel.addEventListener("change", () => {
+      row.standardKey = stdSel.value;
+      const regOpts = regionOptionsFor(row.standardKey);
+      row.region = regOpts[0]?.code ?? null;
+      const newSrcOpts = noiseSourceOptionsFor(row.standardKey);
+      row.noiseSource = newSrcOpts[0]?.key ?? null;
+      onChange();
+    });
+    srcSel.addEventListener("change", () => { row.noiseSource = srcSel.value; onChange(); });
+    return td;
+  }
+  // 지역구분 select — 관련기준에 따라 옵션 목록이 바뀌거나(도로/철도/생활소음=가·나)
+  // 아예 없어져(축사) 비활성화된다. main이면 기존 standards.regions 그대로.
+  function buildRegionCell(row, onChange) {
+    const td = document.createElement("td");
+    td.className = "ed-region-cell";
+    const opts = regionOptionsFor(row.standardKey);
+    const sel = document.createElement("select");
+    sel.className = "ed-region-select";
+    if (!opts.length) {
+      sel.disabled = true;
+      sel.innerHTML = `<option>지역구분 없음</option>`;
+    } else {
+      sel.innerHTML = opts.map((o) =>
+        `<option value="${o.code}" ${o.code === row.region ? "selected" : ""} title="${escapeHtml(o.label)}">${escapeHtml(o.label)}</option>`).join("");
+      sel.addEventListener("change", () => { row.region = sel.value; onChange(); });
+    }
+    td.appendChild(sel);
+    return td;
+  }
+
   function renderGrid() {
     updateItemSliceInfo();
+    renderSoilModeToggle();
     // 다중분석에서 아직 프로젝트/슬라이스를 고르지 않았으면 표를 그릴 데이터 모양이 없다 —
     // 빈 표 대신 무엇을 눌러야 하는지 안내한다.
     if (analysisMode === "multi" && !multiViewMode) {
@@ -1016,6 +1169,14 @@ export async function init(section, { toast, bridge, V }) {
     addResizer(corner, (w) => { cornerWidth = w; });
     thead.appendChild(corner);
 
+    // 관련기준(standardKey) 열 — 소음·진동처럼 additionalStandards(도로·철도·생활소음·축사)가
+    // 있는 분야만. 토양은 표 전체 토글(ed-soil-mode)로 처리하므로 이 열이 필요 없다.
+    if (isRegionMode() && columnsFixed() && standards.additionalStandards?.length) {
+      const stdTh = document.createElement("th");
+      stdTh.textContent = "관련기준";
+      stdTh.style.width = "120px";
+      thead.appendChild(stdTh);
+    }
     if (isRegionMode()) {
       const regionTh = document.createElement("th");
       regionTh.textContent = standards.regionLabel || "지역구분";
@@ -1159,19 +1320,11 @@ export async function init(section, { toast, bridge, V }) {
       labelTd.textContent = row.label;
       tr.appendChild(labelTd);
 
+      if (isRegionMode() && columnsFixed() && standards.additionalStandards?.length) {
+        tr.appendChild(buildStandardCell(row, () => { renderGrid(); scheduleCharts(); }));
+      }
       if (isRegionMode()) {
-        const regionTd = document.createElement("td");
-        regionTd.className = "ed-region-cell";
-        const sel = document.createElement("select");
-        sel.className = "ed-region-select";
-        sel.innerHTML = standards.regions.map((r) =>
-          `<option value="${r.code}" ${r.code === row.region ? "selected" : ""} title="${escapeHtml(r.label)}">${escapeHtml(r.label)}</option>`).join("");
-        sel.addEventListener("change", () => {
-          row.region = sel.value;
-          renderGrid(); scheduleCharts();
-        });
-        regionTd.appendChild(sel);
-        tr.appendChild(regionTd);
+        tr.appendChild(buildRegionCell(row, () => { renderGrid(); scheduleCharts(); }));
       }
 
       for (const col of columns) {
@@ -1223,13 +1376,24 @@ export async function init(section, { toast, bridge, V }) {
       th.dataset.row = row.id;
       th.style.width = "128px";
       th.title = "드래그해서 지점 순서 변경";
+      const showStandardSel = isRegionMode() && columnsFixed() && standards.additionalStandards?.length;
+      const standardOptionsHtml = showStandardSel
+        ? `<select class="ed-standard-select">${standardOptions().map((o) =>
+            `<option value="${o.key}" ${o.key === row.standardKey ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>
+           <select class="ed-noisesource-select" style="display:${noiseSourceOptionsFor(row.standardKey).length ? "" : "none"}">${noiseSourceOptionsFor(row.standardKey).map((o) =>
+            `<option value="${o.key}" ${o.key === row.noiseSource ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>`
+        : "";
+      const regionOpts = isRegionMode() ? regionOptionsFor(row.standardKey) : [];
       const regionOptions = isRegionMode()
-        ? `<select class="ed-region-select">${standards.regions.map((r) =>
-            `<option value="${r.code}" ${r.code === row.region ? "selected" : ""}>${escapeHtml(r.label)}</option>`).join("")}</select>`
+        ? (regionOpts.length
+            ? `<select class="ed-region-select">${regionOpts.map((o) =>
+                `<option value="${o.code}" ${o.code === row.region ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>`
+            : `<select class="ed-region-select" disabled><option>지역구분 없음</option></select>`)
         : "";
       th.innerHTML = `
         <div class="ed-col-grip">⋮⋮</div>
         <div class="ed-site-label" contenteditable="true">${escapeHtml(row.label)}</div>
+        ${standardOptionsHtml}
         ${regionOptions}
         <button type="button" class="ed-col-del" title="지점 삭제">×</button>`;
       th.draggable = true;
@@ -1246,8 +1410,17 @@ export async function init(section, { toast, bridge, V }) {
         renderGrid(); scheduleCharts();
       });
       th.querySelector(".ed-site-label").addEventListener("input", (e) => { row.label = e.target.textContent.trim(); });
+      const standardSel = th.querySelector(".ed-standard-select");
+      if (standardSel) standardSel.addEventListener("change", () => {
+        row.standardKey = standardSel.value;
+        row.region = regionOptionsFor(row.standardKey)[0]?.code ?? null;
+        row.noiseSource = noiseSourceOptionsFor(row.standardKey)[0]?.key ?? null;
+        renderGrid(); scheduleCharts();
+      });
+      const noiseSrcSel = th.querySelector(".ed-noisesource-select");
+      if (noiseSrcSel) noiseSrcSel.addEventListener("change", () => { row.noiseSource = noiseSrcSel.value; renderGrid(); scheduleCharts(); });
       const regionSel = th.querySelector(".ed-region-select");
-      if (regionSel) regionSel.addEventListener("change", () => { row.region = regionSel.value; renderGrid(); scheduleCharts(); });
+      if (regionSel && !regionSel.disabled) regionSel.addEventListener("change", () => { row.region = regionSel.value; renderGrid(); scheduleCharts(); });
       th.querySelector(".ed-col-del").addEventListener("click", () => {
         rows = rows.filter((r) => r.id !== row.id);
         renderGrid(); scheduleCharts();
@@ -1474,7 +1647,7 @@ export async function init(section, { toast, bridge, V }) {
   }
   function ensureRowAt(idx) {
     while (rows.length <= idx)
-      rows.push({ id: `r${++rowSeq}`, label: "", region: standards.regions?.[0]?.code || null, values: {} });
+      rows.push({ id: `r${++rowSeq}`, label: "", region: standards.regions?.[0]?.code || null, ...defaultRowFields(), values: {} });
     return rows[idx];
   }
   /* 붙여넣은 텍스트 격자를 뒤집는다 — 전환모드에서는 화면에 보이는 대로(줄=항목,
@@ -1989,6 +2162,7 @@ export async function init(section, { toast, bridge, V }) {
     fieldIdx = idx;
     standards = next;
     refTabIndex = 0;
+    soilStandardMode = "concern";
     initColumnsAndRows();
     // 분야가 바뀌면 프로젝트도 분야별 저장소를 다시 읽고, 다중분석 선택 상태는 초기화한다
     // (다른 분야의 프로젝트를 보여주는 건 의미가 없다).
@@ -2066,7 +2240,7 @@ export async function init(section, { toast, bridge, V }) {
     refreshAddSelect(); renderGrid(); scheduleCharts();
   });
   $("#ed-add-row").addEventListener("click", () => {
-    rows.push({ id: `r${++rowSeq}`, label: "", region: standards.regions?.[0]?.code || null, values: {} });
+    rows.push({ id: `r${++rowSeq}`, label: "", region: standards.regions?.[0]?.code || null, ...defaultRowFields(), values: {} });
     renderGrid();
   });
   $("#ed-reset").addEventListener("click", () => {
