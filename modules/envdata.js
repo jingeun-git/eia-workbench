@@ -470,10 +470,13 @@ export async function init(section, { toast, bridge, V }) {
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
           <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
           <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
-          <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
           <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
         </div>
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
+          <!-- 행/열전환은 단일·다중분석 공통 "표 보기" 기능이라 위 편집버튼 행(다중분석에서
+               숨겨짐)이 아니라 여기(항상 노출) 소속으로 옮겼다 — 다중분석엔 이 버튼 자체가
+               없어서 못 쓰던 것을 해소(사용자 지적, 2026-07-22). -->
+          <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
           <button class="btn btn-secondary" id="ed-export-xlsx" title="표 데이터를 엑셀로 내보냅니다(그래프는 엑셀에서 직접 삽입해주세요)">엑셀로 내보내기</button>
         </div>
       </div>
@@ -920,6 +923,9 @@ export async function init(section, { toast, bridge, V }) {
     }
     activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
     if (mode === "multi") { columns = []; rows = []; }
+    // 단일분석에서 뒤집어 보던 상태가 다중분석으로(혹은 반대로) 그대로 넘어와 기본값이
+    // 아닌 채로 시작하던 버그(사용자 지적, 2026-07-22) — 모드 전환 시 항상 기본값(false)으로.
+    transposed = false;
     currentEditRoundId = null;
     $("#ed-newround-bar").style.display = "none";
     renderModeBanner(); renderProjectBanner(); renderSliceBanner(); updateHeaderText(); refreshAddSelect();
@@ -1157,6 +1163,10 @@ export async function init(section, { toast, bridge, V }) {
   function renderGrid() {
     updateItemSliceInfo();
     renderSoilModeToggle();
+    // transposed는 분야·모드 전환 시 코드에서 직접 리셋되기도 해서(전환 이력이 새
+    // 분야/모드로 새어나가던 버그, 2026-07-22), 버튼의 눌림 표시도 매 렌더마다 변수값에
+    // 맞춰 동기화한다 — 클릭 핸들러에서만 갱신하면 프로그램적 리셋이 화면에 반영 안 된다.
+    $("#ed-transpose")?.setAttribute("aria-pressed", String(transposed));
     // 다중분석에서 아직 프로젝트/슬라이스를 고르지 않았으면 표를 그릴 데이터 모양이 없다 —
     // 빈 표 대신 무엇을 눌러야 하는지 안내한다.
     if (analysisMode === "multi" && !multiViewMode) {
@@ -2181,6 +2191,7 @@ export async function init(section, { toast, bridge, V }) {
     standards = next;
     refTabIndex = 0;
     soilStandardMode = "concern";
+    transposed = false; // 분야가 바뀌면 이전 분야의 행/열전환 상태를 물려받지 않는다
     initColumnsAndRows();
     // 분야가 바뀌면 프로젝트도 분야별 저장소를 다시 읽고, 다중분석 선택 상태는 초기화한다
     // (다른 분야의 프로젝트를 보여주는 건 의미가 없다).
