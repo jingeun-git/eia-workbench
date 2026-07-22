@@ -790,7 +790,10 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-ref-table th, .ed-ref-table td { white-space: nowrap; text-align: center; }
 
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
-.ed-slider-num { width: 52px; height: 24px; padding: 0 5px; font-size: var(--text-xs); text-align: right; }
+/* 전역 input[type=number] 기본룰(163행, width:100%+height:var(--input-height))이 명시도(attribute
+   셀렉터)가 더 높아 클래스단독 셀렉터를 이겨버린다 — input.ed-slider-num으로 태그를 붙여
+   명시도를 맞추고 소스 순서로 이긴다(사용자가 지적한 "왜 이렇게 큰가" 버그의 실제 원인). */
+input.ed-slider-num { width: 52px; height: 24px; padding: 0 5px; font-size: var(--text-xs); text-align: right; }
 
 /* 표 스크롤 컨테이너 — 모든 분야가 공유하는 단일 래퍼(#ed-scroll)라 구조는 이미 통일되어 있다.
    토양(23항목)처럼 항목이 많은 분야에서 위아래 여유가 부족하다는 지적으로 높이만 확장(560→760px). */
@@ -828,7 +831,7 @@ body.gc-resizing * { cursor: col-resize !important; }
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
   gap: 4px; font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 2px;
 }
-.ed-std-input { width: 64px; height: 24px; padding: 0 4px; font-size: var(--text-xs); text-align: center; }
+input.ed-std-input { width: 64px; height: 24px; padding: 0 4px; font-size: var(--text-xs); text-align: center; }
 .ed-std-unit { white-space: normal; word-break: keep-all; }
 .ed-std-reset { appearance: none; border: 0; background: none; cursor: pointer; color: var(--accent); font-size: 13px; }
 .ed-col-del {

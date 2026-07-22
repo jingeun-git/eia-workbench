@@ -1305,10 +1305,47 @@ export async function init(section, { toast, bridge, V }) {
     a.click();
   }
 
+  // col.id -> {card, canvas} — 일괄적용 중 팔로워를 갱신할 때 전체를 다시 그리지 않고
+  // 이 카드만 표적 갱신하기 위한 캐시(2026-07-22, 드래그 중 깜빡임·재시도 버그 수정).
+  let chartCardRefs = {};
+
+  // 리더의 chartOpts를 나머지 전체 컬럼에 복사하고, 이미 카드가 그려진 팔로워는
+  // DOM을 통째로 다시 만들지 않고(전체 innerHTML 리셋 없이) 컨트롤 값과 차트만 갱신한다.
+  // renderCharts() 전체를 다시 부르면 드래그 중인 슬라이더 자신까지 파괴돼 조작이 끊긴다
+  // (사용자가 지적한 "일괄적용 안 됨"·"드래그 시 깜빡임" 버그의 실제 원인).
+  function syncFollowers(sourceCol) {
+    const src = chartOptsOf(sourceCol);
+    for (const c of columns) {
+      if (c === sourceCol) continue;
+      c.chartOpts = { ...src };
+      const ref = chartCardRefs[c.id];
+      if (!ref) continue; // 데이터가 없어 카드 자체가 없는 컬럼
+      const { card, canvas } = ref;
+      card.style.width = `${src.width}px`;
+      const wrap = card.querySelector(".ed-chart-canvas-wrap");
+      if (wrap) wrap.style.height = `${src.height}px`;
+      card.querySelectorAll("[data-type]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.type === src.type)));
+      const set = (sel, prop, val) => { const el = card.querySelector(sel); if (el) el[prop] = val; };
+      set(".ed-c-color", "value", src.color);
+      set(".ed-c-width", "value", src.width); set(".ed-c-width-num", "value", src.width);
+      set(".ed-c-height", "value", src.height); set(".ed-c-height-num", "value", src.height);
+      set(".ed-c-thick", "value", src.barThickness || 0); set(".ed-c-thick-num", "value", src.barThickness || 0);
+      set(".ed-c-title", "checked", src.showTitle);
+      set(".ed-c-legend", "checked", src.showLegend);
+      set(".ed-c-labels", "checked", src.showLabels);
+      set(".ed-c-ymanual", "checked", src.yManual);
+      set(".ed-c-ymin", "value", src.yMin ?? "");
+      set(".ed-c-ymax", "value", src.yMax ?? "");
+      set(".ed-c-ystep", "value", src.yStep ?? "");
+      rebuildChart(c, canvas);
+    }
+  }
+
   function renderCharts() {
     const container = $("#ed-charts");
     Object.values(charts).forEach((c) => c.destroy());
     charts = {};
+    chartCardRefs = {};
     container.innerHTML = "";
 
     const regionMode = isRegionMode();
@@ -1326,6 +1363,7 @@ export async function init(section, { toast, bridge, V }) {
       card.className = "panel ed-chart-card";
       card.style.width = `${opts.width}px`;
       const dis = isFollower ? "disabled" : "";
+      const thickDis = (isFollower || opts.type === "line") ? "disabled" : "";
       card.innerHTML = `
         <div class="ed-chart-head"><h4>${escapeHtml(col.label)}${isFollower ? ' <span class="ed-chart-note" style="display:inline">(일괄적용 중)</span>' : ""}</h4>
           <button type="button" class="btn btn-secondary ed-chart-png">PNG 저장</button></div>
@@ -1344,8 +1382,8 @@ export async function init(section, { toast, bridge, V }) {
             <input type="number" class="ed-c-height-num ed-slider-num" min="160" max="640" value="${opts.height}" ${dis}>
           </label>
           <label class="ed-chk-label">막대굵기
-            <input type="range" class="ed-c-thick" min="0" max="60" step="2" value="${opts.barThickness || 0}" title="0=자동" ${dis}>
-            <input type="number" class="ed-c-thick-num ed-slider-num" min="0" max="60" value="${opts.barThickness || 0}" ${dis}>
+            <input type="range" class="ed-c-thick ed-yaxis-input" min="0" max="60" step="2" value="${opts.barThickness || 0}" title="선 그래프에는 적용되지 않습니다" ${thickDis}>
+            <input type="number" class="ed-c-thick-num ed-slider-num ed-yaxis-input" min="0" max="60" value="${opts.barThickness || 0}" ${thickDis}>
           </label>
         </div>
         <div class="ed-chart-ctlrow${isFollower ? " is-bulk-follower" : ""}">
@@ -1362,6 +1400,7 @@ export async function init(section, { toast, bridge, V }) {
       container.appendChild(card);
 
       const canvas = card.querySelector("canvas");
+      chartCardRefs[col.id] = { card, canvas };
       rebuildChart(col, canvas);
 
       card.querySelector(".ed-chart-png").addEventListener("click", () => {
@@ -1369,45 +1408,77 @@ export async function init(section, { toast, bridge, V }) {
       });
 
       // 일괄적용 중인 팔로워 카드는 조작을 막아뒀으니(disabled+pointer-events:none) 아래
-      // 리스너들은 리더 카드에서만 실질적으로 동작한다. 리더에서 값이 바뀌면 전체를 다시 그린다.
-      const commit = () => {
-        if (bulkApplyCharts && isLeader) { applyBulkChartOpts(col); renderCharts(); return true; }
-        return false;
-      };
+      // 리스너들은 리더 카드에서만 실질적으로 동작한다. 리더가 바뀌면 자기 자신은 가볍게
+      // 갱신(destroy+recreate는 canvas 위 Chart 인스턴스만, DOM은 그대로)하고, 일괄적용
+      // 중이면 나머지도 syncFollowers()로 가볍게 뒤따라 갱신한다 — renderCharts() 전체를
+      // 다시 부르지 않아 드래그 중에도 끊기지 않는다.
+      const thickInputs = () => [card.querySelector(".ed-c-thick"), card.querySelector(".ed-c-thick-num")];
       card.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => {
         opts.type = b.dataset.type;
         card.querySelectorAll("[data-type]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-        if (!commit()) rebuildChart(col, canvas);
+        thickInputs().forEach((el) => { el.disabled = opts.type === "line"; }); // 선 그래프엔 막대굵기 무의미
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
       }));
-      card.querySelector(".ed-c-color").addEventListener("input", (e) => { opts.color = e.target.value; if (!commit()) rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-color").addEventListener("input", (e) => {
+        opts.color = e.target.value;
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
       bindRangeNumber(card.querySelector(".ed-c-width"), card.querySelector(".ed-c-width-num"), (v) => {
         opts.width = v;
-        if (commit()) return;
         card.style.width = `${v}px`;
         charts[col.id]?.resize();
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
       });
       bindRangeNumber(card.querySelector(".ed-c-height"), card.querySelector(".ed-c-height-num"), (v) => {
         opts.height = v;
-        if (commit()) return;
         card.querySelector(".ed-chart-canvas-wrap").style.height = `${v}px`;
         charts[col.id]?.resize();
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
       });
       bindRangeNumber(card.querySelector(".ed-c-thick"), card.querySelector(".ed-c-thick-num"), (v) => {
         opts.barThickness = v || null;
-        if (!commit()) rebuildChart(col, canvas);
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
       });
-      card.querySelector(".ed-c-title").addEventListener("change", (e) => { opts.showTitle = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
-      card.querySelector(".ed-c-legend").addEventListener("change", (e) => { opts.showLegend = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
-      card.querySelector(".ed-c-labels").addEventListener("change", (e) => { opts.showLabels = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-title").addEventListener("change", (e) => {
+        opts.showTitle = e.target.checked;
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
+      card.querySelector(".ed-c-legend").addEventListener("change", (e) => {
+        opts.showLegend = e.target.checked;
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
+      card.querySelector(".ed-c-labels").addEventListener("change", (e) => {
+        opts.showLabels = e.target.checked;
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
       const yMinI = card.querySelector(".ed-c-ymin"), yMaxI = card.querySelector(".ed-c-ymax"), yStepI = card.querySelector(".ed-c-ystep");
       card.querySelector(".ed-c-ymanual").addEventListener("change", (e) => {
         opts.yManual = e.target.checked;
         [yMinI, yMaxI, yStepI].forEach((el) => { el.disabled = !opts.yManual; });
-        if (!commit()) rebuildChart(col, canvas);
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
       });
-      yMinI.addEventListener("change", (e) => { opts.yMin = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
-      yMaxI.addEventListener("change", (e) => { opts.yMax = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
-      yStepI.addEventListener("change", (e) => { opts.yStep = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
+      yMinI.addEventListener("change", (e) => {
+        opts.yMin = e.target.value === "" ? null : Number(e.target.value);
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
+      yMaxI.addEventListener("change", (e) => {
+        opts.yMax = e.target.value === "" ? null : Number(e.target.value);
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
+      yStepI.addEventListener("change", (e) => {
+        opts.yStep = e.target.value === "" ? null : Number(e.target.value);
+        rebuildChart(col, canvas);
+        if (bulkApplyCharts && isLeader) syncFollowers(col);
+      });
 
       cardIdx++;
     }
