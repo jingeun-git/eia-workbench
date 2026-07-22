@@ -781,6 +781,45 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-field-btn:hover { background: var(--accent-subtle); }
 .ed-field-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: var(--weight-semibold); }
 
+/* 분석모드·프로젝트·슬라이스 배너(다중분석, SYS-49) — 분야배너와 같은 칩 스타일 재사용,
+   구분을 위해 모드/슬라이스 칩은 살짝 다른 톤(보더 강조)을 쓴다. */
+.ed-mode-banner, .ed-project-banner { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.ed-mode-btn, .ed-project-btn {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: var(--text-sm);
+  cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.ed-mode-btn:hover, .ed-project-btn:hover { background: var(--accent-subtle); }
+.ed-mode-btn[aria-pressed="true"] { background: var(--text); color: var(--text-invert); border-color: var(--text); font-weight: var(--weight-semibold); }
+.ed-project-btn[aria-pressed="true"] { background: var(--ok, #2a9d63); color: #fff; border-color: var(--ok, #2a9d63); font-weight: var(--weight-semibold); }
+.ed-project-btn-add { border-style: dashed; }
+.ed-project-btn-del {
+  appearance: none; border: 0; background: none; color: var(--text-muted); cursor: pointer;
+  margin-left: 4px; font-size: 12px; line-height: 1;
+}
+.ed-project-btn-del:hover { color: var(--fail); }
+.ed-slice-banner { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; margin-bottom: var(--space-3); padding: var(--space-2) 0; border-top: 1px dashed var(--border); }
+.ed-slice-group { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.ed-slice-group-label { font-size: var(--text-xs); color: var(--text-muted); margin-right: 2px; }
+.ed-slice-btn {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: var(--text-sm); cursor: pointer;
+}
+.ed-slice-btn:hover { background: var(--accent-subtle); }
+.ed-slice-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ed-slice-btn-add { border-style: dashed; }
+.ed-slice-btn-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.ed-slice-del {
+  appearance: none; border: 0; background: none; color: var(--text-muted); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 0 2px;
+}
+.ed-slice-del:hover { color: var(--fail); }
+.ed-newproject-form .field { margin-bottom: var(--space-3); }
+#ed-np-items { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+#ed-np-items label { display: flex; align-items: center; gap: 4px; font-size: var(--text-sm); cursor: pointer; }
+.ed-newround-bar { display: flex; gap: var(--space-2); align-items: center; margin-top: var(--space-2); }
+.ed-newround-bar input[type="text"] { max-width: 260px; }
+
 /* 상단 안내 패널 — 왼쪽(제목·설명·업로드), 오른쪽(분야별 기준값표). 좁은 화면은 세로로 쌓는다. */
 .ed-head-flex { display: flex; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; }
 .ed-head-left { flex: 1 1 420px; min-width: 0; }

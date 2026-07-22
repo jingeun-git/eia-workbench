@@ -128,6 +128,22 @@ function scanBestHeaderRow(aoa, matchFn, limit) {
   return best;
 }
 
+/* ── 다중분석 프로젝트 저장(브라우저 localStorage, 분야별) ──────────────────
+ * 단일분석은 저장하지 않는다(사용자 확정, 2026-07-22) — 다중분석만 대상.
+ * 프로젝트 = { id, field, name, sites:[{code,label,region}], itemCodes:[...], rounds:[{id,label,values}] }
+ */
+function projectsStorageKey(fieldCode) { return `eiaw.envdata.projects.${fieldCode}`; }
+function loadProjects(fieldCode) {
+  try {
+    const raw = localStorage.getItem(projectsStorageKey(fieldCode));
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function saveProjects(fieldCode, projects) {
+  try { localStorage.setItem(projectsStorageKey(fieldCode), JSON.stringify(projects)); }
+  catch (e) { console.error("프로젝트 저장 실패", e); }
+}
+
 export async function init(section, { toast, bridge, V }) {
   section.innerHTML = `<div class="panel"><h2>환경질 측정 데이터 분석</h2>
     <div class="placeholder">기준DB를 불러오는 중…</div></div>`;
@@ -202,6 +218,18 @@ export async function init(section, { toast, bridge, V }) {
   let regionColWidth = null;
   let transposed = false; // 행/열 전환 — true면 행=조사항목, 열=조사지점
   let selAnchor = null, selecting = false, selectionRect = null; // 셀 드래그 다중선택
+
+  /* ── 다중분석(시계열 누적) 상태 — SYS-49 ──────────────────────────────
+   * single: 지금까지의 단일분석(컬럼/행 직접 편집). multi: 프로젝트 큐브(회차×지점×항목)를
+   * 슬라이스(지점 고정 또는 항목 고정)해서 같은 표/그래프 엔진으로 보여준다. */
+  let analysisMode = "single"; // "single" | "multi"
+  let projects = loadProjects(FIELDS[fieldIdx].code);
+  let activeProject = null;
+  let sliceAxis = null; // "site" | "item"
+  let sliceKey = null;  // site.code 또는 item.code
+  let multiViewMode = null; // null(슬라이스 선택 전) | "slice" | "newRound"
+  let roundSeq = 0;
+  let savedSingle = null; // 다중분석 전환 시 단일분석 columns/rows를 잠시 보관
   const defaultChartColor = cssVar("--accent", "#2f6fed");
   /* 그래프 옵션은 전역이 아니라 컬럼(항목)마다 따로 갖는다 — "그래프별 개별 설정"
      요청 반영. 처음 렌더될 때 col.chartOpts가 없으면 기본값으로 채운다. */
@@ -255,13 +283,17 @@ export async function init(section, { toast, bridge, V }) {
     if (std.direction === "range") return `${std.value[0]}~${std.value[1]}${std.unit}`;
     return `${std.value}${std.unit}${std.direction === "min" ? " 이상" : " 이하"}`;
   }
+  // 지역구분은 보통 행(지점/회차)의 속성이지만, 다중분석의 "항목 슬라이스"(열=지점)에서는
+  // 지역이 열마다 달라진다 — 그때는 컬럼에 fixedRegion을 미리 못박아두고 우선 사용한다.
+  // 단일분석 컬럼은 fixedRegion이 없으므로 항상 row.region으로 폴백(기존 동작 무변경).
+  function regionOf(col, row) { return col.fixedRegion || row?.region; }
   function effectiveStandard(col, row) {
     if (isRegionMode()) {
-      const region = standards.regions.find((r) => r.code === row?.region);
+      const region = standards.regions.find((r) => r.code === regionOf(col, row));
       if (!region) return null;
       if (!columnsFixed()) {
         // 토양형 — 항목(컬럼) 자신이 지역구분별 값을 갖는다
-        const val = col.values?.[row.region];
+        const val = col.values?.[regionOf(col, row)];
         return val != null ? { value: val, unit: col.unit || standards.unit || "", averaging: region.label, source: "db", direction: "max" } : null;
       }
       const period = standards.periods.find((p) => p.code === col.code);
@@ -282,9 +314,9 @@ export async function init(section, { toast, bridge, V }) {
   function secondaryStandard(col, row) {
     const dual = standards.dualStandard;
     if (!dual || !isRegionMode() || columnsFixed()) return null;
-    const val = col[dual.action]?.[row?.region];
+    const val = col[dual.action]?.[regionOf(col, row)];
     if (val == null) return null;
-    const region = standards.regions.find((r) => r.code === row?.region);
+    const region = standards.regions.find((r) => r.code === regionOf(col, row));
     return { value: val, unit: col.unit || standards.unit || "", averaging: region?.label, source: "db", direction: "max" };
   }
   function tooltipFor(col, row) {
@@ -313,6 +345,19 @@ export async function init(section, { toast, bridge, V }) {
   section.innerHTML = `
   <div class="panel">
     <div class="ed-field-banner" id="ed-field-banner" role="tablist" aria-label="분야 선택"></div>
+    <div class="ed-mode-banner" id="ed-mode-banner" role="tablist" aria-label="분석 모드"></div>
+    <div class="ed-project-banner" id="ed-project-banner" role="tablist" aria-label="프로젝트" style="display:none"></div>
+    <div class="ed-slice-banner" id="ed-slice-banner" style="display:none"></div>
+    <div class="panel ed-newproject-form" id="ed-newproject-form" style="display:none">
+      <h4 style="margin:0 0 var(--space-2)">새 프로젝트</h4>
+      <div class="field"><label>프로젝트명</label><input type="text" id="ed-np-name" placeholder="예: OO사업 2026 대기질 조사"></div>
+      <div class="field"><label>조사지점(쉼표로 구분)</label><input type="text" id="ed-np-sites" placeholder="A-1, A-2, A-3, A-4"></div>
+      <div class="field" id="ed-np-items-field"><label>조사항목</label><div id="ed-np-items"></div></div>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button class="btn btn-primary" id="ed-np-create">프로젝트 생성</button>
+        <button class="btn btn-secondary" id="ed-np-cancel">취소</button>
+      </div>
+    </div>
 
     <div class="ed-head-flex">
       <div class="ed-head-left">
@@ -334,6 +379,14 @@ export async function init(section, { toast, bridge, V }) {
           <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
           <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
           <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
+        </div>
+        <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
+          <button class="btn btn-secondary" id="ed-export-xlsx" title="표 데이터를 엑셀로 내보냅니다(그래프는 엑셀에서 직접 삽입해주세요)">엑셀로 내보내기</button>
+        </div>
+        <div class="ed-newround-bar" id="ed-newround-bar" style="display:none">
+          <input type="text" id="ed-round-label" placeholder="회차명(예: 3차(2026-03-10))">
+          <button class="btn btn-primary" id="ed-round-save">회차 저장</button>
+          <button class="btn btn-secondary" id="ed-round-cancel">취소</button>
         </div>
       </div>
 
@@ -431,11 +484,13 @@ export async function init(section, { toast, bridge, V }) {
   function updateHeaderText() {
     const f = FIELDS[fieldIdx];
     updateFieldBannerActive();
-    $("#ed-title").textContent = `환경질 측정 데이터 분석 — ${f.label} (단일분석)`;
+    $("#ed-title").textContent = `환경질 측정 데이터 분석 — ${f.label} (${analysisMode === "multi" ? "다중분석" : "단일분석"})`;
     $("#ed-desc").textContent = isRegionMode()
       ? `측정 결과를 표에 입력하면 ${standards.legal_basis} 기준 초과 여부를 지점별 지역구분에 따라 자동 판별하고 그래프를 그립니다. xlsx·csv 업로드, 붙여넣기, 표 직접 입력을 모두 지원합니다.`
       : `측정 결과를 표에 입력하면 ${standards.legal_basis} 초과 여부를 자동 판별하고 항목별 그래프를 그립니다. xlsx·csv 업로드, 엑셀에서 복사한 내용 붙여넣기, 표 직접 입력을 모두 지원합니다. HWP·PDF 등록문서 자동인식은 브리지 연동 다음 업데이트에서 지원됩니다.`;
-    $("#ed-add-item").parentElement.style.display = columnsFixed() ? "none" : "";
+    // 다중분석 중엔 컬럼이 프로젝트(sites/itemCodes)에서 파생되므로 구조편집(항목·지점 추가,
+    // 표초기화)은 의미가 없다 — 숨긴다. 엑셀 내보내기는 별도 div라 영향받지 않는다.
+    $("#ed-add-item").parentElement.style.display = (columnsFixed() || analysisMode === "multi") ? "none" : "";
 
     // 하천·호소는 사람건강보호기준(20개 유해물질, 단순임계값)을 별도 탭으로 두지 않고
     // 이 배너로만 참고 안내한다 — 드롭다운을 늘리지 않으면서 정보는 남긴다(2026-07-22 확정)
@@ -461,6 +516,274 @@ export async function init(section, { toast, bridge, V }) {
       + standards.items.filter((i) => !used.has(i.code))
           .map((i) => `<option value="${i.code}">${escapeHtml(i.label)}</option>`).join("")
       + `<option value="__custom">직접 입력(사용자 정의 항목)</option>`;
+  }
+
+  /* ── 다중분석(시계열 누적) — SYS-49 ───────────────────────────────────
+   * 프로젝트 = (회차×지점×항목) 큐브. 같은 표/그래프/판정 엔진을 "슬라이스"로 재사용한다:
+   * 지점 고정(행=회차, 열=항목) 또는 항목 고정(행=회차, 열=지점, 열마다 지역이 다를 수 있어
+   * col.fixedRegion으로 해결 — regionOf() 참조). */
+  function renderModeBanner() {
+    $("#ed-mode-banner").innerHTML = ["single", "multi"].map((m) =>
+      `<button type="button" class="ed-mode-btn" data-mode="${m}" aria-pressed="${analysisMode === m}">${m === "single" ? "단일분석" : "다중분석"}</button>`
+    ).join("");
+  }
+
+  function renderProjectBanner() {
+    const el = $("#ed-project-banner");
+    if (analysisMode !== "multi") { el.style.display = "none"; return; }
+    el.style.display = "";
+    el.innerHTML = projects.map((p) =>
+      `<button type="button" class="ed-project-btn" data-id="${escapeHtml(p.id)}" aria-pressed="${activeProject?.id === p.id}">${escapeHtml(p.name)}<span class="ed-project-btn-del" data-del="${escapeHtml(p.id)}" title="프로젝트 삭제">×</span></button>`
+    ).join("") + `<button type="button" class="ed-project-btn ed-project-btn-add" id="ed-project-add">+ 새 프로젝트</button>`;
+  }
+
+  function renderSliceBanner() {
+    const el = $("#ed-slice-banner");
+    if (analysisMode !== "multi" || !activeProject) { el.style.display = "none"; return; }
+    el.style.display = "";
+    const siteBtns = activeProject.sites.map((s) =>
+      `<span class="ed-slice-btn-wrap"><button type="button" class="ed-slice-btn" data-axis="site" data-key="${escapeHtml(s.code)}" aria-pressed="${sliceAxis === "site" && sliceKey === s.code}">${escapeHtml(s.label)}</button><span class="ed-slice-del" data-del-site="${escapeHtml(s.code)}" title="지점 삭제">×</span></span>`
+    ).join("");
+    const showItemAxis = !columnsFixed(); // columnsFixed 분야는 항목이 이미 고정컬럼이라 별도 항목축이 없다
+    const itemBtns = showItemAxis ? activeProject.itemCodes.map((code) => {
+      const item = standards.items.find((i) => i.code === code);
+      return `<span class="ed-slice-btn-wrap"><button type="button" class="ed-slice-btn" data-axis="item" data-key="${escapeHtml(code)}" aria-pressed="${sliceAxis === "item" && sliceKey === code}">${escapeHtml(item?.label || code)}</button><span class="ed-slice-del" data-del-item="${escapeHtml(code)}" title="항목 삭제">×</span></span>`;
+    }).join("") : "";
+    el.innerHTML = `
+      <div class="ed-slice-group"><span class="ed-slice-group-label">조사지점</span>${siteBtns}<button type="button" class="ed-slice-btn ed-slice-btn-add" id="ed-site-add">+ 지점</button></div>
+      ${showItemAxis ? `<div class="ed-slice-group"><span class="ed-slice-group-label">조사항목</span>${itemBtns}<button type="button" class="ed-slice-btn ed-slice-btn-add" id="ed-item-add">+ 항목</button></div>` : ""}
+      <button type="button" class="btn btn-secondary" id="ed-round-add">+ 회차 추가</button>`;
+  }
+
+  // 프로젝트 생성 후에도 지점·항목을 추가/삭제할 수 있어야 한다(사용자 확정, 2026-07-22).
+  // 삭제는 sites/itemCodes 목록에서만 빼고 기존 회차의 값 자체는 그대로 둔다(비파괴적).
+  function addSiteToProject() {
+    const label = prompt("추가할 조사지점 이름을 입력하세요");
+    if (!label || !label.trim()) return;
+    activeProject.sites.push({ code: `s${Date.now()}`, label: label.trim(), region: standards.regions?.[0]?.code || null });
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    renderSliceBanner();
+    toast(`"${label.trim()}" 지점이 추가되었습니다`, "ok");
+  }
+  function removeSiteFromProject(code) {
+    activeProject.sites = activeProject.sites.filter((s) => s.code !== code);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    if (sliceAxis === "site" && sliceKey === code) { sliceAxis = null; sliceKey = null; multiViewMode = null; columns = []; rows = []; renderGrid(); renderCharts(); }
+    renderSliceBanner();
+  }
+  function addItemToProject() {
+    const used = new Set(activeProject.itemCodes);
+    const avail = standards.items.filter((i) => !used.has(i.code));
+    if (!avail.length) { toast("추가할 수 있는 항목이 더 없습니다", "warn"); return; }
+    const label = prompt(`추가할 항목 이름을 입력하세요 — 선택 가능: ${avail.map((i) => i.label).join(", ")}`);
+    if (!label) return;
+    const item = avail.find((i) => i.label === label.trim() || i.code === label.trim());
+    if (!item) { toast("일치하는 항목을 찾지 못했습니다", "warn"); return; }
+    activeProject.itemCodes.push(item.code);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    renderSliceBanner();
+    toast(`"${item.label}" 항목이 추가되었습니다`, "ok");
+  }
+  function removeItemFromProject(code) {
+    activeProject.itemCodes = activeProject.itemCodes.filter((c) => c !== code);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    if (sliceAxis === "item" && sliceKey === code) { sliceAxis = null; sliceKey = null; multiViewMode = null; columns = []; rows = []; renderGrid(); renderCharts(); }
+    renderSliceBanner();
+  }
+
+  function buildSliceColumnsAndRows() {
+    const proj = activeProject;
+    if (sliceAxis === "site") {
+      const site = proj.sites.find((s) => s.code === sliceKey);
+      columns = columnsFixed()
+        ? standards.periods.map(makePeriodColumn)
+        : proj.itemCodes.map((code) => {
+            const item = standards.items.find((i) => i.code === code);
+            return isRegionMode() ? makeColumnFromRegionItem(item) : makeColumnFromItem(item);
+          });
+      rows = proj.rounds.map((r) => ({
+        id: r.id, label: r.label, region: site?.region || null,
+        values: Object.fromEntries(columns.map((c) => [c.id, r.values[site?.code]?.[c.code] ?? null])),
+      }));
+    } else {
+      const item = standards.items.find((i) => i.code === sliceKey);
+      columns = proj.sites.map((site) => {
+        const base = isRegionMode() ? makeColumnFromRegionItem(item) : makeColumnFromItem(item);
+        base.label = site.label;
+        base.siteCode = site.code;
+        base.fixedRegion = site.region;
+        return base;
+      });
+      rows = proj.rounds.map((r) => ({
+        id: r.id, label: r.label, region: null,
+        values: Object.fromEntries(columns.map((c) => [c.id, r.values[c.siteCode]?.[item.code] ?? null])),
+      }));
+    }
+  }
+
+  function buildNewRoundColumnsAndRows() {
+    const proj = activeProject;
+    columns = columnsFixed()
+      ? standards.periods.map(makePeriodColumn)
+      : proj.itemCodes.map((code) => {
+          const item = standards.items.find((i) => i.code === code);
+          return isRegionMode() ? makeColumnFromRegionItem(item) : makeColumnFromItem(item);
+        });
+    rows = proj.sites.map((site) => ({ id: site.code, label: site.label, region: site.region, values: {} }));
+  }
+
+  // 슬라이스 뷰(과거 회차) 셀을 고치면 프로젝트 큐브에도 즉시 되쓴다 — 읽기전용이면
+  // "분석 도구"로서 쓸모가 떨어진다(오탈자 정정 등 실무 수요).
+  function persistSliceEdits() {
+    if (analysisMode !== "multi" || !activeProject || multiViewMode !== "slice") return;
+    // 지점 슬라이스는 모든 행(회차)이 같은 지점이라 지역구분도 그 지점 전체의 속성이다 —
+    // 슬라이스뷰에서 지역을 바꾸면 지점 자체에 반영한다(회차 추가 폼과 동일한 문제).
+    if (sliceAxis === "site") {
+      const site = activeProject.sites.find((s) => s.code === sliceKey);
+      const changed = rows.find((r) => r.region != null && r.region !== site?.region);
+      if (site && changed) site.region = changed.region;
+    }
+    for (const row of rows) {
+      const round = activeProject.rounds.find((r) => r.id === row.id);
+      if (!round) continue;
+      for (const col of columns) {
+        const val = row.values[col.id];
+        if (sliceAxis === "site") {
+          round.values[sliceKey] = round.values[sliceKey] || {};
+          round.values[sliceKey][col.code] = val;
+        } else {
+          round.values[col.siteCode] = round.values[col.siteCode] || {};
+          round.values[col.siteCode][sliceKey] = val;
+        }
+      }
+    }
+    saveProjects(FIELDS[fieldIdx].code, projects);
+  }
+
+  function switchAnalysisMode(mode) {
+    if (mode === analysisMode) return;
+    if (mode === "multi") {
+      savedSingle = { columns, rows };
+      analysisMode = "multi";
+    } else {
+      analysisMode = "single";
+      if (savedSingle) { columns = savedSingle.columns; rows = savedSingle.rows; }
+      else initColumnsAndRows();
+    }
+    activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
+    if (mode === "multi") { columns = []; rows = []; }
+    $("#ed-newround-bar").style.display = "none";
+    renderModeBanner(); renderProjectBanner(); renderSliceBanner(); updateHeaderText(); refreshAddSelect();
+    renderGrid(); renderCharts();
+  }
+
+  function selectProject(id) {
+    activeProject = projects.find((p) => p.id === id) || null;
+    sliceAxis = null; sliceKey = null; multiViewMode = null;
+    columns = []; rows = [];
+    $("#ed-newround-bar").style.display = "none";
+    renderProjectBanner(); renderSliceBanner();
+    renderGrid(); renderCharts();
+  }
+
+  function deleteProject(id) {
+    projects = projects.filter((p) => p.id !== id);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    if (activeProject?.id === id) {
+      activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
+      columns = []; rows = [];
+    }
+    renderProjectBanner(); renderSliceBanner(); renderGrid(); renderCharts();
+  }
+
+  function selectSlice(axis, key) {
+    sliceAxis = axis; sliceKey = key; multiViewMode = "slice";
+    buildSliceColumnsAndRows();
+    renderSliceBanner();
+    $("#ed-newround-bar").style.display = "none";
+    renderGrid(); renderCharts();
+  }
+
+  function startNewRound() {
+    multiViewMode = "newRound";
+    buildNewRoundColumnsAndRows();
+    renderGrid(); renderCharts();
+    $("#ed-newround-bar").style.display = "";
+    $("#ed-round-label").value = `${activeProject.rounds.length + 1}차`;
+  }
+
+  function backToSliceOrEmpty() {
+    multiViewMode = sliceAxis ? "slice" : null;
+    if (multiViewMode === "slice") buildSliceColumnsAndRows();
+    else { columns = []; rows = []; }
+    $("#ed-newround-bar").style.display = "none";
+    renderGrid(); renderCharts();
+  }
+
+  function commitNewRound() {
+    const label = $("#ed-round-label").value.trim() || `${activeProject.rounds.length + 1}차`;
+    const values = {};
+    for (const row of rows) { // 신규회차 입력모드는 row=지점(row.id=site.code)
+      // 이 입력폼에서 지점별 지역구분을 고를 수 있는데(region 모드), 그 선택은 "이 회차만의
+      // 값"이 아니라 지점 자체의 속성이다 — 여기서 놓치면 이후 슬라이스뷰가 항상 기본지역으로
+      // 판정해버린다(실제 발견한 버그: 회차입력에서 고른 지역이 저장되지 않음).
+      const site = activeProject.sites.find((s) => s.code === row.id);
+      if (site && row.region != null) site.region = row.region;
+      values[row.id] = {};
+      for (const col of columns) { values[row.id][col.code] = row.values[col.id] ?? null; }
+    }
+    activeProject.rounds.push({ id: `r${Date.now()}`, label, values });
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    toast(`"${label}" 회차가 추가되었습니다`, "ok");
+    backToSliceOrEmpty();
+  }
+
+  function openNewProjectForm() {
+    $("#ed-newproject-form").style.display = "";
+    $("#ed-np-name").value = "";
+    $("#ed-np-sites").value = "";
+    const itemsField = $("#ed-np-items-field");
+    if (columnsFixed()) {
+      itemsField.style.display = "none";
+    } else {
+      itemsField.style.display = "";
+      $("#ed-np-items").innerHTML = standards.items.map((it) =>
+        `<label><input type="checkbox" value="${escapeHtml(it.code)}" checked> ${escapeHtml(it.label)}</label>`
+      ).join("");
+    }
+  }
+  function closeNewProjectForm() { $("#ed-newproject-form").style.display = "none"; }
+
+  function createProjectFromForm() {
+    const name = $("#ed-np-name").value.trim();
+    const siteNames = $("#ed-np-sites").value.trim().split(",").map((s) => s.trim()).filter(Boolean);
+    if (!name) { toast("프로젝트명을 입력해주세요", "warn"); return; }
+    if (!siteNames.length) { toast("조사지점을 1개 이상 입력해주세요", "warn"); return; }
+    const defaultRegion = standards.regions?.[0]?.code || null;
+    const sites = siteNames.map((label, i) => ({ code: `s${Date.now()}_${i}`, label, region: defaultRegion }));
+    let itemCodes = [];
+    if (!columnsFixed()) {
+      itemCodes = [...$("#ed-np-items").querySelectorAll("input:checked")].map((el) => el.value);
+      if (!itemCodes.length) { toast("조사항목을 1개 이상 선택해주세요", "warn"); return; }
+    }
+    const proj = { id: `p${Date.now()}`, field: FIELDS[fieldIdx].code, name, sites, itemCodes, rounds: [] };
+    projects.push(proj);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    closeNewProjectForm();
+    renderProjectBanner();
+    selectProject(proj.id);
+    toast(`"${name}" 프로젝트를 만들었습니다`, "ok");
+  }
+
+  function exportTableToExcel() {
+    if (!window.XLSX) { toast("엑셀 라이브러리를 불러오지 못했습니다", "fail"); return; }
+    const aoa = [["측정지점/회차", ...columns.map((c) => c.label)]];
+    for (const row of rows) aoa.push([row.label || "", ...columns.map((c) => row.values[c.id] ?? "")]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "측정데이터");
+    XLSX.writeFile(wb, `${standards.field}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast("엑셀로 내보냈습니다 — 차트는 엑셀에서 표를 선택한 뒤 삽입 메뉴로 추가해주세요", "ok");
   }
 
   /* ── 그리드 렌더 ───────────────────────────────────────────────────── */
@@ -521,6 +844,22 @@ export async function init(section, { toast, bridge, V }) {
   }
 
   function renderGrid() {
+    // 다중분석에서 아직 프로젝트/슬라이스를 고르지 않았으면 표를 그릴 데이터 모양이 없다 —
+    // 빈 표 대신 무엇을 눌러야 하는지 안내한다.
+    if (analysisMode === "multi" && !multiViewMode) {
+      $("#ed-thead-row").innerHTML = "";
+      $("#ed-tbody").innerHTML = "";
+      const scroll = $("#ed-scroll");
+      scroll.querySelectorAll(".ed-multi-placeholder").forEach((el) => el.remove());
+      const ph = document.createElement("div");
+      ph.className = "placeholder ed-multi-placeholder";
+      ph.textContent = activeProject
+        ? "위에서 조사지점 또는 조사항목을 선택하거나 '+ 회차 추가'로 새 조사결과를 등록하세요"
+        : "다중분석 배너에서 프로젝트를 선택하거나 '+ 새 프로젝트'로 시작하세요";
+      scroll.appendChild(ph);
+      return;
+    }
+    $("#ed-scroll").querySelectorAll(".ed-multi-placeholder").forEach((el) => el.remove());
     if (transposed) { renderGridTransposed(); return; }
     const thead = $("#ed-thead-row");
     thead.innerHTML = "";
@@ -1192,7 +1531,7 @@ export async function init(section, { toast, bridge, V }) {
   /* ── 차트 ──────────────────────────────────────────────────────────── */
   function scheduleCharts() {
     clearTimeout(chartDebounce);
-    chartDebounce = setTimeout(renderCharts, 350);
+    chartDebounce = setTimeout(() => { renderCharts(); persistSliceEdits(); }, 350);
   }
   // 차트마다 옵션이 다르므로(col.chartOpts) 설정 값을 반영한 Chart.js config를 매번 새로 만든다
   function buildChartConfig(col, { forExport } = {}) {
@@ -1498,6 +1837,17 @@ export async function init(section, { toast, bridge, V }) {
     fieldIdx = idx;
     standards = next;
     initColumnsAndRows();
+    // 분야가 바뀌면 프로젝트도 분야별 저장소를 다시 읽고, 다중분석 선택 상태는 초기화한다
+    // (다른 분야의 프로젝트를 보여주는 건 의미가 없다).
+    analysisMode = "single";
+    projects = loadProjects(FIELDS[fieldIdx].code);
+    activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
+    savedSingle = null;
+    $("#ed-newround-bar").style.display = "none";
+    closeNewProjectForm();
+    renderModeBanner();
+    renderProjectBanner();
+    renderSliceBanner();
     updateHeaderText();
     refreshAddSelect();
     renderGrid();
@@ -1506,12 +1856,42 @@ export async function init(section, { toast, bridge, V }) {
 
   /* ── 툴바 이벤트 ───────────────────────────────────────────────────── */
   renderFieldBanner();
+  renderModeBanner();
+  renderProjectBanner();
+  renderSliceBanner();
   updateHeaderText();
   refreshAddSelect();
   $("#ed-field-banner").addEventListener("click", (e) => {
     const btn = e.target.closest(".ed-field-btn");
     if (btn) switchField(parseInt(btn.dataset.idx, 10));
   });
+  $("#ed-mode-banner").addEventListener("click", (e) => {
+    const btn = e.target.closest(".ed-mode-btn");
+    if (btn) switchAnalysisMode(btn.dataset.mode);
+  });
+  $("#ed-project-banner").addEventListener("click", (e) => {
+    if (e.target.closest("#ed-project-add")) { openNewProjectForm(); return; }
+    const del = e.target.closest("[data-del]");
+    if (del) { e.stopPropagation(); deleteProject(del.dataset.del); return; }
+    const btn = e.target.closest(".ed-project-btn[data-id]");
+    if (btn) selectProject(btn.dataset.id);
+  });
+  $("#ed-slice-banner").addEventListener("click", (e) => {
+    if (e.target.closest("#ed-round-add")) { startNewRound(); return; }
+    if (e.target.closest("#ed-site-add")) { addSiteToProject(); return; }
+    if (e.target.closest("#ed-item-add")) { addItemToProject(); return; }
+    const delSite = e.target.closest("[data-del-site]");
+    if (delSite) { e.stopPropagation(); removeSiteFromProject(delSite.dataset.delSite); return; }
+    const delItem = e.target.closest("[data-del-item]");
+    if (delItem) { e.stopPropagation(); removeItemFromProject(delItem.dataset.delItem); return; }
+    const btn = e.target.closest(".ed-slice-btn[data-axis]");
+    if (btn) selectSlice(btn.dataset.axis, btn.dataset.key);
+  });
+  $("#ed-np-create").addEventListener("click", createProjectFromForm);
+  $("#ed-np-cancel").addEventListener("click", closeNewProjectForm);
+  $("#ed-round-save").addEventListener("click", commitNewRound);
+  $("#ed-round-cancel").addEventListener("click", backToSliceOrEmpty);
+  $("#ed-export-xlsx").addEventListener("click", exportTableToExcel);
   $("#ed-add-item").addEventListener("change", (e) => {
     const v = e.target.value;
     if (!v) return;
