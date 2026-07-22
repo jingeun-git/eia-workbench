@@ -895,10 +895,16 @@ body.gc-resizing * { cursor: col-resize !important; }
    "일산화" / "탄소" / "(CO)"처럼 세 줄로 쪼개지는 사고가 재발했다(2026-07-22, "글자크기"
    라벨 때와 동일 함정 — 이번엔 항목명·기준 부분에 nowrap을 안 줬던 게 원인). 항목명·기준
    텍스트는 한 줄로, 컨트롤 사이 구분은 공백 대신 세로선으로 시각적으로 정리한다. */
-.ed-item-slice-info { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); flex-wrap: nowrap; white-space: nowrap; }
+/* flex-shrink:0을 컨테이너 자신에도 줘야 한다 — 자식(b/span/select)만 shrink:0이면
+   바깥 flex row가 좁아질 때 이 컨테이너의 "박스"만 content보다 작게 줄어들고(순환 크기
+   계산), select의 전역 width:100%(163행)가 그 줄어든 박스 기준 100%로 확정되면서
+   내용이 오른쪽 "글자크기" 컨트롤 위로 겹쳐 넘쳤다(2026-07-22 실사고, "공통 수정사항"
+   지적) — 이 컨테이너는 아예 줄어들지 않게 고정해 바깥 flex-wrap이 줄바꿈으로 대신
+   반응하게 한다. */
+.ed-item-slice-info { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); flex-wrap: nowrap; white-space: nowrap; flex-shrink: 0; }
 .ed-item-slice-info > b, .ed-item-slice-info > span { white-space: nowrap; flex-shrink: 0; }
 .ed-item-slice-info > span { display: flex; align-items: center; gap: 4px; padding-left: var(--space-3); border-left: 1px solid var(--border); }
-.ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); flex-shrink: 0; }
+.ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); flex-shrink: 0; width: auto; }
 .ed-item-slice-info input[type="number"] { width: 70px; text-align: center; }
 
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
