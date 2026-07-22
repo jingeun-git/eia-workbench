@@ -99,16 +99,21 @@ function findPeriodByAlias(standards, text) {
 }
 // "나" 한 글자만으로 매칭하면 다른 지역의 설명문 속 "나"에도 걸릴 위험이 있어
 // 코드 정확일치를 먼저 보고, 라벨은 괄호 앞 핵심명(2글자 이상)만 비교한다.
+// 하천/호소 등급명처럼 짧은 등급이 긴 등급의 부분문자열인 경우(좋음 ⊂ 매우좋음/약간좋음)
+// 배열 순서상 먼저 나온 region의 substring-포함 매치가 나중에 나온 정확일치 region을
+// 가로채는 사고가 있었다(2026-07-22 실측 — "좋음"이 "매우좋음"에 먼저 걸려 Ib 대신 Ia로
+// 오판정) → exact-core 매치를 전부 먼저 훑고, 그래도 없을 때만 substring 폴백한다.
 function findRegionByAlias(standards, text) {
   const n = norm(text);
   if (!n) return null;
   let hit = (standards.regions || []).find((r) => norm(r.code) === n);
   if (hit) return hit;
   if (n.length < 2) return null;
-  return (standards.regions || []).find((r) => {
-    const core = norm(String(r.label || "").split(/[(（]/)[0]);
-    return core && (core === n || core.includes(n) || n.includes(core));
-  }) || null;
+  const cores = (standards.regions || []).map((r) => ({ r, core: norm(String(r.label || "").split(/[(（]/)[0]) }));
+  const exact = cores.find((c) => c.core === n);
+  if (exact) return exact.r;
+  const fuzzy = cores.find((c) => c.core && (c.core.includes(n) || n.includes(c.core)));
+  return fuzzy ? fuzzy.r : null;
 }
 // 등록문서(측정업체 xlsx)에는 항목이 아닌 관리열이 섞여 있다 — 이를 항목으로 오인해
 // 무의미한 사용자 항목을 만들지 않도록 사전 차단한다.
@@ -709,6 +714,15 @@ export async function init(section, { toast, bridge, V }) {
       <button type="button" class="btn btn-secondary" id="ed-round-add">+ 회차 추가</button>`;
   }
 
+  // 지점·항목 추가/삭제 후 "지금 보고 있는 표"를 다시 그린다 — renderSliceBanner()는
+  // 위쪽 칩 목록만 갱신하고 아래 상세 표(newRound 입력폼 또는 슬라이스 뷰)는 건드리지
+  // 않아서, 편집 중에 지점·항목을 추가해도 표에 새 행/열이 안 나타나던 버그였다
+  // (2026-07-22 사용자 실사용 지적 — "회차 추가해도 상세 표에 동기화가 안 된다").
+  function refreshCurrentView() {
+    if (analysisMode !== "multi" || !activeProject) return;
+    if (multiViewMode === "newRound") { buildNewRoundColumnsAndRows(); renderGrid(); scheduleCharts(); }
+    else if (multiViewMode === "slice") { buildSliceColumnsAndRows(); renderGrid(); scheduleCharts(); }
+  }
   // 프로젝트 생성 후에도 지점·항목을 추가/삭제할 수 있어야 한다(사용자 확정, 2026-07-22).
   // 삭제는 sites/itemCodes 목록에서만 빼고 기존 회차의 값 자체는 그대로 둔다(비파괴적).
   function addSiteToProject() {
@@ -717,12 +731,14 @@ export async function init(section, { toast, bridge, V }) {
     activeProject.sites.push({ code: `s${Date.now()}`, label: label.trim(), region: standards.regions?.[0]?.code || null, ...defaultRowFields() });
     saveProjects(FIELDS[fieldIdx].code, projects);
     renderSliceBanner();
+    refreshCurrentView();
     toast(`"${label.trim()}" 지점이 추가되었습니다`, "ok");
   }
   function removeSiteFromProject(code) {
     activeProject.sites = activeProject.sites.filter((s) => s.code !== code);
     saveProjects(FIELDS[fieldIdx].code, projects);
     if (sliceAxis === "site" && sliceKey === code) { sliceAxis = null; sliceKey = null; multiViewMode = null; columns = []; rows = []; renderGrid(); renderCharts(); }
+    else refreshCurrentView();
     renderSliceBanner();
   }
   function addItemToProject() {
@@ -736,12 +752,14 @@ export async function init(section, { toast, bridge, V }) {
     activeProject.itemCodes.push(item.code);
     saveProjects(FIELDS[fieldIdx].code, projects);
     renderSliceBanner();
+    refreshCurrentView();
     toast(`"${item.label}" 항목이 추가되었습니다`, "ok");
   }
   function removeItemFromProject(code) {
     activeProject.itemCodes = activeProject.itemCodes.filter((c) => c !== code);
     saveProjects(FIELDS[fieldIdx].code, projects);
     if (sliceAxis === "item" && sliceKey === code) { sliceAxis = null; sliceKey = null; multiViewMode = null; columns = []; rows = []; renderGrid(); renderCharts(); }
+    else refreshCurrentView();
     renderSliceBanner();
   }
 

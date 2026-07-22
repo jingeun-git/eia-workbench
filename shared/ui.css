@@ -1062,11 +1062,17 @@ body.ed-resizing * { cursor: col-resize !important; }
 }
 
 /* ── 의견 수집 워터마크 ────────────────────────────────────────────────
-   화면 우하단에 옅게 상주한다. 본문을 가리지 않도록 클릭은 링크에만 통과시킨다. */
+   화면 우하단에 옅게 상주한다. 본문을 가리지 않도록 클릭은 링크에만 통과시킨다.
+   배경이 없어 본문 텍스트(관련기준 패널의 "* 출처 : ..." 줄 등)가 그 아래로
+   스크롤되면 텍스트끼리 겹쳐 둘 다 못 읽게 되는 사고가 있었다(2026-07-22 실측,
+   지하수질·하천수질 등 출처 문구가 긴 분야에서 재현) — 옅은 배경을 줘서 항상
+   워터마크가 위에 깔끔히 보이도록 한다. */
 .feedback-mark {
   position: fixed; right: 14px; bottom: 10px; z-index: var(--z-sticky);
   font-size: 11px; line-height: 1.4; color: var(--text-dim);
   pointer-events: auto; user-select: text;   /* 주소를 끌어 복사할 수 있게 */
   text-align: right; max-width: min(92vw, 420px);
+  background: var(--surface); padding: 3px 8px; border-radius: var(--radius-md, 8px);
+  box-shadow: 0 1px 4px color-mix(in srgb, black 15%, transparent);
 }
 @media (max-width: 760px) { .feedback-mark { position: static; margin: var(--space-4) var(--space-3); text-align: center; max-width: none; } }

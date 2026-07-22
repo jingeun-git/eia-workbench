@@ -1,8 +1,14 @@
 # envdata(환경질 측정 데이터 분석) Playwright 회귀 스위트
 
-`modules/envdata.js`(SYS-41~56) 전용 브라우저 회귀 테스트 22개 파일, 총 243건.
+`modules/envdata.js`(SYS-41~56) 전용 브라우저 회귀 테스트 23개 파일, 총 247건.
 2026-07-22까지 매 변경마다 이 스위트 전체를 실행해 실패 0건을 확인한 뒤 배포했다.
 그동안 세션 임시 스크래치패드(`/tmp`)에만 있어 세션이 끝나면 사라지는 상태였다 — 이번에 저장소로 이관.
+
+`fixtures/` — verify10.js·verify24.js가 쓰는 xlsx 실물 파일 3개(messy_air·flipped_noise·
+river_life_region). 저장소 이관 당시 이 파일들만 누락돼 있었던 걸 발견해 재생성했다
+(2026-07-22) — 재생성 중 실제 매칭 버그(findRegionByAlias exact-match 우선순위, 아래 참조)를
+하나 더 찾아냈으니, 이 파일들을 지우고 다시 만들 때는 raw 등급명(코드 접미사 없이 "좋음"처럼
+다른 등급명의 부분문자열이 되는 값)으로 꼭 검증할 것.
 
 ## 실행 방법
 
@@ -51,6 +57,7 @@ LD_LIBRARY_PATH=<libasound.so.2가 있는 경로> node verify.js
 | verify21.js | 5 | 항목슬라이스 정보바-글자크기 컨트롤 오버플로 수정 검증(SYS-53) |
 | verify22.js | 17 | **소음/진동 지점별 관련기준 선택 + 지역구분 연동, 토양 우려/대책 토글**(SYS-56 핵심) |
 | verify23.js | 6 | **다중분석에서 관련기준이 조사지점 단위로 유지**(지점슬라이스·새회차 재진입·새로고침 영속, SYS-56) |
+| verify24.js | 4 | **findRegionByAlias exact-match 우선순위 버그**(SYS-57) — "좋음"이 "매우좋음"의 부분문자열이라 Ib 대신 Ia로 오판정되던 것 수정 |
 
 ## 알아둘 것
 
