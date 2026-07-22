@@ -283,7 +283,7 @@ export async function init(section, { toast, bridge, V }) {
     return item?.standards?.[0]?.unit === "ppm";
   }
   function dbStandard(col) {
-    if (col.custom || !col.code) return null;
+    if (col.custom || !col.code || !standards.items) return null;
     const item = standards.items.find((i) => i.code === col.code);
     if (!item) return null;
     const raw = item.standards.find((s) => s.averaging === col.averaging)
@@ -510,6 +510,8 @@ export async function init(section, { toast, bridge, V }) {
       </table>
     </div>
   </div>
+
+  <div class="ed-summary panel" id="ed-summary" style="display:none"></div>
 
   <div class="panel">
     <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-2)">
@@ -812,6 +814,94 @@ export async function init(section, { toast, bridge, V }) {
         renderGrid(); scheduleCharts();
       });
     });
+  }
+
+  // 표와 그래프 사이 "분석 요약" — 표에 값이 입력되면 항목/지점별 최소~최대, 등급범위(있는
+  // 분야만), 기준초과 지점·항목을 자동 표출한다(사용자 지시, 2026-07-22). 집계축이 셋으로
+  // 갈린다: 단일분석·다중분석-지점슬라이스는 "항목별"(같은 shape — 열=항목,행=지점 또는
+  // 행=회차), 다중분석-항목슬라이스는 "지점별 세부 + 지점 무시 전체 통합"(사용자 확인:
+  // 지점을 나눠보는 것과 합쳐보는 것 둘 다 필요). "등급이 있다면"은 문자 그대로 등급
+  // 개념(순서형 목표등급)이 있는 분야만 — regionLabel이 "목표등급"인 하천·호소만 해당,
+  // 소음·진동·토양의 "지역구분"은 순서형 등급이 아니라 용도/범주 구분이라 대상에서 뺐다.
+  // "선택한 조사회차 기간"은 별도 회차 범위선택 UI를 새로 만들지 않고, 지금 슬라이스에
+  // 보이는 전체 회차 그대로를 대상으로 한다(사용자 확인, 2026-07-22).
+  function renderSummary() {
+    const el = $("#ed-summary");
+    if (analysisMode === "multi" && !multiViewMode) { el.style.display = "none"; return; }
+    if (!columns.length || !rows.length) { el.style.display = "none"; return; }
+
+    const cells = [];
+    for (const col of columns) for (const row of rows) {
+      const raw = row.values[col.id];
+      const v = typeof raw === "number" ? raw : parseNum(raw);
+      if (v != null && !Number.isNaN(v)) cells.push({ col, row, value: v });
+    }
+    if (!cells.length) { el.style.display = "none"; return; }
+
+    const hasGrade = standards.regionLabel === "목표등급";
+    const fmtRange = (vals) => {
+      if (!vals.length) return "—";
+      const mn = Math.min(...vals), mx = Math.max(...vals);
+      return mn === mx ? fmtNum(mn) : `${fmtNum(mn)}~${fmtNum(mx)}`;
+    };
+    const gradeRangeOf = (pairs) => {
+      if (!hasGrade) return null;
+      const idxes = pairs.map(({ col, row }) => standards.regions.findIndex((r) => r.code === regionOf(col, row))).filter((i) => i >= 0);
+      if (!idxes.length) return null;
+      const mn = Math.min(...idxes), mx = Math.max(...idxes);
+      return mn === mx ? standards.regions[mn].label : `${standards.regions[mn].label}~${standards.regions[mx].label}`;
+    };
+    const exceedList = (pairs) => pairs
+      .filter(({ col, row, value }) => isExceed(effectiveStandard(col, row), value))
+      .map(({ col, row }) => `${row.label || ""} ${col.label || ""}`.trim())
+      .filter(Boolean);
+    const unitOf = (col) => col.unit || dbStandard(col)?.unit || standards.unit || "";
+
+    // "새 회차 추가"(newRound) 입력폼은 항상 행=지점·열=항목 모양이라(어느 슬라이스를
+    // 보다 진입했든 무관), sliceAxis가 이전 슬라이스에서 "item"으로 남아있어도 항목슬라이스
+    // 로 오분류하면 안 된다 — multiViewMode==="slice"일 때만 실제 슬라이스 모양을 따른다
+    // (2026-07-22 실측 버그: newRound에서 항목명이 "지점"칸에 잘못 표시됨).
+    const isSingle = analysisMode === "single";
+    const isNewRoundShape = analysisMode === "multi" && multiViewMode === "newRound";
+    const isSiteSlice = analysisMode === "multi" && multiViewMode === "slice" && sliceAxis === "site";
+    const isItemSlice = analysisMode === "multi" && multiViewMode === "slice" && sliceAxis === "item";
+    let html = "";
+
+    if (isSingle || isSiteSlice || isNewRoundShape) {
+      const lines = columns.map((col) => {
+        const pairs = cells.filter((c) => c.col === col);
+        if (!pairs.length) return null;
+        const range = fmtRange(pairs.map((p) => p.value));
+        const exceeds = exceedList(pairs);
+        const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
+        return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(unitOf(col))}${exceedTxt}</li>`;
+      }).filter(Boolean);
+      const grade = gradeRangeOf(cells.map(({ col, row }) => ({ col, row })));
+      html = `<h3 style="margin:0 0 var(--space-2)">분석 요약</h3>`
+        + (grade ? `<p class="ed-summary-grade">목표등급 범위: <b>${escapeHtml(grade)}</b></p>` : "")
+        + `<ul class="ed-summary-list">${lines.join("")}</ul>`;
+    } else if (isItemSlice) {
+      const overallRange = fmtRange(cells.map((c) => c.value));
+      const overallUnit = unitOf(columns[0]);
+      const overallGrade = gradeRangeOf(cells.map(({ col, row }) => ({ col, row })));
+      const allExceeds = exceedList(cells);
+      const perSite = columns.map((col) => {
+        const pairs = cells.filter((c) => c.col === col);
+        if (!pairs.length) return null;
+        const range = fmtRange(pairs.map((p) => p.value));
+        const exceeds = exceedList(pairs);
+        const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
+        return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(overallUnit)}${exceedTxt}</li>`;
+      }).filter(Boolean);
+      html = `<h3 style="margin:0 0 var(--space-2)">분석 요약</h3>`
+        + `<p class="ed-summary-overall">전체(지점 무시): <b>${escapeHtml(overallRange)}${escapeHtml(overallUnit)}</b>`
+        + (overallGrade ? ` · 목표등급 범위 <b>${escapeHtml(overallGrade)}</b>` : "")
+        + (allExceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${allExceeds.map(escapeHtml).join(", ")}</span>` : "")
+        + `</p><p class="ed-summary-sub">지점별</p><ul class="ed-summary-list">${perSite.join("")}</ul>`;
+    }
+
+    el.innerHTML = html;
+    el.style.display = html ? "" : "none";
   }
 
   function buildSliceColumnsAndRows() {
@@ -1167,6 +1257,7 @@ export async function init(section, { toast, bridge, V }) {
     // 분야/모드로 새어나가던 버그, 2026-07-22), 버튼의 눌림 표시도 매 렌더마다 변수값에
     // 맞춰 동기화한다 — 클릭 핸들러에서만 갱신하면 프로그램적 리셋이 화면에 반영 안 된다.
     $("#ed-transpose")?.setAttribute("aria-pressed", String(transposed));
+    renderSummary();
     // 다중분석에서 아직 프로젝트/슬라이스를 고르지 않았으면 표를 그릴 데이터 모양이 없다 —
     // 빈 표 대신 무엇을 눌러야 하는지 안내한다.
     if (analysisMode === "multi" && !multiViewMode) {
@@ -1884,7 +1975,7 @@ export async function init(section, { toast, bridge, V }) {
   /* ── 차트 ──────────────────────────────────────────────────────────── */
   function scheduleCharts() {
     clearTimeout(chartDebounce);
-    chartDebounce = setTimeout(() => { renderCharts(); persistSliceEdits(); }, 350);
+    chartDebounce = setTimeout(() => { renderCharts(); renderSummary(); persistSliceEdits(); }, 350);
   }
   // 차트마다 옵션이 다르므로(col.chartOpts) 설정 값을 반영한 Chart.js config를 매번 새로 만든다
   function buildChartConfig(col, { forExport } = {}) {

@@ -1039,6 +1039,15 @@ body.ed-resizing * { cursor: col-resize !important; }
 /* 일괄적용 체크 시 1번 카드를 뺀 나머지는 "따라가는 카드"라 조작을 막고 흐리게 표시 */
 .ed-chart-ctlrow.is-bulk-follower { opacity: .45; pointer-events: none; transition: opacity .18s ease; }
 .ed-chart-note { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+
+/* 분석 요약 — 표와 그래프 사이(SYS-61, 2026-07-22). 값 입력 즉시 항목/지점별 최소~최대·
+   등급범위·기준초과를 보여준다. 초과 항목은 색으로 눈에 띄게, 나머지는 담백하게. */
+.ed-summary { margin-top: var(--space-4); }
+.ed-summary-list { margin: 0; padding-left: 1.2em; font-size: var(--text-sm); line-height: 1.8; }
+.ed-summary-grade { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-muted); }
+.ed-summary-overall { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.ed-summary-sub { margin: var(--space-2) 0 var(--space-1); font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--weight-semibold); }
+.ed-summary-exceed { color: var(--fail, #d33); font-weight: var(--weight-medium); }
 .ed-banner {
   margin: 0 0 var(--space-4); padding: var(--space-3);
   background: var(--accent-subtle); border-left: 3px solid var(--accent);
