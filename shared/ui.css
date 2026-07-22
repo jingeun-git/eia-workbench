@@ -781,16 +781,35 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-field-btn:hover { background: var(--accent-subtle); }
 .ed-field-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: var(--weight-semibold); }
 
-/* 분석모드·프로젝트·슬라이스 배너(다중분석, SYS-49) — 분야배너와 같은 칩 스타일 재사용,
-   구분을 위해 모드/슬라이스 칩은 살짝 다른 톤(보더 강조)을 쓴다. */
-.ed-mode-banner, .ed-project-banner { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
-.ed-mode-btn, .ed-project-btn {
-  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+/* 분석모드·프로젝트·슬라이스 배너(다중분석, SYS-49) — 3단이 다 같은 칩이면 시각적으로
+   구분이 안 된다는 지적(2026-07-22)으로 위계를 명확히 나눈다:
+   ① 분야(.ed-field-btn) — 가장 위, 진한 강조색 필(불변)
+   ② 모드(단일/다중) — 개별 칩이 아니라 하나의 토글 박스(.segment와 같은 문법)로,
+      "카테고리 목록"이 아니라 "2지 스위치"라는 걸 형태로 알려준다
+   ③④ 프로젝트·슬라이스 — 다중분석에 종속된 하위 항목이라는 걸 보이려고 옅은 배경 박스로
+      감싸고 왼쪽에 강조색 바를 둔다(들여쓰기 대신 배경으로 구분 — 좁은 화면에서도 안전) */
+.ed-mode-banner {
+  display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 3px; margin-bottom: var(--space-3);
+}
+.ed-mode-btn {
+  appearance: none; border: 0; background: none; color: var(--text-muted); border-radius: 6px;
+  padding: 5px 14px; font-size: var(--text-sm); cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.ed-mode-btn:hover { color: var(--text); }
+.ed-mode-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+.ed-project-banner {
+  display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center;
+  background: var(--accent-subtle); border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0; padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2);
+}
+.ed-project-btn {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface);
   color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: var(--text-sm);
   cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.ed-mode-btn:hover, .ed-project-btn:hover { background: var(--accent-subtle); }
-.ed-mode-btn[aria-pressed="true"] { background: var(--text); color: var(--text-invert); border-color: var(--text); font-weight: var(--weight-semibold); }
+.ed-project-btn:hover { background: var(--surface-2); }
 .ed-project-btn[aria-pressed="true"] { background: var(--ok, #2a9d63); color: #fff; border-color: var(--ok, #2a9d63); font-weight: var(--weight-semibold); }
 .ed-project-btn-add { border-style: dashed; }
 .ed-project-btn-del {
@@ -798,7 +817,11 @@ body.gc-resizing * { cursor: col-resize !important; }
   margin-left: 4px; font-size: 12px; line-height: 1;
 }
 .ed-project-btn-del:hover { color: var(--fail); }
-.ed-slice-banner { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; margin-bottom: var(--space-3); padding: var(--space-2) 0; border-top: 1px dashed var(--border); }
+.ed-slice-banner {
+  display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center;
+  background: var(--surface-2); border-left: 3px solid var(--ok, #2a9d63);
+  border-radius: 0 8px 8px 0; margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3);
+}
 .ed-slice-group { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
 .ed-slice-group-label { font-size: var(--text-xs); color: var(--text-muted); margin-right: 2px; }
 .ed-slice-btn {
@@ -817,8 +840,16 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-newproject-form .field { margin-bottom: var(--space-3); }
 #ed-np-items { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 #ed-np-items label { display: flex; align-items: center; gap: 4px; font-size: var(--text-sm); cursor: pointer; }
-.ed-newround-bar { display: flex; gap: var(--space-2); align-items: center; margin-top: var(--space-2); }
+.ed-newround-bar {
+  display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;
+  background: var(--surface-2); border-left: 3px solid var(--ok, #2a9d63);
+  border-radius: 0 8px 8px 0; margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3);
+}
+.ed-newround-bar label { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
 .ed-newround-bar input[type="text"] { max-width: 260px; }
+
+/* 화면 최상단 자동저장 안내(사용자 지시, 2026-07-22) — 담백하게, 본문보다 눈에 덜 띄게 */
+.ed-toppage-note { margin: 0 0 var(--space-3); font-size: var(--text-xs); color: var(--text-dim); }
 
 /* 상단 안내 패널 — 왼쪽(제목·설명·업로드), 오른쪽(분야별 기준값표). 좁은 화면은 세로로 쌓는다. */
 .ed-head-flex { display: flex; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; }
@@ -827,6 +858,30 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-ref-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
 /* 본문 표(.ed-table)와 동일 원칙 — 내부 텍스트는 전부 중앙정렬(사용자 지시, 2026-07-22) */
 .ed-ref-table th, .ed-ref-table td { white-space: nowrap; text-align: center; }
+/* 출처·각주는 본문 문장과 다른 성격이라 작게·옅게 — .help는 .field 안에서만 작동해 밖에서
+   쓰면 본문 크기 그대로 나오는 게 실제 원인이었다(2026-07-22 발견). */
+.ed-ref-source, .ed-ref-note { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--text-dim); line-height: 1.5; }
+/* 법령 비고·보정조항·경고는 법적 판단에 직결되는 단서라 생략하지 않는다(사용자 지시,
+   2026-07-22) — 다만 본문 표보다는 옅게, 경고성 내용은 색으로 위계를 준다. */
+.ed-ref-notes, .ed-ref-corrections ul { margin: var(--space-1) 0 0; padding-left: 1.1em; font-size: var(--text-xs); color: var(--text-dim); line-height: 1.6; }
+.ed-ref-corrections { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--text-dim); }
+.ed-ref-corrections > b { color: var(--text-muted); font-weight: var(--weight-semibold); }
+.ed-ref-warning { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--warn); }
+.ed-ref-warning p { margin: 2px 0; }
+.ed-ref-currency-warning {
+  margin-top: var(--space-2); padding: var(--space-2); font-size: var(--text-xs); color: var(--fail);
+  background: var(--fail-subtle); border-radius: var(--radius-sm, 6px); line-height: 1.6;
+}
+.ed-ref-extra { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px dashed var(--border); }
+.ed-ref-subtitle { margin: 0 0 var(--space-1); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text); }
+.ed-ref-badge {
+  margin-left: 6px; padding: 1px 8px; font-size: var(--text-xs); font-weight: var(--weight-medium);
+  color: var(--warn); background: var(--warn-subtle); border-radius: 999px; vertical-align: middle;
+}
+.ed-ref-intro { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6; }
+.ed-item-slice-info { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); }
+.ed-item-slice-info input[type="number"] { width: 70px; text-align: center; }
 
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
 /* 전역 input[type=number] 기본룰(163행, width:100%+height:var(--input-height))이 명시도(attribute

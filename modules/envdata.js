@@ -14,8 +14,8 @@ const FIELDS = [
   { code: "noise", label: "소음", file: "noise.json" },
   { code: "vibration", label: "진동", file: "vibration.json" },
   { code: "soil", label: "토양오염도", file: "soil.json" },
-  { code: "river_life", label: "하천수질", file: "river_life.json", healthRef: "river_health.json" },
-  { code: "lake_life", label: "호소수질", file: "lake_life.json", healthRef: "lake_health.json" },
+  { code: "river_life", label: "하천수질", file: "river_life.json" },
+  { code: "lake_life", label: "호소수질", file: "lake_life.json" },
   { code: "groundwater", label: "지하수질", file: "groundwater.json" },
 ];
 
@@ -230,6 +230,7 @@ export async function init(section, { toast, bridge, V }) {
   let multiViewMode = null; // null(슬라이스 선택 전) | "slice" | "newRound"
   let roundSeq = 0;
   let savedSingle = null; // 다중분석 전환 시 단일분석 columns/rows를 잠시 보관
+  let currentEditRoundId = null; // multiViewMode==="newRound"일 때 지금 채우고 있는 회차 id
   const defaultChartColor = cssVar("--accent", "#2f6fed");
   /* 그래프 옵션은 전역이 아니라 컬럼(항목)마다 따로 갖는다 — "그래프별 개별 설정"
      요청 반영. 처음 렌더될 때 col.chartOpts가 없으면 기본값으로 채운다. */
@@ -343,11 +344,17 @@ export async function init(section, { toast, bridge, V }) {
   }
   /* ── 마크업 ────────────────────────────────────────────────────────── */
   section.innerHTML = `
+  <p class="ed-toppage-note">이 화면은 다중분석 프로젝트에 한해 사용자가 편집한 마지막 상태를 이 브라우저(로컬 PC)에 자동 저장합니다 — 단일분석은 저장되지 않습니다.</p>
   <div class="panel">
     <div class="ed-field-banner" id="ed-field-banner" role="tablist" aria-label="분야 선택"></div>
     <div class="ed-mode-banner" id="ed-mode-banner" role="tablist" aria-label="분석 모드"></div>
     <div class="ed-project-banner" id="ed-project-banner" role="tablist" aria-label="프로젝트" style="display:none"></div>
     <div class="ed-slice-banner" id="ed-slice-banner" style="display:none"></div>
+    <div class="ed-newround-bar" id="ed-newround-bar" style="display:none">
+      <label>회차명 <input type="text" id="ed-round-label" placeholder="예: 3차(2026-03-10)"></label>
+      <button class="btn btn-primary" id="ed-round-done">완료</button>
+      <button class="btn btn-secondary" id="ed-round-delete">이 회차 삭제</button>
+    </div>
     <div class="panel ed-newproject-form" id="ed-newproject-form" style="display:none">
       <h4 style="margin:0 0 var(--space-2)">새 프로젝트</h4>
       <div class="field"><label>프로젝트명</label><input type="text" id="ed-np-name" placeholder="예: OO사업 2026 대기질 조사"></div>
@@ -363,7 +370,6 @@ export async function init(section, { toast, bridge, V }) {
       <div class="ed-head-left">
         <h2 id="ed-title">환경질 측정 데이터 분석</h2>
         <p class="desc" id="ed-desc"></p>
-        <div class="ed-banner" id="ed-health-banner" style="display:none"></div>
 
         <div class="field">
           <label>등록문서 업로드 (xlsx·csv·hwp·pdf)</label>
@@ -383,11 +389,6 @@ export async function init(section, { toast, bridge, V }) {
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
           <button class="btn btn-secondary" id="ed-export-xlsx" title="표 데이터를 엑셀로 내보냅니다(그래프는 엑셀에서 직접 삽입해주세요)">엑셀로 내보내기</button>
         </div>
-        <div class="ed-newround-bar" id="ed-newround-bar" style="display:none">
-          <input type="text" id="ed-round-label" placeholder="회차명(예: 3차(2026-03-10))">
-          <button class="btn btn-primary" id="ed-round-save">회차 저장</button>
-          <button class="btn btn-secondary" id="ed-round-cancel">취소</button>
-        </div>
       </div>
 
       <div class="ed-head-right">
@@ -400,10 +401,13 @@ export async function init(section, { toast, bridge, V }) {
   <div class="ed-main panel">
     <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2)">
       <h3 style="margin:0">표</h3>
-      <label class="ed-chk-label">글자크기
-        <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px">
-        <input type="number" id="ed-font-size-num" min="70" max="150" value="100" class="ed-slider-num">%
-      </label>
+      <div style="display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap">
+        <div class="ed-item-slice-info" id="ed-item-slice-info" style="display:none"></div>
+        <label class="ed-chk-label">글자크기
+          <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px">
+          <input type="number" id="ed-font-size-num" min="70" max="150" value="100" class="ed-slider-num">%
+        </label>
+      </div>
     </div>
     <div class="ed-scroll" id="ed-scroll">
       <table class="ed-table" id="ed-table">
@@ -473,12 +477,57 @@ export async function init(section, { toast, bridge, V }) {
       });
     }
     const dualNote = standards.dualStandard
-      ? `<p class="help" style="margin:var(--space-1) 0 0">숫자 표기는 ${escapeHtml(standards.dualStandard.concernLabel)}/${escapeHtml(standards.dualStandard.actionLabel)} 순서입니다.</p>` : "";
-    const legal = `<p class="help" style="margin:var(--space-2) 0 0">
-      <b>근거</b> ${escapeHtml(standards.legal_basis || "—")}${standards.enacted ? ` · <b>고시(시행)일</b> ${escapeHtml(standards.enacted)}` : ""}
-    </p>`;
-    return `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
-      + `<thead>${theadHtml}</thead><tbody>${bodyRows.join("")}</tbody></table></div>${dualNote}${legal}`;
+      ? `<p class="ed-ref-note">숫자 표기는 ${escapeHtml(standards.dualStandard.concernLabel)}/${escapeHtml(standards.dualStandard.actionLabel)} 순서입니다.</p>` : "";
+    // 원문 비고·보정조항·경고는 법적 판단에 직결되는 단서라 생략하지 않는다(사용자 지시,
+    // 2026-07-22) — 지금까지 JSON에 있어도 화면에 안 뜨던 사각지대였다(notes 미출력 확인됨).
+    const legal = `<p class="ed-ref-source">* 출처 : ${escapeHtml(standards.legal_basis || "—")}${standards.enacted ? ` / ${escapeHtml(standards.enacted)}` : ""}</p>`;
+    const mainTable = `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
+      + `<thead>${theadHtml}</thead><tbody>${bodyRows.join("")}</tbody></table></div>`
+      + notesListHtml(standards.notes) + correctionsListHtml(standards.corrections) + flagsListHtml(standards.criticalFlags)
+      + dualNote + currencyWarningHtml(standards.currencyWarning) + legal;
+    const intro = standards.additionalStandardsIntro
+      ? `<p class="ed-ref-intro">${escapeHtml(standards.additionalStandardsIntro)}</p>` : "";
+    const extraTables = (standards.additionalStandards || []).map(renderExtraStandardTable).join("");
+    return mainTable + (extraTables ? intro + extraTables : "");
+  }
+
+  // notes·corrections·criticalFlags·currencyWarning은 법적 판단에 직결되는 단서라 절대
+  // 생략하지 않고 전부 렌더링한다(사용자 지시, 2026-07-22) — 메인표·추가표 양쪽에서 재사용.
+  function notesListHtml(notes) {
+    return (notes || []).length ? `<ul class="ed-ref-notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : "";
+  }
+  function correctionsListHtml(corr) {
+    return (corr || []).length ? `<div class="ed-ref-corrections"><b>보정</b><ul>${corr.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul></div>` : "";
+  }
+  function flagsListHtml(flags) {
+    return (flags || []).length ? `<div class="ed-ref-warning">${flags.map((f) => `<p>⚠ ${escapeHtml(f)}</p>`).join("")}</div>` : "";
+  }
+  function currencyWarningHtml(w) {
+    return w ? `<div class="ed-ref-currency-warning">⚠ ${escapeHtml(w)}</div>` : "";
+  }
+
+  // 근거법령이 다른 기준(예: 소음의 교통관리기준·생활소음규제기준·환경분쟁조정 피해인정기준)은
+  // 메인 표에 억지로 합치지 않고 각각 별도 표로 보여준다(사용자 지시, 2026-07-22).
+  function renderExtraStandardTable(extra) {
+    const cellText = (v) => (v == null ? "—" : escapeHtml(String(v)));
+    const head = `<tr>${extra.columns.map((c) => `<th class="num">${escapeHtml(c)}</th>`).join("")}</tr>`;
+    const body = extra.rows.map((r) => `<tr>${r.map((cell, i) => (i === 0 ? `<th>${cellText(cell)}</th>` : `<td class="num">${cellText(cell)}</td>`)).join("")}</tr>`).join("");
+    const legend = extra.regionLegend
+      ? `<p class="ed-ref-note">${Object.entries(extra.regionLegend).map(([k, v]) => `${escapeHtml(k)} = ${escapeHtml(v)}`).join(" · ")}</p>` : "";
+    const badge = extra.sourceBadge ? `<span class="ed-ref-badge">${escapeHtml(extra.sourceBadge)}</span>` : "";
+    const source = `<p class="ed-ref-source">* 출처 : ${escapeHtml(extra.legal_basis || "—")}${extra.enacted ? ` / ${escapeHtml(extra.enacted)}` : ""}</p>`;
+    const nestedTable = extra.extraTable ? `
+      <p class="ed-ref-subtitle" style="margin-top:var(--space-2)">${escapeHtml(extra.extraTable.title)}</p>
+      <div class="ed-ref-scroll"><table class="cap-table ed-ref-table">
+        <thead><tr>${extra.extraTable.columns.map((c) => `<th class="num">${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${extra.extraTable.rows.map((r) => `<tr>${r.map((c, i) => (i === 0 ? `<th>${cellText(c)}</th>` : `<td class="num">${cellText(c)}</td>`)).join("")}</tr>`).join("")}</tbody>
+      </table></div>
+      ${extra.extraTable.note ? `<p class="ed-ref-note">${escapeHtml(extra.extraTable.note)}</p>` : ""}` : "";
+    return `<div class="ed-ref-extra">
+      <p class="ed-ref-subtitle">${escapeHtml(extra.title)}${badge}</p>
+      <div class="ed-ref-scroll"><table class="cap-table ed-ref-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      ${legend}${notesListHtml(extra.notes)}${correctionsListHtml(extra.corrections)}${flagsListHtml(extra.criticalFlags)}${currencyWarningHtml(extra.currencyWarning)}${source}${nestedTable}
+    </div>`;
   }
 
   function updateHeaderText() {
@@ -491,18 +540,6 @@ export async function init(section, { toast, bridge, V }) {
     // 다중분석 중엔 컬럼이 프로젝트(sites/itemCodes)에서 파생되므로 구조편집(항목·지점 추가,
     // 표초기화)은 의미가 없다 — 숨긴다. 엑셀 내보내기는 별도 div라 영향받지 않는다.
     $("#ed-add-item").parentElement.style.display = (columnsFixed() || analysisMode === "multi") ? "none" : "";
-
-    // 하천·호소는 사람건강보호기준(20개 유해물질, 단순임계값)을 별도 탭으로 두지 않고
-    // 이 배너로만 참고 안내한다 — 드롭다운을 늘리지 않으면서 정보는 남긴다(2026-07-22 확정)
-    const banner = $("#ed-health-banner");
-    if (f.healthRef) {
-      banner.style.display = "";
-      banner.innerHTML = `사람건강보호기준(카드뮴·비소·시안 등 20개 유해물질, 단순 이하 기준)은 ${escapeHtml(f.label)}과 같은
-        환경정책기본법 시행령 별표1에 근거하되 이 화면에는 표로 두지 않았습니다 — 필요하면
-        <code>shared/env_standards/${escapeHtml(f.healthRef)}</code> 참조 또는 요청 시 별도 확인해드립니다.`;
-    } else {
-      banner.style.display = "none";
-    }
 
     $("#ed-ref-wrap").innerHTML = buildReferenceTable();
   }
@@ -591,6 +628,35 @@ export async function init(section, { toast, bridge, V }) {
     renderSliceBanner();
   }
 
+  // 항목슬라이스는 모든 컬럼(지점)이 같은 항목을 공유하므로, 평균시간·기준·단위를 표 상단에
+  // 1회만 보여준다(컬럼마다 반복 표시하던 버그의 대체 UI). item 모드에서만 편집 가능하게 —
+  // region+가변컬럼(토양)은 지점마다 지역이 달라 공유 기준이 없어 표시하지 않는다.
+  function updateItemSliceInfo() {
+    const el = $("#ed-item-slice-info");
+    if (analysisMode !== "multi" || sliceAxis !== "item" || isRegionMode() || !columns.length) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    const item = standards.items.find((i) => i.code === sliceKey);
+    const std = effectiveStandard(columns[0], null);
+    const avgOptions = item.standards.length > 1
+      ? item.standards.map((s) => `<option value="${escapeHtml(s.averaging)}" ${s.averaging === columns[0].averaging ? "selected" : ""}>${escapeHtml(s.averaging)}</option>`).join("")
+      : "";
+    el.innerHTML = `<b>${escapeHtml(item.label)}</b>
+      ${avgOptions ? `<select class="ed-item-slice-avg">${avgOptions}</select>` : (columns[0].averaging ? `<span>${escapeHtml(columns[0].averaging)}</span>` : "")}
+      <span>기준 <input type="number" class="ed-item-slice-std-input" step="any" value="${std ? std.value : ""}" placeholder="미등록"> ${std ? escapeHtml(std.unit) : ""}</span>`;
+    el.querySelector(".ed-item-slice-avg")?.addEventListener("change", (e) => {
+      for (const col of columns) col.averaging = e.target.value;
+      renderGrid(); scheduleCharts();
+    });
+    el.querySelector(".ed-item-slice-std-input")?.addEventListener("change", (e) => {
+      const v = e.target.value === "" ? null : Number(e.target.value);
+      for (const col of columns) col.overrideValue = v;
+      renderGrid(); scheduleCharts();
+    });
+  }
+
   function buildSliceColumnsAndRows() {
     const proj = activeProject;
     if (sliceAxis === "site") {
@@ -635,7 +701,22 @@ export async function init(section, { toast, bridge, V }) {
   // 슬라이스 뷰(과거 회차) 셀을 고치면 프로젝트 큐브에도 즉시 되쓴다 — 읽기전용이면
   // "분석 도구"로서 쓸모가 떨어진다(오탈자 정정 등 실무 수요).
   function persistSliceEdits() {
-    if (analysisMode !== "multi" || !activeProject || multiViewMode !== "slice") return;
+    if (analysisMode !== "multi" || !activeProject) return;
+    if (multiViewMode === "newRound") {
+      // 새 회차 입력폼(지점×항목)도 슬라이스와 똑같이 매 입력마다 즉시 저장한다 — 별도
+      // "저장" 버튼을 두면 안 누르고 나갈 때 데이터가 사라진다(실사용 지적으로 단일 흐름화).
+      const round = activeProject.rounds.find((r) => r.id === currentEditRoundId);
+      if (!round) return;
+      for (const row of rows) { // row = 지점(row.id = site.code)
+        const site = activeProject.sites.find((s) => s.code === row.id);
+        if (site && row.region != null) site.region = row.region;
+        round.values[row.id] = round.values[row.id] || {};
+        for (const col of columns) round.values[row.id][col.code] = row.values[col.id] ?? null;
+      }
+      saveProjects(FIELDS[fieldIdx].code, projects);
+      return;
+    }
+    if (multiViewMode !== "slice") return;
     // 지점 슬라이스는 모든 행(회차)이 같은 지점이라 지역구분도 그 지점 전체의 속성이다 —
     // 슬라이스뷰에서 지역을 바꾸면 지점 자체에 반영한다(회차 추가 폼과 동일한 문제).
     if (sliceAxis === "site") {
@@ -672,6 +753,7 @@ export async function init(section, { toast, bridge, V }) {
     }
     activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
     if (mode === "multi") { columns = []; rows = []; }
+    currentEditRoundId = null;
     $("#ed-newround-bar").style.display = "none";
     renderModeBanner(); renderProjectBanner(); renderSliceBanner(); updateHeaderText(); refreshAddSelect();
     renderGrid(); renderCharts();
@@ -680,6 +762,7 @@ export async function init(section, { toast, bridge, V }) {
   function selectProject(id) {
     activeProject = projects.find((p) => p.id === id) || null;
     sliceAxis = null; sliceKey = null; multiViewMode = null;
+    currentEditRoundId = null;
     columns = []; rows = [];
     $("#ed-newround-bar").style.display = "none";
     renderProjectBanner(); renderSliceBanner();
@@ -692,27 +775,49 @@ export async function init(section, { toast, bridge, V }) {
     if (activeProject?.id === id) {
       activeProject = null; sliceAxis = null; sliceKey = null; multiViewMode = null;
       columns = []; rows = [];
+      currentEditRoundId = null;
     }
     renderProjectBanner(); renderSliceBanner(); renderGrid(); renderCharts();
   }
 
   function selectSlice(axis, key) {
     sliceAxis = axis; sliceKey = key; multiViewMode = "slice";
+    currentEditRoundId = null;
     buildSliceColumnsAndRows();
     renderSliceBanner();
     $("#ed-newround-bar").style.display = "none";
     renderGrid(); renderCharts();
   }
 
+  // "+ 회차 추가"를 누르면 즉시 회차를 만들어 큐브에 넣고 그 회차의 (지점×항목) 입력폼을
+  // 연다 — 이전엔 입력 후 "회차 저장"을 따로 눌러야 했는데, 안 누르고 다른 화면으로 가면
+  // 데이터가 통째로 사라지는 버그로 이어졌다(실사용 지적). 이제 매 셀 입력이 슬라이스뷰와
+  // 동일하게 즉시 저장되므로 "저장" 버튼 자체가 없다 — "완료"는 그냥 슬라이스 화면으로 복귀.
   function startNewRound() {
+    const label = `${activeProject.rounds.length + 1}차`;
+    const round = { id: `r${Date.now()}`, label, values: {} };
+    activeProject.rounds.push(round);
+    saveProjects(FIELDS[fieldIdx].code, projects);
+    currentEditRoundId = round.id;
     multiViewMode = "newRound";
     buildNewRoundColumnsAndRows();
     renderGrid(); renderCharts();
     $("#ed-newround-bar").style.display = "";
-    $("#ed-round-label").value = `${activeProject.rounds.length + 1}차`;
+    $("#ed-round-label").value = label;
+    toast(`"${label}" 회차를 추가했습니다 — 표에 입력하면 바로 저장됩니다`, "ok");
   }
 
-  function backToSliceOrEmpty() {
+  function renameCurrentRound() {
+    if (!currentEditRoundId) return;
+    const round = activeProject.rounds.find((r) => r.id === currentEditRoundId);
+    const label = $("#ed-round-label").value.trim();
+    if (!round || !label) return;
+    round.label = label;
+    saveProjects(FIELDS[fieldIdx].code, projects);
+  }
+
+  function finishNewRound() {
+    currentEditRoundId = null;
     multiViewMode = sliceAxis ? "slice" : null;
     if (multiViewMode === "slice") buildSliceColumnsAndRows();
     else { columns = []; rows = []; }
@@ -720,22 +825,12 @@ export async function init(section, { toast, bridge, V }) {
     renderGrid(); renderCharts();
   }
 
-  function commitNewRound() {
-    const label = $("#ed-round-label").value.trim() || `${activeProject.rounds.length + 1}차`;
-    const values = {};
-    for (const row of rows) { // 신규회차 입력모드는 row=지점(row.id=site.code)
-      // 이 입력폼에서 지점별 지역구분을 고를 수 있는데(region 모드), 그 선택은 "이 회차만의
-      // 값"이 아니라 지점 자체의 속성이다 — 여기서 놓치면 이후 슬라이스뷰가 항상 기본지역으로
-      // 판정해버린다(실제 발견한 버그: 회차입력에서 고른 지역이 저장되지 않음).
-      const site = activeProject.sites.find((s) => s.code === row.id);
-      if (site && row.region != null) site.region = row.region;
-      values[row.id] = {};
-      for (const col of columns) { values[row.id][col.code] = row.values[col.id] ?? null; }
-    }
-    activeProject.rounds.push({ id: `r${Date.now()}`, label, values });
+  function deleteCurrentRound() {
+    if (!currentEditRoundId) return;
+    activeProject.rounds = activeProject.rounds.filter((r) => r.id !== currentEditRoundId);
     saveProjects(FIELDS[fieldIdx].code, projects);
-    toast(`"${label}" 회차가 추가되었습니다`, "ok");
-    backToSliceOrEmpty();
+    toast("회차를 삭제했습니다", "ok");
+    finishNewRound();
   }
 
   function openNewProjectForm() {
@@ -844,6 +939,7 @@ export async function init(section, { toast, bridge, V }) {
   }
 
   function renderGrid() {
+    updateItemSliceInfo();
     // 다중분석에서 아직 프로젝트/슬라이스를 고르지 않았으면 표를 그릴 데이터 모양이 없다 —
     // 빈 표 대신 무엇을 눌러야 하는지 안내한다.
     if (analysisMode === "multi" && !multiViewMode) {
@@ -887,6 +983,16 @@ export async function init(section, { toast, bridge, V }) {
       th.dataset.col = col.id;
       th.style.width = col.width || "128px";
 
+      if (col.siteCode != null) {
+        // 다중분석 항목슬라이스 — 컬럼은 지점일 뿐 항목(기준·평균시간·단위)은 전부 공통이라
+        // 컬럼마다 반복 표시하지 않는다. 공통 정보는 표 상단에 1회만(updateItemSliceInfo()) —
+        // 지점 헤더에 기준값·단위가 나오는 건 버그라는 실사용 지적으로 수정(2026-07-22).
+        th.title = "";
+        th.innerHTML = `<div class="ed-col-label">${escapeHtml(col.label)}</div>`;
+        addResizer(th, (w) => { col.width = w; });
+        thead.appendChild(th);
+        continue;
+      }
       if (isRegionMode() && columnsFixed()) {
         // 소음·진동·등급형 수질 — 컬럼이 고정(시간대/항목 세트)이라 삭제·평균시간 선택 없음
         th.title = "";
@@ -1889,8 +1995,9 @@ export async function init(section, { toast, bridge, V }) {
   });
   $("#ed-np-create").addEventListener("click", createProjectFromForm);
   $("#ed-np-cancel").addEventListener("click", closeNewProjectForm);
-  $("#ed-round-save").addEventListener("click", commitNewRound);
-  $("#ed-round-cancel").addEventListener("click", backToSliceOrEmpty);
+  $("#ed-round-label").addEventListener("change", renameCurrentRound);
+  $("#ed-round-done").addEventListener("click", finishNewRound);
+  $("#ed-round-delete").addEventListener("click", deleteCurrentRound);
   $("#ed-export-xlsx").addEventListener("click", exportTableToExcel);
   $("#ed-add-item").addEventListener("change", (e) => {
     const v = e.target.value;
