@@ -1044,6 +1044,8 @@ body.ed-resizing * { cursor: col-resize !important; }
    등급범위·기준초과를 보여준다. 초과 항목은 색으로 눈에 띄게, 나머지는 담백하게. */
 .ed-summary { margin-top: var(--space-4); }
 .ed-summary-list { margin: 0; padding-left: 1.2em; font-size: var(--text-sm); line-height: 1.8; }
+/* 한 항목에 관련기준이 여럿 섞여 있을 때(소음·진동) 기준별로 나눠 보여주는 하위 목록 */
+.ed-summary-substd { margin: 2px 0 4px; padding-left: 1.2em; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.7; }
 .ed-summary-grade { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-muted); }
 .ed-summary-overall { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
 .ed-summary-sub { margin: var(--space-2) 0 var(--space-1); font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--weight-semibold); }

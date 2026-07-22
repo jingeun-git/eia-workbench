@@ -871,14 +871,34 @@ export async function init(section, { toast, bridge, V }) {
     const isItemSlice = analysisMode === "multi" && multiViewMode === "slice" && sliceAxis === "item";
     let html = "";
 
+    // 한 표 안에 지점마다 다른 관련기준(소음·진동의 환경기준/도로/축사 등)이 섞여 있으면,
+    // 전체를 한 범위로 뭉치는 게 아니라 기준별로 나눠 요약해야 한다 — 서로 다른 문턱값으로
+    // 판정되는 값을 하나의 최소~최대에 섞으면 오도한다(사용자 지적, 2026-07-22).
+    const stdLabelOf = (skey) => standardOptions().find((o) => o.key === skey)?.label || skey;
     if (isSingle || isSiteSlice || isNewRoundShape) {
       const lines = columns.map((col) => {
         const pairs = cells.filter((c) => c.col === col);
         if (!pairs.length) return null;
-        const range = fmtRange(pairs.map((p) => p.value));
-        const exceeds = exceedList(pairs, false);
-        const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
-        return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(unitOf(col))}${exceedTxt}</li>`;
+        const unit = unitOf(col);
+        const groups = new Map();
+        for (const p of pairs) {
+          const skey = standardKeyOf(col, p.row);
+          if (!groups.has(skey)) groups.set(skey, []);
+          groups.get(skey).push(p);
+        }
+        if (groups.size <= 1) {
+          const range = fmtRange(pairs.map((p) => p.value));
+          const exceeds = exceedList(pairs, false);
+          const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
+          return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(unit)}${exceedTxt}</li>`;
+        }
+        const subLines = [...groups.entries()].map(([skey, gp]) => {
+          const range = fmtRange(gp.map((p) => p.value));
+          const exceeds = exceedList(gp, false);
+          const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
+          return `<li>${escapeHtml(stdLabelOf(skey))}: ${escapeHtml(range)}${escapeHtml(unit)}${exceedTxt}</li>`;
+        });
+        return `<li><b>${escapeHtml(col.label)}</b><ul class="ed-summary-substd">${subLines.join("")}</ul></li>`;
       }).filter(Boolean);
       const grade = gradeRangeOf(cells.map(({ col, row }) => ({ col, row })));
       html = `<h3 style="margin:0 0 var(--space-2)">분석 요약</h3>`

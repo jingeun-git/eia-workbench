@@ -100,7 +100,31 @@ const ok = (name, cond, detail) => { results.push({ name, pass: !!cond, detail }
   const html5 = await page.locator("#ed-summary").innerHTML();
   ok("9. 다수 초과 시 항목명 반복 없이 지점명만 나열(X-1, X-2, X-3)", html5.includes("초과: X-1, X-2, X-3") && !html5.includes("X-1 낮"), html5.slice(0, 300));
 
-  ok("10. 콘솔 에러 없음", errors.length === 0, errors.join(" | "));
+  // ── 6) 한 표에 관련기준이 섞이면(환경기준+축사) 기준별로 나눠 범위를 잡아야 함 ──
+  // 직전 블록의 소음 표 잔존 텍스트("X-1" 등)가 contenteditable에 남아있으면 새로 타이핑한
+  // 내용과 섞여 깨진다(테스트 위생 문제) — 다른 필드로 갔다 와서 표를 새로 초기화한다.
+  await page.click(".ed-field-btn:has-text('대기질')");
+  await page.waitForTimeout(200);
+  await page.click(".ed-field-btn:has-text('소음')");
+  await page.waitForTimeout(300);
+  await page.click(".ed-mode-btn[data-mode='single']");
+  await page.waitForTimeout(200);
+  const rows6b = page.locator("#ed-tbody tr");
+  const mixedData = [["A-1", null, "45"], ["A-2", null, "50"], ["A-3", "livestock", "65"]];
+  for (let i = 0; i < 3; i++) {
+    const [lbl, std, val] = mixedData[i];
+    const l = rows6b.nth(i).locator(".ed-row-label");
+    await l.click(); await page.keyboard.type(lbl); await l.dispatchEvent("input");
+    if (std) { await rows6b.nth(i).locator(".ed-standard-select").selectOption(std); await page.waitForTimeout(150); }
+    const c = rows6b.nth(i).locator("td.ed-cell").nth(0);
+    await c.click(); await page.keyboard.type(val); await c.dispatchEvent("input");
+  }
+  await page.waitForTimeout(600);
+  const html6b = await page.locator("#ed-summary").innerHTML();
+  ok("11. 관련기준 혼합 시 뭉뚱그린 45~65가 아니라 기준별로 분리(환경기준 45~50, 축사 65)", html6b.includes("환경기준: 45~50") && html6b.includes("축사: 65") && !html6b.includes(">45~65<"), html6b);
+  ok("12. 기준별 분리 시에도 초과 판정은 해당 기준 그룹에만 정확히 표기(축사 A-3)", html6b.includes("축사: 65dB(A) <span class=\"ed-summary-exceed\">⚠ 초과: A-3"), html6b);
+
+  ok("13. 콘솔 에러 없음", errors.length === 0, errors.join(" | "));
 
   await browser.close();
   console.log("\n=== 결과 ===");
