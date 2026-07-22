@@ -494,15 +494,19 @@ export async function init(section, { toast, bridge, V }) {
         return `<tr><th>${escapeHtml(it.label)}${unit ? ` (${escapeHtml(unit)})` : ""}</th>${cells}</tr>`;
       });
     }
-    const dualNote = standards.dualStandard
-      ? `<p class="ed-ref-note">숫자 표기는 ${escapeHtml(standards.dualStandard.concernLabel)}/${escapeHtml(standards.dualStandard.actionLabel)} 순서입니다.</p>` : "";
+    // 우려/대책기준 표기 안내는 별도 <p>가 아니라 notes 목록에 합류시켜 다른 비고들과
+    // 동일하게 불릿이 붙게 한다(2026-07-22 지적 — 혼자만 불릿 없이 떠 있던 사각지대).
+    const mergedNotes = [...(standards.notes || [])];
+    if (standards.dualStandard) {
+      mergedNotes.push(`숫자 표기는 ${standards.dualStandard.concernLabel}/${standards.dualStandard.actionLabel} 순서입니다.`);
+    }
     // 원문 비고·보정조항·경고는 법적 판단에 직결되는 단서라 생략하지 않는다(사용자 지시,
     // 2026-07-22) — 지금까지 JSON에 있어도 화면에 안 뜨던 사각지대였다(notes 미출력 확인됨).
     const legal = `<p class="ed-ref-source">* 출처 : ${escapeHtml(standards.legal_basis || "—")}${standards.enacted ? ` / ${escapeHtml(standards.enacted)}` : ""}</p>`;
     const mainHtml = `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
       + `<thead>${theadHtml}</thead><tbody>${bodyRows.join("")}</tbody></table></div>`
-      + notesListHtml(standards.notes) + correctionsListHtml(standards.corrections) + flagsListHtml(standards.criticalFlags)
-      + dualNote + currencyWarningHtml(standards.currencyWarning) + legal;
+      + notesListHtml(mergedNotes) + correctionsListHtml(standards.corrections) + flagsListHtml(standards.criticalFlags)
+      + currencyWarningHtml(standards.currencyWarning) + legal;
     const panels = [{ title: standards.mainTitle || "환경기준", html: mainHtml }];
     for (const extra of (standards.additionalStandards || [])) {
       panels.push({ title: extra.shortTitle || extra.title, html: renderExtraStandardTable(extra) });
