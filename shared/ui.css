@@ -778,7 +778,9 @@ body.gc-resizing * { cursor: col-resize !important; }
 }
 .ed-main.panel, .ed-side .panel { margin-top: 0; }
 
-.ed-scroll { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
+/* 표 스크롤 컨테이너 — 모든 분야가 공유하는 단일 래퍼(#ed-scroll)라 구조는 이미 통일되어 있다.
+   토양(23항목)처럼 항목이 많은 분야에서 위아래 여유가 부족하다는 지적으로 높이만 확장(560→760px). */
+.ed-scroll { max-height: 760px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
 .ed-table { border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); width: 100%; table-layout: fixed; }
 .ed-table thead th {
   position: sticky; top: 0; z-index: 3; background: var(--surface);
@@ -846,6 +848,8 @@ body.ed-resizing * { cursor: col-resize !important; }
   white-space: normal; word-break: keep-all; overflow-wrap: break-word;
 }
 .ed-cell:focus, .ed-row-label:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-subtle); }
+/* 드래그 다중선택 — 판정 배경색 위에 겹쳐도 구분되게 반투명 액센트 + 테두리 */
+.ed-selected { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--accent) 22%, transparent); outline: 1px solid var(--accent); }
 .ed-exceed { background: var(--fail-subtle); color: var(--fail); font-weight: var(--weight-semibold); }
 /* 토양 우려기준/대책기준처럼 2단계 초과가 있는 분야 — 대책기준 초과는 더 진하게 */
 .ed-exceed2 { background: var(--fail); color: #fff; font-weight: var(--weight-bold); }
@@ -866,13 +870,31 @@ body.ed-resizing * { cursor: col-resize !important; }
 .ed-color-label input[type="color"] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; cursor: pointer; }
 .ed-size-label input[type="range"] { width: 140px; }
 
-.ed-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-4); }
-.ed-chart-card { padding: var(--space-3) var(--space-3) var(--space-4); }
+/* 카드마다 개별 가로폭(chartOpts.width)을 갖기 때문에 그리드가 아니라 flex-wrap —
+   grid는 fr 트랙이 카드 실제 너비를 무시하고 균등분할해버린다 */
+.ed-charts { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
+/* max-width:100%를 주지 않는다 — 그래프 폭을 사이드바보다 크게 늘리면(내보내기용 등)
+   .ed-side의 overflow:auto가 가로 스크롤을 만들어 실제로 그 폭을 갖게 한다. 클램프하면
+   슬라이더로 늘려도 화면에는 변화가 없어 "조정이 안 된다"는 오인을 준다. */
+.ed-chart-card { padding: var(--space-3) var(--space-3) var(--space-4); flex: 0 0 auto; }
 .ed-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
 .ed-chart-head h4 { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .ed-chart-head .btn { height: 26px; padding: 0 10px; font-size: var(--text-xs); }
 .ed-chart-canvas-wrap { position: relative; width: 100%; }
+/* 차트별 개별 옵션 행 — 카드 안쪽이라 전역 툴바보다 더 촘촘하게 */
+.ed-chart-ctlrow { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.ed-chart-ctlrow .segment button { height: 24px; padding: 0 8px; font-size: var(--text-xs); }
+.ed-chart-ctlrow .ed-chk-label { font-size: var(--text-xs); gap: 4px; }
+.ed-chart-ctlrow input[type="range"] { width: 70px; }
+.ed-chart-ctlrow input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-strong); border-radius: 5px; background: none; cursor: pointer; }
+.ed-chart-ctlrow input[type="number"] { width: 62px; height: 24px; padding: 0 5px; font-size: var(--text-xs); }
 .ed-chart-note { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+.ed-banner {
+  margin: 0 0 var(--space-4); padding: var(--space-3);
+  background: var(--accent-subtle); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm, 6px); font-size: var(--text-sm); line-height: 1.6; color: var(--text);
+}
+.ed-banner code { font-family: var(--font-mono); font-size: 0.9em; background: var(--log-bg); padding: 1px 4px; border-radius: 3px; }
 
 .ed-region-cell { min-width: 140px; }
 .ed-region-select {

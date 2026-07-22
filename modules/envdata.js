@@ -14,16 +14,18 @@ const FIELDS = [
   { code: "noise", label: "소음", file: "noise.json" },
   { code: "vibration", label: "진동", file: "vibration.json" },
   { code: "soil", label: "토양오염도", file: "soil.json" },
-  { code: "river_health", label: "하천(사람건강보호기준)", file: "river_health.json" },
-  { code: "river_life", label: "하천(생활환경기준)", file: "river_life.json" },
-  { code: "lake_health", label: "호소(사람건강보호기준)", file: "lake_health.json" },
-  { code: "lake_life", label: "호소(생활환경기준)", file: "lake_life.json" },
+  { code: "river_life", label: "하천수질", file: "river_life.json", healthRef: "river_health.json" },
+  { code: "lake_life", label: "호소수질", file: "lake_life.json", healthRef: "lake_health.json" },
   { code: "groundwater", label: "지하수질", file: "groundwater.json" },
 ];
 
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
+}
+// chartjs-plugin-datalabels(수치표시)는 annotation 플러그인과 달리 자동등록되지 않는다 — 1회만 등록
+if (typeof window !== "undefined" && window.Chart && window.ChartDataLabels) {
+  window.Chart.register(window.ChartDataLabels);
 }
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => (
@@ -64,6 +66,47 @@ function findPeriodByAlias(standards, text) {
   if (!n) return null;
   return standards.periods.find((p) => { const pn = norm(p.label); return pn.includes(n) || n.includes(pn.slice(0, 1)); })
       || standards.periods.find((p) => norm(p.code) === n);
+}
+// "나" 한 글자만으로 매칭하면 다른 지역의 설명문 속 "나"에도 걸릴 위험이 있어
+// 코드 정확일치를 먼저 보고, 라벨은 괄호 앞 핵심명(2글자 이상)만 비교한다.
+function findRegionByAlias(standards, text) {
+  const n = norm(text);
+  if (!n) return null;
+  let hit = (standards.regions || []).find((r) => norm(r.code) === n);
+  if (hit) return hit;
+  if (n.length < 2) return null;
+  return (standards.regions || []).find((r) => {
+    const core = norm(String(r.label || "").split(/[(（]/)[0]);
+    return core && (core === n || core.includes(n) || n.includes(core));
+  }) || null;
+}
+// 등록문서(측정업체 xlsx)에는 항목이 아닌 관리열이 섞여 있다 — 이를 항목으로 오인해
+// 무의미한 사용자 항목을 만들지 않도록 사전 차단한다.
+// "no."는 순번열 탐지용으로 넣으면 NO2·CO 같은 화학식 항목명과 겹쳐 오탐하므로 빼고
+// 한글 키워드(순번·연번)만으로 순번열을 잡는다.
+const ADMIN_HEADER_KEYWORDS = ["기준", "판정", "초과", "적합", "비고", "순번", "연번", "결과",
+  "시료명", "조사일", "측정일", "채취일", "일시"];
+function isAdminHeader(text) {
+  const n = norm(text);
+  return ADMIN_HEADER_KEYWORDS.some((kw) => n.includes(norm(kw)));
+}
+function aoaTranspose(aoa) {
+  const ncols = aoa.reduce((m, r) => Math.max(m, r.length), 0);
+  const out = [];
+  for (let c = 0; c < ncols; c++) out.push(aoa.map((r) => (r[c] ?? "")));
+  return out;
+}
+// 첫 N행(또는 전치 후 첫 N열)에서 matchFn에 걸리는 셀이 가장 많은 행을 헤더로 추정 —
+// 실무 보고서는 회사명·사업명 등 안내문이 표 위에 몇 줄 더 있는 경우가 흔하다.
+function scanBestHeaderRow(aoa, matchFn, limit) {
+  const n = Math.min(aoa.length, limit || 15);
+  let best = { idx: -1, score: 0 };
+  for (let r = 0; r < n; r++) {
+    let score = 0;
+    for (const cell of (aoa[r] || [])) { if (matchFn(cell)) score++; }
+    if (score > best.score) best = { idx: r, score };
+  }
+  return best;
 }
 
 export async function init(section, { toast, bridge, V }) {
@@ -133,16 +176,25 @@ export async function init(section, { toast, bridge, V }) {
   let columns = [], rows = [];
   initColumnsAndRows();
 
-  let chartType = "bar";
-  let chartColor = cssVar("--accent", "#2f6fed");
-  let chartHeight = 260;
   let charts = {}; // colId -> Chart 인스턴스
   let chartDebounce = null;
   let cornerWidth = null; // 측정지점 열 너비(드래그로 조절, px 문자열)
   let regionColWidth = null;
   let transposed = false; // 행/열 전환 — true면 행=조사항목, 열=조사지점
-  let showTitle = true, showLegend = false;
-  let yManual = false, yMin = null, yMax = null, yStep = null;
+  let selAnchor = null, selecting = false, selectionRect = null; // 셀 드래그 다중선택
+  const defaultChartColor = cssVar("--accent", "#2f6fed");
+  /* 그래프 옵션은 전역이 아니라 컬럼(항목)마다 따로 갖는다 — "그래프별 개별 설정"
+     요청 반영. 처음 렌더될 때 col.chartOpts가 없으면 기본값으로 채운다. */
+  function chartOptsOf(col) {
+    if (!col.chartOpts) {
+      col.chartOpts = {
+        type: "bar", color: defaultChartColor, height: 260, width: 320, barThickness: null,
+        showTitle: true, showLegend: false, showLabels: false,
+        yManual: false, yMin: null, yMax: null, yStep: null,
+      };
+    }
+    return col.chartOpts;
+  }
 
   /* ── 판정 로직 ─────────────────────────────────────────────────────── */
   /* ppm 항목만 ppb 표시로 전환 가능(질량농도 항목은 ppb 개념이 없다) — item 모드 전용 */
@@ -234,6 +286,7 @@ export async function init(section, { toast, bridge, V }) {
   <div class="panel">
     <h2 id="ed-title">환경질 측정 데이터 분석</h2>
     <p class="desc" id="ed-desc"></p>
+    <div class="ed-banner" id="ed-health-banner" style="display:none"></div>
 
     <div class="field">
       <label>분야</label>
@@ -261,7 +314,10 @@ export async function init(section, { toast, bridge, V }) {
 
   <div class="ed-layout">
     <div class="ed-main panel">
-      <h3 style="margin:0 0 var(--space-3)">표</h3>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2)">
+        <h3 style="margin:0">표</h3>
+        <label class="ed-chk-label">글자크기 <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px"> <span id="ed-font-size-val">100%</span></label>
+      </div>
       <div class="ed-scroll" id="ed-scroll">
         <table class="ed-table" id="ed-table">
           <thead><tr id="ed-thead-row"></tr></thead>
@@ -273,26 +329,7 @@ export async function init(section, { toast, bridge, V }) {
     <div class="ed-side">
       <div class="panel">
         <h3 style="margin:0 0 var(--space-3)">그래프</h3>
-        <div class="ed-chart-tools">
-          <div class="segment" role="group" aria-label="그래프 타입">
-            <button type="button" data-ctype="bar" aria-pressed="true">막대</button>
-            <button type="button" data-ctype="line" aria-pressed="false">선</button>
-          </div>
-          <label class="ed-color-label">색상 <input type="color" id="ed-color" value="${chartColor.startsWith('#') ? chartColor : '#2f6fed'}"></label>
-          <label class="ed-size-label">크기 <input type="range" id="ed-size" min="160" max="520" value="${chartHeight}"></label>
-          <label class="ed-chk-label"><input type="checkbox" id="ed-show-title" checked> 제목(PNG 포함)</label>
-          <label class="ed-chk-label"><input type="checkbox" id="ed-show-legend"> 범례</label>
-        </div>
-        <div class="ed-chart-tools">
-          <label class="ed-chk-label"><input type="checkbox" id="ed-y-manual"> Y축 직접설정</label>
-          <span class="ed-y-range" id="ed-y-range" style="display:none">
-            <input type="number" id="ed-y-min" placeholder="최소" step="any">
-            <span>~</span>
-            <input type="number" id="ed-y-max" placeholder="최대" step="any">
-            <span>눈금</span>
-            <input type="number" id="ed-y-step" placeholder="자동" step="any">
-          </span>
-        </div>
+        <p class="ed-chart-note" style="margin-bottom:var(--space-3)">각 그래프 카드 위쪽 도구에서 타입·색상·크기·막대폭·수치표시·Y축을 그래프별로 따로 설정할 수 있습니다.</p>
         <div class="ed-charts" id="ed-charts"></div>
       </div>
     </div>
@@ -307,6 +344,18 @@ export async function init(section, { toast, bridge, V }) {
       ? `측정 결과를 표에 입력하면 ${standards.legal_basis} 기준 초과 여부를 지점별 지역구분에 따라 자동 판별하고 그래프를 그립니다. xlsx·csv 업로드, 붙여넣기, 표 직접 입력을 모두 지원합니다.`
       : `측정 결과를 표에 입력하면 ${standards.legal_basis} 초과 여부를 자동 판별하고 항목별 그래프를 그립니다. xlsx·csv 업로드, 엑셀에서 복사한 내용 붙여넣기, 표 직접 입력을 모두 지원합니다. HWP·PDF 등록문서 자동인식은 브리지 연동 다음 업데이트에서 지원됩니다.`;
     $("#ed-add-item").parentElement.style.display = columnsFixed() ? "none" : "";
+
+    // 하천·호소는 사람건강보호기준(20개 유해물질, 단순임계값)을 별도 탭으로 두지 않고
+    // 이 배너로만 참고 안내한다 — 드롭다운을 늘리지 않으면서 정보는 남긴다(2026-07-22 확정)
+    const banner = $("#ed-health-banner");
+    if (f.healthRef) {
+      banner.style.display = "";
+      banner.innerHTML = `사람건강보호기준(카드뮴·비소·시안 등 20개 유해물질, 단순 이하 기준)은 ${escapeHtml(f.label)}과 같은
+        환경정책기본법 시행령 별표1에 근거하되 이 화면에는 표로 두지 않았습니다 — 필요하면
+        <code>shared/env_standards/${escapeHtml(f.healthRef)}</code> 참조 또는 요청 시 별도 확인해드립니다.`;
+    } else {
+      banner.style.display = "none";
+    }
   }
 
   /* ── 항목 추가 셀렉트 채우기 (item 모드 전용) ─────────────────────── */
@@ -783,7 +832,53 @@ export async function init(section, { toast, bridge, V }) {
         scheduleCharts();
       });
     });
-    section.querySelector("#ed-table").addEventListener("paste", onPaste);
+    // addEventListener는 같은 함수 참조면 브라우저가 중복 등록을 걸러내므로
+    // renderGrid마다 다시 불러도 안전하다(#ed-table은 재렌더에도 유지되는 안정된 요소).
+    const table = section.querySelector("#ed-table");
+    table.addEventListener("paste", onPaste);
+    table.addEventListener("mousedown", onCellMouseDown);
+    table.addEventListener("mouseover", onCellMouseOver);
+  }
+
+  /* ── 셀 다중선택(드래그) — 클릭+드래그로 사각 범위를 고르고 Delete로 비우거나
+     Ctrl+C로 TSV째 복사한다. contenteditable 셀이라 브라우저 기본 텍스트선택과
+     충돌하므로, 앵커 셀과 다른 셀로 넘어가는 순간부터 우리 하이라이트로 대신한다. */
+  function cellPos(cellEl) {
+    const rowId = cellEl.dataset.row, colId = cellEl.dataset.col;
+    if (rowId == null || colId === "-1") return null;
+    const ri = rows.findIndex((r) => r.id === rowId);
+    const ci = columns.findIndex((c) => c.id === colId);
+    if (ri < 0 || ci < 0) return null;
+    return { ri, ci };
+  }
+  function clearSelectionHighlight() {
+    section.querySelectorAll(".ed-selected").forEach((el) => el.classList.remove("ed-selected"));
+  }
+  function applySelection(a, b) {
+    const r0 = Math.min(a.ri, b.ri), r1 = Math.max(a.ri, b.ri);
+    const c0 = Math.min(a.ci, b.ci), c1 = Math.max(a.ci, b.ci);
+    clearSelectionHighlight();
+    section.querySelectorAll(".ed-cell[data-row][data-col]").forEach((el) => {
+      const p = cellPos(el);
+      if (p && p.ri >= r0 && p.ri <= r1 && p.ci >= c0 && p.ci <= c1) el.classList.add("ed-selected");
+    });
+    selectionRect = { r0, r1, c0, c1 };
+  }
+  function onCellMouseDown(e) {
+    const cell = e.target.closest(".ed-cell");
+    if (!cell) { selAnchor = null; selectionRect = null; clearSelectionHighlight(); return; }
+    const pos = cellPos(cell);
+    if (!pos) return;
+    selAnchor = pos; selecting = true;
+    applySelection(pos, pos);
+  }
+  function onCellMouseOver(e) {
+    if (!selecting || !selAnchor) return;
+    const cell = e.target.closest(".ed-cell");
+    if (!cell) return;
+    const pos = cellPos(cell);
+    if (!pos) return;
+    applySelection(selAnchor, pos);
   }
 
   /* ── 붙여넣기 ──────────────────────────────────────────────────────── */
@@ -806,24 +901,59 @@ export async function init(section, { toast, bridge, V }) {
     for (let c = 0; c < nCols; c++) { const line = []; for (let r = 0; r < g.length; r++) line.push(g[r][c] ?? ""); out.push(line); }
     return out;
   }
+  /* 엑셀·워드·HWP 등에서 표를 복사하면 브라우저 클립보드에 text/html(<table>)이
+     함께 담기는 경우가 많다 — text/plain은 앱마다 탭 구분이 깨지거나(줄바꿈만
+     주고 셀 구분자가 없는 경우 실사용에서 확인됨) 신뢰할 수 없어 html을 우선
+     신뢰한다. */
+  function parseHtmlTable(html) {
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const table = doc.querySelector("table");
+      if (!table) return null;
+      const grid = [...table.querySelectorAll("tr")]
+        .map((tr) => [...tr.querySelectorAll("td,th")].map((td) => td.textContent.replace(/ /g, " ").trim()))
+        .filter((line) => line.some((c) => c !== ""));
+      return grid.length ? grid : null;
+    } catch (_) { return null; }
+  }
   function onPaste(e) {
     const target = e.target.closest("[data-row]");
     if (!target) return;
     e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
-    let grid = text.replace(/\r/g, "").split("\n").filter((l) => l.length).map((l) => l.split("\t"));
+    const cd = e.clipboardData || window.clipboardData;
+    let grid = parseHtmlTable(cd.getData("text/html"));
+    let fromHtml = !!grid;
+    if (!grid) {
+      const text = cd.getData("text/plain");
+      grid = text.replace(/\r/g, "").split("\n").filter((l) => l.length).map((l) => l.split("\t"));
+    }
     if (!grid.length) return;
-    if (transposed) grid = transposeGrid(grid);
+
     const startRowIdx = rows.findIndex((r) => r.id === target.dataset.row);
     const startColIdx = columns.findIndex((c) => c.id === target.dataset.col);
     const baseColIdx = target.dataset.col === "-1" ? -1 : startColIdx;
     const fixedCols = columnsFixed();
 
+    // html도 아니고 tab도 하나도 없는 평문(일부 문서뷰어·PDF 복사가 이렇게 준다) —
+    // 표를 복사한 게 맞다면 남은 열 수의 배수일 가능성이 높아 그 폭으로 재배열한다.
+    // (실사용 확인: HWP 표 3×3을 복사했더니 tab 없이 9줄로만 붙여진 사례)
+    if (!fromHtml && grid.every((l) => l.length === 1) && grid.length > 1) {
+      const remainingCols = Math.max(1, columns.length - Math.max(baseColIdx, 0));
+      if (remainingCols > 1 && grid.length % remainingCols === 0 && grid.length > remainingCols) {
+        const flat = grid.map((l) => l[0]);
+        const reshaped = [];
+        for (let i = 0; i < flat.length; i += remainingCols) reshaped.push(flat.slice(i, i + remainingCols));
+        grid = reshaped;
+        toast(`탭 구분이 없는 텍스트를 ${remainingCols}열 기준으로 재배열했습니다 — 결과를 확인해주세요`, "warn");
+      }
+    }
+    if (transposed) grid = transposeGrid(grid);
+
     grid.forEach((line, ri) => {
       const row = ensureRowAt(startRowIdx + ri);
       line.forEach((cellText, ci) => {
         const colIdx = baseColIdx + ci;
-        const text2 = cellText.trim();
+        const text2 = String(cellText).trim();
         if (colIdx === -1) { row.label = text2; return; }
         if (fixedCols) {
           if (colIdx < 0 || colIdx >= columns.length) return; // 열이 고정(예: 낮/밤)이라 초과분은 무시
@@ -837,43 +967,112 @@ export async function init(section, { toast, bridge, V }) {
     toast(`붙여넣기 완료 — ${grid.length}행 반영`, "ok");
   }
 
-  /* ── xlsx/csv 업로드 (첫 행=항목명, 첫 열=측정지점 — 실제 보고서 패턴과 동일) ── */
+  /* ── xlsx/csv 업로드 ──────────────────────────────────────────────────
+   * 실제 측정업체 등록문서는 "1행=헤더, 1열=지점명"이라는 이상적 형태를 잘 지키지 않는다
+   * (사업명 안내문이 표 위에 몇 줄 더 있거나, 항목이 행 방향으로 뒤집혀 있거나, 순번·판정
+   * 같은 관리열이 섞여 있는 경우가 흔하다). 아래는 그런 변형을 스캔으로 흡수한다:
+   *  ① 헤더행 자동탐지(전처리 안내문 스킵) ② 방향 자동판별(뒤집힌 표 자동전환)
+   *  ③ 지점명 열 자동탐지(꼭 1열이 아닐 수 있음) ④ region 모드면 지역구분 열도 자동인식
+   *  ⑤ 순번·판정 등 관리열은 항목으로 오인하지 않고 제외 ⑥ 무엇을 어떻게 읽었는지 토스트로 투명하게 보고
+   */
   function applyAoaToGrid(aoa) {
     if (!aoa.length) { toast("빈 파일입니다", "fail"); return; }
-    const header = aoa[0];
     const regionMode = isRegionMode();
     const fixedCols = columnsFixed();
+    const matchFn = fixedCols
+      ? (cell) => !!findPeriodByAlias(standards, cell)
+      : (cell) => !!findItemByAlias(standards, cell);
+
+    // ① + ② 헤더행·방향 판별 — 원본과 전치본 중 매칭 점수가 더 높은 쪽을 채택
+    const rowScan = scanBestHeaderRow(aoa, matchFn);
+    const colScan = scanBestHeaderRow(aoaTranspose(aoa), matchFn);
+    const flipped = colScan.score > rowScan.score;
+    const work = flipped ? aoaTranspose(aoa) : aoa;
+    const headerScan = flipped ? colScan : rowScan;
+    const headerRowIdx = headerScan.idx >= 0 ? headerScan.idx : 0;
+    const header = work[headerRowIdx] || [];
+    const dataRows = work.slice(headerRowIdx + 1);
+
+    // ③ 지점명 열 판별 — 데이터 구간에서 "숫자로 안 읽히는 셀"이 가장 많은 열
+    const scanCols = Math.min(header.length, 6);
+    let labelCol = 0, labelScore = -1;
+    for (let c = 0; c < scanCols; c++) {
+      let filled = 0, textish = 0;
+      for (const line of dataRows) {
+        const v = line[c];
+        if (v == null || String(v).trim() === "") continue;
+        filled++;
+        if (parseNum(v) == null) textish++;
+      }
+      const score = filled > 0 ? textish / filled : -1;
+      if (score > labelScore) { labelScore = score; labelCol = c; }
+    }
+
+    // ④ 지역구분 열 판별(region 모드에서만) — 헤더에 "지역/등급/구분"이 있고 실제 값이 지역DB와 매칭될 때만
+    let regionCol = -1;
+    if (regionMode) {
+      for (let c = 0; c < header.length; c++) {
+        if (c === labelCol) continue;
+        if (!/지역|등급|구분/.test(String(header[c] || ""))) continue;
+        const sample = dataRows.find((line) => line[c] != null && String(line[c]).trim() !== "");
+        if (sample && findRegionByAlias(standards, sample[c])) { regionCol = c; break; }
+      }
+    }
+
+    // ⑤ 컬럼 매핑 — 관리열 제외, 항목/기간 별칭 매칭, 못 찾으면 사용자 항목으로 보존(투명 보고용 기록)
     const newColumns = fixedCols ? standards.periods.map(makePeriodColumn) : [];
+    const colIndexMap = [];
+    const unmatchedHeaders = [], skippedAdmin = [];
     if (!fixedCols) {
-      for (let i = 1; i < header.length; i++) {
-        const h = String(header[i] || "").trim();
+      for (let c = 0; c < header.length; c++) {
+        if (c === labelCol || c === regionCol) continue;
+        const h = String(header[c] || "").trim();
         if (!h) continue;
+        if (isAdminHeader(h)) { skippedAdmin.push(h); continue; }
         const item = findItemByAlias(standards, h);
         newColumns.push(item ? (regionMode ? makeColumnFromRegionItem(item) : makeColumnFromItem(item)) : makeCustomColumn(h));
+        if (!item) unmatchedHeaders.push(h);
+        colIndexMap.push(c);
       }
+    } else {
+      // 관리열(비고·판정 등)은 폴백 후보에서도 제외 — 안 그러면 못 찾은 항목이 관리열 값을
+      // 잘못 주워가는 경우가 생긴다(예: TOC를 못 찾으면 다음 후보인 "비고"열을 대신 읽어버림).
+      const restIdxs = header.map((_, idx) => idx).filter((idx) => idx !== labelCol && idx !== regionCol && !isAdminHeader(header[idx]));
+      newColumns.forEach((col, ci) => {
+        const hi = header.findIndex((h, idx) => idx !== labelCol && idx !== regionCol && findPeriodByAlias(standards, h)?.code === col.code);
+        colIndexMap.push(hi >= 0 ? hi : restIdxs[ci]);
+      });
     }
+
+    // 행 생성
     const newRows = [];
-    for (let r = 1; r < aoa.length; r++) {
-      const line = aoa[r];
-      const label = String(line[0] || "").trim();
+    let regionAssigned = 0;
+    for (const line of dataRows) {
+      const label = String(line[labelCol] ?? "").trim();
       if (!label) continue;
       const values = {};
-      if (fixedCols) {
-        // 헤더에서 항목열의 위치를 낮/밤 등 별칭으로 찾는다(못 찾으면 순서대로 배정)
-        newColumns.forEach((col, ci) => {
-          const hi = header.findIndex((h, idx) => idx > 0 && findPeriodByAlias(standards, h)?.code === col.code);
-          const val = hi > 0 ? line[hi] : line[ci + 1];
-          values[col.id] = parseNum(val);
-        });
-      } else {
-        newColumns.forEach((col, ci) => { values[col.id] = parseNum(line[ci + 1]); });
+      newColumns.forEach((col, ci) => { values[col.id] = parseNum(line[colIndexMap[ci]]); });
+      let region = standards.regions?.[0]?.code || null;
+      if (regionCol >= 0) {
+        const hit = findRegionByAlias(standards, line[regionCol]);
+        if (hit) { region = hit.code; regionAssigned++; }
       }
-      newRows.push({ id: `r${++rowSeq}`, label, region: standards.regions?.[0]?.code || null, values });
+      newRows.push({ id: `r${++rowSeq}`, label, region, values });
     }
-    if (!newRows.length) { toast("표 형식을 인식하지 못했습니다 — 직접 입력해주세요", "warn"); return; }
+    if (!newRows.length) {
+      toast("표 형식을 인식하지 못했습니다 — 헤더행·지점명열을 찾지 못했습니다. 직접 입력하거나 붙여넣기를 이용해주세요", "warn");
+      return;
+    }
     columns = newColumns; rows = newRows;
     refreshAddSelect(); renderGrid(); scheduleCharts();
-    toast(`${newRows.length}개 지점을 불러왔습니다${regionMode ? " — 지역구분은 직접 선택해주세요" : ` × ${newColumns.length}개 항목`}`, "ok");
+
+    const parts = [`${newRows.length}개 지점 × ${newColumns.length}개 항목을 불러왔습니다`];
+    if (headerRowIdx > 0) parts.push(`${headerRowIdx + 1}행을 헤더로 인식(상단 안내문 ${headerRowIdx}행 제외)`);
+    if (flipped) parts.push("행/열이 뒤집힌 표를 자동으로 맞춤");
+    if (regionMode) parts.push(regionAssigned > 0 ? `지역구분 ${regionAssigned}건 자동인식` : "지역구분은 직접 선택해주세요");
+    if (unmatchedHeaders.length) parts.push(`미인식 ${unmatchedHeaders.length}개는 사용자 항목으로 추가(${unmatchedHeaders.slice(0, 3).join("·")}${unmatchedHeaders.length > 3 ? " 등" : ""})`);
+    if (skippedAdmin.length) parts.push(`관리열 ${skippedAdmin.length}개 제외(${skippedAdmin.slice(0, 3).join("·")}${skippedAdmin.length > 3 ? " 등" : ""})`);
+    toast(parts.join(" · "), unmatchedHeaders.length || skippedAdmin.length ? "warn" : "ok");
   }
 
   async function handleFile(file) {
@@ -901,76 +1100,115 @@ export async function init(section, { toast, bridge, V }) {
     clearTimeout(chartDebounce);
     chartDebounce = setTimeout(renderCharts, 350);
   }
+  // 차트마다 옵션이 다르므로(col.chartOpts) 설정 값을 반영한 Chart.js config를 매번 새로 만든다
+  function buildChartConfig(col) {
+    const opts = chartOptsOf(col);
+    const regionMode = isRegionMode();
+    const failColor = cssVar("--fail", "#d64545");
+    const actionColor = "#9b1c1c"; // 대책기준(2차) 초과 — 우려기준 초과(failColor)보다 한 단계 진한 색
+    const data = rows.map((r) => (r.values[col.id] == null ? null : Number(r.values[col.id])));
+    const colors = data.map((v, i) => {
+      const lvl = judgeLevel(col, regionMode ? rows[i] : null, v);
+      return lvl === 2 ? actionColor : lvl === 1 ? failColor : opts.color;
+    });
+    const singleStd = !regionMode ? effectiveStandard(col, null) : null;
+    const annotations = (singleStd && singleStd.direction !== "range") ? {
+      stdLine: {
+        type: "line", yMin: singleStd.value, yMax: singleStd.value,
+        borderColor: cssVar("--warn", "#c98a1c"), borderWidth: 2, borderDash: [6, 4],
+        label: { display: true, content: `기준 ${fmtStd(singleStd)}(${singleStd.averaging}${singleStd.source === "custom" ? "·사용자지정" : ""})`,
+                  position: "end", backgroundColor: cssVar("--warn", "#c98a1c"), color: "#fff", font: { size: 10 } },
+      },
+    } : {};
+    return {
+      type: opts.type,
+      data: {
+        labels: rows.map((r) => r.label || "(이름없음)"),
+        datasets: [{
+          label: col.label, data, backgroundColor: colors, borderColor: colors,
+          tension: opts.type === "line" ? 0.25 : 0, fill: false,
+          barThickness: opts.barThickness || undefined,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: opts.showLegend },
+          title: { display: opts.showTitle, text: col.label, font: { size: 13 } },
+          annotation: { annotations },
+          datalabels: window.ChartDataLabels ? {
+            display: opts.showLabels, anchor: "end", align: "top", font: { size: 10 },
+            formatter: (v) => (v == null ? "" : v),
+          } : undefined,
+          tooltip: regionMode ? {
+            callbacks: {
+              afterLabel: (ctx) => tooltipFor(col, rows[ctx.dataIndex]) || "기준 미등록",
+            },
+          } : undefined,
+        },
+        scales: {
+          y: {
+            beginAtZero: !opts.yManual,
+            ...(opts.yManual && opts.yMin != null ? { min: opts.yMin } : {}),
+            ...(opts.yManual && opts.yMax != null ? { max: opts.yMax } : {}),
+            ...(opts.yManual && opts.yStep != null ? { ticks: { stepSize: opts.yStep } } : {}),
+            title: { display: !!(singleStd || regionMode), text: singleStd?.unit || standards.unit || "" },
+          },
+        },
+      },
+    };
+  }
+
+  function rebuildChart(col, canvas) {
+    if (charts[col.id]) { charts[col.id].destroy(); delete charts[col.id]; }
+    charts[col.id] = new Chart(canvas.getContext("2d"), buildChartConfig(col));
+  }
+
   function renderCharts() {
     const container = $("#ed-charts");
     Object.values(charts).forEach((c) => c.destroy());
     charts = {};
     container.innerHTML = "";
 
-    const failColor = cssVar("--fail", "#d64545");
     const regionMode = isRegionMode();
     let any = false;
     for (const col of columns) {
       const data = rows.map((r) => (r.values[col.id] == null ? null : Number(r.values[col.id])));
       if (!data.some((v) => v != null)) continue;
       any = true;
+      const opts = chartOptsOf(col);
 
       const card = document.createElement("div");
       card.className = "panel ed-chart-card";
-      card.innerHTML = `<div class="ed-chart-head"><h4>${escapeHtml(col.label)}</h4>
-        <button type="button" class="btn btn-secondary ed-chart-png">PNG 저장</button></div>
+      card.style.width = `${opts.width}px`;
+      card.innerHTML = `
+        <div class="ed-chart-head"><h4>${escapeHtml(col.label)}</h4>
+          <button type="button" class="btn btn-secondary ed-chart-png">PNG 저장</button></div>
+        <div class="ed-chart-ctlrow">
+          <div class="segment" role="group" aria-label="그래프 타입">
+            <button type="button" data-type="bar" aria-pressed="${opts.type === "bar"}">막대</button>
+            <button type="button" data-type="line" aria-pressed="${opts.type === "line"}">선</button>
+          </div>
+          <label class="ed-chk-label">색상 <input type="color" class="ed-c-color" value="${opts.color.startsWith("#") ? opts.color : "#2f6fed"}"></label>
+          <label class="ed-chk-label">가로 <input type="range" class="ed-c-width" min="240" max="640" step="10" value="${opts.width}"></label>
+          <label class="ed-chk-label">세로 <input type="range" class="ed-c-height" min="160" max="520" step="10" value="${opts.height}"></label>
+          <label class="ed-chk-label">막대굵기 <input type="range" class="ed-c-thick" min="0" max="60" step="2" value="${opts.barThickness || 0}" title="0=자동"></label>
+        </div>
+        <div class="ed-chart-ctlrow">
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-title" ${opts.showTitle ? "checked" : ""}> 제목</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-legend" ${opts.showLegend ? "checked" : ""}> 범례</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-labels" ${opts.showLabels ? "checked" : ""}> 수치표시</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-ymanual" ${opts.yManual ? "checked" : ""}> Y축 직접설정</label>
+          <input type="number" class="ed-c-ymin" placeholder="최소" value="${opts.yMin ?? ""}" ${opts.yManual ? "" : "disabled"}>
+          <input type="number" class="ed-c-ymax" placeholder="최대" value="${opts.yMax ?? ""}" ${opts.yManual ? "" : "disabled"}>
+          <input type="number" class="ed-c-ystep" placeholder="간격" value="${opts.yStep ?? ""}" ${opts.yManual ? "" : "disabled"}>
+        </div>
         ${regionMode ? `<p class="ed-chart-note">지점마다 지역구분이 달라 기준선이 하나로 고정되지 않습니다 — 막대 위에 마우스를 올리면 그 지점의 기준을 볼 수 있습니다.</p>` : ""}
-        <div class="ed-chart-canvas-wrap" style="height:${chartHeight}px"><canvas></canvas></div>`;
+        <div class="ed-chart-canvas-wrap" style="height:${opts.height}px"><canvas></canvas></div>`;
       container.appendChild(card);
 
       const canvas = card.querySelector("canvas");
-      // item 모드는 전 지점 공통 기준 1개, region 모드는 지점(row)마다 다른 기준
-      const stdOf = (i) => effectiveStandard(col, regionMode ? rows[i] : null);
-      const actionColor = "#9b1c1c"; // 대책기준(2차) 초과 — 우려기준 초과(failColor)보다 한 단계 진한 색
-      const colors = data.map((v, i) => {
-        const lvl = judgeLevel(col, regionMode ? rows[i] : null, v);
-        return lvl === 2 ? actionColor : lvl === 1 ? failColor : chartColor;
-      });
-      const singleStd = !regionMode ? effectiveStandard(col, null) : null;
-      const annotations = (singleStd && singleStd.direction !== "range") ? {
-        stdLine: {
-          type: "line", yMin: singleStd.value, yMax: singleStd.value,
-          borderColor: cssVar("--warn", "#c98a1c"), borderWidth: 2, borderDash: [6, 4],
-          label: { display: true, content: `기준 ${fmtStd(singleStd)}(${singleStd.averaging}${singleStd.source === "custom" ? "·사용자지정" : ""})`,
-                    position: "end", backgroundColor: cssVar("--warn", "#c98a1c"), color: "#fff", font: { size: 10 } },
-        },
-      } : {};
-
-      charts[col.id] = new Chart(canvas.getContext("2d"), {
-        type: chartType,
-        data: {
-          labels: rows.map((r) => r.label || "(이름없음)"),
-          datasets: [{ label: col.label, data, backgroundColor: colors, borderColor: colors,
-                       tension: chartType === "line" ? 0.25 : 0, fill: false }],
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: showLegend },
-            title: { display: showTitle, text: col.label, font: { size: 13 } },
-            annotation: { annotations },
-            tooltip: regionMode ? {
-              callbacks: {
-                afterLabel: (ctx) => tooltipFor(col, rows[ctx.dataIndex]) || "기준 미등록",
-              },
-            } : undefined,
-          },
-          scales: {
-            y: {
-              beginAtZero: !yManual,
-              ...(yManual && yMin != null ? { min: yMin } : {}),
-              ...(yManual && yMax != null ? { max: yMax } : {}),
-              ...(yManual && yStep != null ? { ticks: { stepSize: yStep } } : {}),
-              title: { display: !!(singleStd || regionMode), text: singleStd?.unit || standards.unit || "" },
-            },
-          },
-        },
-      });
+      rebuildChart(col, canvas);
 
       card.querySelector(".ed-chart-png").addEventListener("click", () => {
         const a = document.createElement("a");
@@ -978,6 +1216,39 @@ export async function init(section, { toast, bridge, V }) {
         a.download = `${standards.field}_${col.code || col.label}_${new Date().toISOString().slice(0, 10)}.png`;
         a.click();
       });
+
+      card.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => {
+        opts.type = b.dataset.type;
+        card.querySelectorAll("[data-type]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        rebuildChart(col, canvas);
+      }));
+      card.querySelector(".ed-c-color").addEventListener("input", (e) => { opts.color = e.target.value; rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-width").addEventListener("input", (e) => {
+        opts.width = parseInt(e.target.value, 10);
+        card.style.width = `${opts.width}px`;
+        charts[col.id]?.resize();
+      });
+      card.querySelector(".ed-c-height").addEventListener("input", (e) => {
+        opts.height = parseInt(e.target.value, 10);
+        card.querySelector(".ed-chart-canvas-wrap").style.height = `${opts.height}px`;
+        charts[col.id]?.resize();
+      });
+      card.querySelector(".ed-c-thick").addEventListener("input", (e) => {
+        opts.barThickness = parseInt(e.target.value, 10) || null;
+        rebuildChart(col, canvas);
+      });
+      card.querySelector(".ed-c-title").addEventListener("change", (e) => { opts.showTitle = e.target.checked; rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-legend").addEventListener("change", (e) => { opts.showLegend = e.target.checked; rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-labels").addEventListener("change", (e) => { opts.showLabels = e.target.checked; rebuildChart(col, canvas); });
+      const yMinI = card.querySelector(".ed-c-ymin"), yMaxI = card.querySelector(".ed-c-ymax"), yStepI = card.querySelector(".ed-c-ystep");
+      card.querySelector(".ed-c-ymanual").addEventListener("change", (e) => {
+        opts.yManual = e.target.checked;
+        [yMinI, yMaxI, yStepI].forEach((el) => { el.disabled = !opts.yManual; });
+        rebuildChart(col, canvas);
+      });
+      yMinI.addEventListener("change", (e) => { opts.yMin = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
+      yMaxI.addEventListener("change", (e) => { opts.yMax = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
+      yStepI.addEventListener("change", (e) => { opts.yStep = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
     }
     if (!any) container.innerHTML = `<div class="placeholder">표에 측정값을 입력하면 그래프가 나타납니다</div>`;
   }
@@ -1032,6 +1303,43 @@ export async function init(section, { toast, bridge, V }) {
     renderGrid();
   });
 
+  /* 다중선택 전역 리스너 — mouseup은 표 밖에서 놓아도 잡아야 하고, Delete·Ctrl+C도
+     포커스가 어디에 있든(선택된 셀 자체가 포커스가 아닐 수 있음) 반응해야 한다. */
+  document.addEventListener("mouseup", () => { selecting = false; });
+  document.addEventListener("keydown", (e) => {
+    if (!selectionRect || !section.classList.contains("active")) return;
+    const span = (selectionRect.r1 > selectionRect.r0) || (selectionRect.c1 > selectionRect.c0);
+    if (!span) return; // 셀 1개만 선택된 상태면 일반 contenteditable 편집을 방해하지 않는다
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (!section.contains(document.activeElement) && document.activeElement !== document.body) return;
+    e.preventDefault();
+    for (let ri = selectionRect.r0; ri <= selectionRect.r1; ri++) {
+      for (let ci = selectionRect.c0; ci <= selectionRect.c1; ci++) {
+        const row = rows[ri], col = columns[ci];
+        if (row && col) delete row.values[col.id];
+      }
+    }
+    renderGrid(); scheduleCharts();
+  });
+  document.addEventListener("copy", (e) => {
+    if (!selectionRect || !section.classList.contains("active")) return;
+    const span = (selectionRect.r1 > selectionRect.r0) || (selectionRect.c1 > selectionRect.c0);
+    if (!span) return; // 셀 1개면 브라우저 기본 복사(텍스트 일부 등)를 그대로 둔다
+    const lines = [];
+    for (let ri = selectionRect.r0; ri <= selectionRect.r1; ri++) {
+      const line = [];
+      for (let ci = selectionRect.c0; ci <= selectionRect.c1; ci++) {
+        const row = rows[ri], col = columns[ci];
+        const v = row && col ? row.values[col.id] : null;
+        line.push(v == null ? "" : String(v));
+      }
+      lines.push(line.join("\t"));
+    }
+    e.clipboardData.setData("text/plain", lines.join("\n"));
+    e.preventDefault();
+    toast(`선택한 ${selectionRect.r1 - selectionRect.r0 + 1}×${selectionRect.c1 - selectionRect.c0 + 1} 셀을 복사했습니다`, "ok");
+  });
+
   const drop = $("#ed-drop"), fileInput = $("#ed-file");
   fileInput.addEventListener("change", () => {
     if (fileInput.files[0]) {
@@ -1043,27 +1351,13 @@ export async function init(section, { toast, bridge, V }) {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
   drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
-  section.querySelectorAll("[data-ctype]").forEach((b) => b.addEventListener("click", () => {
-    chartType = b.dataset.ctype;
-    section.querySelectorAll("[data-ctype]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    renderCharts();
-  }));
-  $("#ed-color").addEventListener("input", (e) => { chartColor = e.target.value; renderCharts(); });
-  $("#ed-size").addEventListener("input", (e) => {
-    chartHeight = parseInt(e.target.value, 10);
-    section.querySelectorAll(".ed-chart-canvas-wrap").forEach((w) => { w.style.height = `${chartHeight}px`; });
-    Object.values(charts).forEach((c) => c.resize());
+  $("#ed-font-size").addEventListener("input", (e) => {
+    const pct = e.target.value;
+    $("#ed-font-size-val").textContent = `${pct}%`;
+    // zoom은 폭 계산까지 통째로 스케일해줘서 표(가변 폭 다단 헤더)에 가장 안전하다.
+    // 최신 Firefox(126+)도 지원 — 미지원 구형 브라우저에서는 그냥 100%로 보인다.
+    $("#ed-scroll").style.zoom = `${pct}%`;
   });
-  $("#ed-show-title").addEventListener("change", (e) => { showTitle = e.target.checked; renderCharts(); });
-  $("#ed-show-legend").addEventListener("change", (e) => { showLegend = e.target.checked; renderCharts(); });
-  $("#ed-y-manual").addEventListener("change", (e) => {
-    yManual = e.target.checked;
-    $("#ed-y-range").style.display = yManual ? "" : "none";
-    renderCharts();
-  });
-  $("#ed-y-min").addEventListener("change", (e) => { yMin = parseNum(e.target.value); renderCharts(); });
-  $("#ed-y-max").addEventListener("change", (e) => { yMax = parseNum(e.target.value); renderCharts(); });
-  $("#ed-y-step").addEventListener("change", (e) => { yStep = parseNum(e.target.value); renderCharts(); });
 
   renderGrid();
   renderCharts();
