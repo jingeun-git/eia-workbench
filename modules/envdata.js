@@ -60,7 +60,18 @@ function parseNum(text) {
   const n = parseFloat(t);
   return Number.isFinite(n) ? n : null;
 }
-function norm(s) { return String(s || "").toLowerCase().replace(/[\s()（）·./\-]/g, ""); }
+// 화면 표시는 SO₂처럼 위/아래첨자를 쓰지만, 매칭(aliases·기간·지역)은 항상 일반 텍스트
+// 기준이다 — 그런데 측정업체 원본 파일 헤더가 이미 SO₂·PM₁₀처럼 첨자 유니코드로 와 있으면
+// 이 매칭이 실패할 수 있다(사용자 지적, 2026-07-22). 매칭 직전에 첨자를 일반 숫자/기호로
+// 되돌려 두 표기 다 인식되게 한다 — 표시(label)는 그대로 두고 매칭에만 영향.
+const SUBSUP_TO_ASCII = {
+  "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9", "₊": "+", "₋": "-",
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9", "⁺": "+", "⁻": "-",
+};
+function normalizeSubSup(s) {
+  return String(s || "").replace(/[₀-₉₊₋⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]/g, (c) => SUBSUP_TO_ASCII[c] || c);
+}
+function norm(s) { return normalizeSubSup(String(s || "")).toLowerCase().replace(/[\s()（）·./\-]/g, ""); }
 
 async function loadStandardsFor(file, V) {
   const url = new URL(`../shared/env_standards/${file}?v=${V || ""}`, import.meta.url);
