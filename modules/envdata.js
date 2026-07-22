@@ -395,8 +395,10 @@ export async function init(section, { toast, bridge, V }) {
           + `<td class="num">${fmtNum(std?.value)}</td><td class="num">${escapeHtml(std?.unit || "")}</td></tr>`;
       });
     } else if (columnsFixed()) {
+      // 항목(period) 자체 unit이 없으면(소음·진동처럼 낮/밤이 같은 단위 공유) 분야 공통 unit으로 대체
+      const periodUnit = (p) => (p.unit != null ? p.unit : (standards.unit || ""));
       theadHtml = `<tr><th>${escapeHtml(standards.regionLabel || "지역구분")}</th>`
-        + standards.periods.map((p) => `<th class="num">${escapeHtml(p.label)}</th>`).join("") + `</tr>`;
+        + standards.periods.map((p) => `<th class="num">${escapeHtml(p.label)}${periodUnit(p) ? ` (${escapeHtml(periodUnit(p))})` : ""}</th>`).join("") + `</tr>`;
       bodyRows = standards.regions.map((r) => {
         const cells = standards.periods.map((p) => {
           const v = r[p.code];
@@ -408,12 +410,13 @@ export async function init(section, { toast, bridge, V }) {
       const dual = standards.dualStandard;
       theadHtml = `<tr><th>항목</th>` + standards.regions.map((r) => `<th class="num">${escapeHtml(r.code)}</th>`).join("") + `</tr>`;
       bodyRows = standards.items.map((it) => {
+        const unit = it.unit || standards.unit || "";
         const cells = standards.regions.map((r) => {
           const v = it.values?.[r.code];
           const v2 = dual ? it[dual.action]?.[r.code] : null;
           return `<td class="num">${fmtNum(v)}${v2 != null ? `/${fmtNum(v2)}` : ""}</td>`;
         }).join("");
-        return `<tr><th>${escapeHtml(it.label)}</th>${cells}</tr>`;
+        return `<tr><th>${escapeHtml(it.label)}${unit ? ` (${escapeHtml(unit)})` : ""}</th>${cells}</tr>`;
       });
     }
     const dualNote = standards.dualStandard
@@ -1192,11 +1195,15 @@ export async function init(section, { toast, bridge, V }) {
     chartDebounce = setTimeout(renderCharts, 350);
   }
   // 차트마다 옵션이 다르므로(col.chartOpts) 설정 값을 반영한 Chart.js config를 매번 새로 만든다
-  function buildChartConfig(col) {
+  function buildChartConfig(col, { forExport } = {}) {
     const opts = chartOptsOf(col);
     const regionMode = isRegionMode();
-    const failColor = cssVar("--fail", "#d64545");
-    const actionColor = "#9b1c1c"; // 대책기준(2차) 초과 — 우려기준 초과(failColor)보다 한 단계 진한 색
+    // PNG 내보내기는 화면 테마(다크 포함)와 무관하게 항상 라이트 고정색을 쓴다(사용자 지시,
+    // 2026-07-22) — 보고서 삽입용이라 다크 톤이 인쇄·문서에서 흐릿하게 보이면 안 된다.
+    // tokens.css 라이트 테마의 --fail/--warn 실값을 그대로 하드코딩(전역 테마 토글 없이 안전하게).
+    const failColor = forExport ? "#DC2626" : cssVar("--fail", "#d64545");
+    const warnColor = forExport ? "#D97706" : cssVar("--warn", "#c98a1c");
+    const actionColor = "#9b1c1c"; // 대책기준(2차) 초과 — 우려기준 초과(failColor)보다 한 단계 진한 색(테마 무관 고정값)
     const data = rows.map((r) => (r.values[col.id] == null ? null : Number(r.values[col.id])));
     const colors = data.map((v, i) => {
       const lvl = judgeLevel(col, regionMode ? rows[i] : null, v);
@@ -1206,9 +1213,9 @@ export async function init(section, { toast, bridge, V }) {
     const annotations = (singleStd && singleStd.direction !== "range") ? {
       stdLine: {
         type: "line", yMin: singleStd.value, yMax: singleStd.value,
-        borderColor: cssVar("--warn", "#c98a1c"), borderWidth: 2, borderDash: [6, 4],
+        borderColor: warnColor, borderWidth: 2, borderDash: [6, 4],
         label: { display: true, content: `기준 ${fmtStd(singleStd)}(${singleStd.averaging}${singleStd.source === "custom" ? "·사용자지정" : ""})`,
-                  position: "end", backgroundColor: cssVar("--warn", "#c98a1c"), color: "#fff", font: { size: 10 } },
+                  position: "end", backgroundColor: warnColor, color: "#fff", font: { size: 10 } },
       },
     } : {};
     return {
@@ -1253,6 +1260,49 @@ export async function init(section, { toast, bridge, V }) {
   function rebuildChart(col, canvas) {
     if (charts[col.id]) { charts[col.id].destroy(); delete charts[col.id]; }
     charts[col.id] = new Chart(canvas.getContext("2d"), buildChartConfig(col));
+  }
+
+  // 96dpi 기준 CSS px를 그대로 저장하면 인쇄용으로 흐리다 — Chart.js의 devicePixelRatio로
+  // 내부 렌더 버퍼만 확대해(화면 표시 크기는 그대로) 300dpi 이상을 만든다(사용자 지시, 2026-07-22).
+  // EMF(메타파일)는 브라우저 표준 API로 직접 생성할 수 없어(서버·네이티브 변환기 필요) 미지원 —
+  // 대신 고해상도 PNG로 같은 목적(인쇄·보고서 삽입 시 흐려지지 않음)을 満족한다.
+  const EXPORT_DPI_SCALE = 3.2; // 96dpi * 3.2 ≈ 307dpi
+  function exportChartPNG(col, filename) {
+    const opts = chartOptsOf(col);
+    // responsive:true+maintainAspectRatio:false인 Chart.js는 canvas 자체 width/height 속성이
+    // 아니라 "부모 컨테이너의 렌더 크기"를 기준으로 리사이즈한다 — canvas를 곧바로 body에
+    // 붙이면 부모(body)가 페이지 전체 크기라 차트가 페이지만큼 거대하게 부풀어버린다
+    // (자체발견 버그, 2026-07-22). 반드시 opts.width/height로 명시적 크기를 가진
+    // wrapper부터 만들고 그 안에 canvas를 둔다 — 화면에 실제 보이는 카드의
+    // .ed-chart-canvas-wrap과 동일한 구조.
+    const wrap = document.createElement("div");
+    wrap.style.position = "fixed"; wrap.style.left = "-99999px"; wrap.style.top = "0";
+    wrap.style.width = `${opts.width}px`; wrap.style.height = `${opts.height}px`;
+    const canvas = document.createElement("canvas");
+    wrap.appendChild(canvas);
+    document.body.appendChild(wrap);
+    const config = buildChartConfig(col, { forExport: true });
+    config.options.devicePixelRatio = EXPORT_DPI_SCALE;
+    config.options.animation = false;
+    const whiteBg = {
+      id: "ed-export-bg",
+      beforeDraw(chart) {
+        const { ctx, width, height } = chart;
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-over";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      },
+    };
+    const tempChart = new Chart(canvas.getContext("2d"), { ...config, plugins: [whiteBg] });
+    const url = canvas.toDataURL("image/png");
+    tempChart.destroy();
+    wrap.remove();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
   }
 
   function renderCharts() {
@@ -1315,10 +1365,7 @@ export async function init(section, { toast, bridge, V }) {
       rebuildChart(col, canvas);
 
       card.querySelector(".ed-chart-png").addEventListener("click", () => {
-        const a = document.createElement("a");
-        a.href = canvas.toDataURL("image/png");
-        a.download = `${standards.field}_${col.code || col.label}_${new Date().toISOString().slice(0, 10)}.png`;
-        a.click();
+        exportChartPNG(col, `${standards.field}_${col.code || col.label}_${new Date().toISOString().slice(0, 10)}.png`);
       });
 
       // 일괄적용 중인 팔로워 카드는 조작을 막아뒀으니(disabled+pointer-events:none) 아래

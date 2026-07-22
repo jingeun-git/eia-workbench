@@ -786,7 +786,8 @@ body.gc-resizing * { cursor: col-resize !important; }
 .ed-head-left { flex: 1 1 420px; min-width: 0; }
 .ed-head-right { flex: 1 1 320px; max-width: 460px; min-width: 0; }
 .ed-ref-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
-.ed-ref-table th, .ed-ref-table td { white-space: nowrap; }
+/* 본문 표(.ed-table)와 동일 원칙 — 내부 텍스트는 전부 중앙정렬(사용자 지시, 2026-07-22) */
+.ed-ref-table th, .ed-ref-table td { white-space: nowrap; text-align: center; }
 
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
 .ed-slider-num { width: 52px; height: 24px; padding: 0 5px; font-size: var(--text-xs); text-align: right; }
@@ -876,7 +877,10 @@ body.ed-resizing * { cursor: col-resize !important; }
 .ed-add-select { max-width: 220px; }
 
 .ed-chart-tools { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-3); }
-.ed-chk-label { display: flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-muted); cursor: pointer; }
+/* white-space:nowrap+flex-shrink:0 필수 — 한글은 글자 사이 어디서나 줄바꿈이 허용돼서
+   좁은 flex 컨테이너에서 raw text가 압착되면 "글자크기"가 한 글자씩 세로로 쌓여버린다
+   (2026-07-22 실사용자 좁은 화면에서 발견). 부족한 공간은 label 전체가 다음 줄로 내려가야 한다. */
+.ed-chk-label { display: flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-muted); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 .ed-y-range { display: flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-muted); }
 .ed-y-range input[type="number"] { width: 68px; height: 28px; padding: 0 6px; font-size: var(--text-xs); }
 .ed-color-label, .ed-size-label { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-muted); }
