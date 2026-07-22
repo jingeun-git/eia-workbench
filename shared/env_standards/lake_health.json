@@ -12,7 +12,7 @@
     { "code": "OrgP", "label": "유기인", "aliases": ["유기인"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.0005)", "value": 0, "unit": "mg/L", "default": true }] },
     { "code": "PCB", "label": "폴리클로리네이티드비페닐(PCB)", "aliases": ["PCB"], "standards": [{ "averaging": "기준(검출금지, 검출한계 0.0005)", "value": 0, "unit": "mg/L", "default": true }] },
     { "code": "Pb", "label": "납(Pb)", "aliases": ["납", "Pb"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
-    { "code": "Cr6", "label": "6가크롬(Cr6+)", "aliases": ["6가크롬", "Cr6+"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
+    { "code": "Cr6", "label": "6가크롬(Cr⁶⁺)", "aliases": ["6가크롬", "Cr6+"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
     { "code": "ABS", "label": "음이온계면활성제(ABS)", "aliases": ["ABS", "음이온계면활성제"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
     { "code": "CCl4", "label": "사염화탄소", "aliases": ["사염화탄소"], "standards": [{ "averaging": "기준", "value": 0.004, "unit": "mg/L", "default": true }] },
     { "code": "DCA", "label": "1,2-디클로로에탄", "aliases": ["1,2-디클로로에탄", "디클로로에탄"], "standards": [{ "averaging": "기준", "value": 0.03, "unit": "mg/L", "default": true }] },
