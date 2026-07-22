@@ -31,6 +31,25 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+function fmtNum(n) { return n == null ? "—" : String(n); }
+// range·number 두 입력을 양방향으로 동기화한다 — 표 글자크기에만 있던 "수치 직접입력"을
+// 그래프 조절바(가로·세로·막대굵기)에도 동일하게 적용하기 위한 공용 헬퍼.
+function bindRangeNumber(rangeEl, numberEl, onChange) {
+  const min = Number(rangeEl.min), max = Number(rangeEl.max);
+  const clamp = (v) => Math.min(max, Math.max(min, v));
+  rangeEl.addEventListener("input", () => {
+    numberEl.value = rangeEl.value;
+    onChange(Number(rangeEl.value));
+  });
+  // "input"이 아니라 "change"(blur·엔터 시점)로 커밋한다 — 타이핑 중간에 clamp해서
+  // 되쓰면 "75" 입력 중 "7"에서 70으로 튕겨 입력을 방해한다.
+  numberEl.addEventListener("change", () => {
+    const v = clamp(parseInt(numberEl.value, 10) || min);
+    numberEl.value = String(v);
+    rangeEl.value = String(v);
+    onChange(v);
+  });
+}
 function parseNum(text) {
   let t = String(text ?? "").trim();
   if (t === "") return null;
@@ -178,6 +197,7 @@ export async function init(section, { toast, bridge, V }) {
 
   let charts = {}; // colId -> Chart 인스턴스
   let chartDebounce = null;
+  let bulkApplyCharts = false; // 체크 시 첫 번째로 렌더된 카드의 chartOpts를 나머지 전체에 전파
   let cornerWidth = null; // 측정지점 열 너비(드래그로 조절, px 문자열)
   let regionColWidth = null;
   let transposed = false; // 행/열 전환 — true면 행=조사항목, 열=조사지점
@@ -194,6 +214,14 @@ export async function init(section, { toast, bridge, V }) {
       };
     }
     return col.chartOpts;
+  }
+  // 일괄적용 체크 시 사용 — 나머지 컬럼의 chartOpts를 sourceCol 것으로 덮어쓴다(사본이라 서로 간섭 없음)
+  function applyBulkChartOpts(sourceCol) {
+    const src = chartOptsOf(sourceCol);
+    for (const c of columns) {
+      if (c === sourceCol) continue;
+      c.chartOpts = { ...src };
+    }
   }
 
   /* ── 판정 로직 ─────────────────────────────────────────────────────── */
@@ -284,61 +312,122 @@ export async function init(section, { toast, bridge, V }) {
   /* ── 마크업 ────────────────────────────────────────────────────────── */
   section.innerHTML = `
   <div class="panel">
-    <h2 id="ed-title">환경질 측정 데이터 분석</h2>
-    <p class="desc" id="ed-desc"></p>
-    <div class="ed-banner" id="ed-health-banner" style="display:none"></div>
+    <div class="ed-field-banner" id="ed-field-banner" role="tablist" aria-label="분야 선택"></div>
 
-    <div class="field">
-      <label>분야</label>
-      <select id="ed-field-select" class="ed-add-select">
-        ${FIELDS.map((f, i) => `<option value="${i}">${escapeHtml(f.label)}</option>`).join("")}
-      </select>
-    </div>
+    <div class="ed-head-flex">
+      <div class="ed-head-left">
+        <h2 id="ed-title">환경질 측정 데이터 분석</h2>
+        <p class="desc" id="ed-desc"></p>
+        <div class="ed-banner" id="ed-health-banner" style="display:none"></div>
 
-    <div class="field">
-      <label>등록문서 업로드 (xlsx·csv·hwp·pdf)</label>
-      <label class="dropzone" id="ed-drop">
-        <input type="file" id="ed-file" accept=".xlsx,.xls,.csv,.hwp,.pdf">
-        <span id="ed-drop-msg">파일을 선택하거나 끌어다 놓으세요 — 첫 행은 항목명, 첫 열은 측정지점으로 인식합니다</span>
-      </label>
-      <p class="help">xlsx·csv는 바로 인식됩니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</p>
-    </div>
+        <div class="field">
+          <label>등록문서 업로드 (xlsx·csv·hwp·pdf)</label>
+          <label class="dropzone" id="ed-drop">
+            <input type="file" id="ed-file" accept=".xlsx,.xls,.csv,.hwp,.pdf">
+            <span id="ed-drop-msg">파일을 선택하거나 끌어다 놓으세요 — 첫 행은 항목명, 첫 열은 측정지점으로 인식합니다</span>
+          </label>
+          <p class="help">xlsx·csv는 바로 인식됩니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</p>
+        </div>
 
-    <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-3)">
-      <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
-      <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
-      <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
-      <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
+        <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
+          <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
+          <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
+          <button class="btn btn-secondary" id="ed-transpose" title="행에 조사항목, 열에 조사지점 등으로 표를 뒤집습니다">⇄ 행/열 전환</button>
+          <button class="btn btn-secondary" id="ed-reset">표 초기화</button>
+        </div>
+      </div>
+
+      <div class="ed-head-right">
+        <h4 style="margin:0 0 var(--space-2)">분야별 기준값</h4>
+        <div id="ed-ref-wrap"></div>
+      </div>
     </div>
   </div>
 
-  <div class="ed-layout">
-    <div class="ed-main panel">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2)">
-        <h3 style="margin:0">표</h3>
-        <label class="ed-chk-label">글자크기 <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px"> <span id="ed-font-size-val">100%</span></label>
-      </div>
-      <div class="ed-scroll" id="ed-scroll">
-        <table class="ed-table" id="ed-table">
-          <thead><tr id="ed-thead-row"></tr></thead>
-          <tbody id="ed-tbody"></tbody>
-        </table>
-      </div>
+  <div class="ed-main panel">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2)">
+      <h3 style="margin:0">표</h3>
+      <label class="ed-chk-label">글자크기
+        <input type="range" id="ed-font-size" min="70" max="150" value="100" style="width:110px">
+        <input type="number" id="ed-font-size-num" min="70" max="150" value="100" class="ed-slider-num">%
+      </label>
     </div>
+    <div class="ed-scroll" id="ed-scroll">
+      <table class="ed-table" id="ed-table">
+        <thead><tr id="ed-thead-row"></tr></thead>
+        <tbody id="ed-tbody"></tbody>
+      </table>
+    </div>
+  </div>
 
-    <div class="ed-side">
-      <div class="panel">
-        <h3 style="margin:0 0 var(--space-3)">그래프</h3>
-        <p class="ed-chart-note" style="margin-bottom:var(--space-3)">각 그래프 카드 위쪽 도구에서 타입·색상·크기·막대폭·수치표시·Y축을 그래프별로 따로 설정할 수 있습니다.</p>
-        <div class="ed-charts" id="ed-charts"></div>
-      </div>
+  <div class="panel">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-2)">
+      <h3 style="margin:0">그래프</h3>
+      <label class="ed-chk-label"><input type="checkbox" id="ed-chart-bulk"> 전체 그래프에 첫 번째 그래프 설정 일괄적용</label>
     </div>
+    <p class="ed-chart-note" style="margin-bottom:var(--space-3)">각 그래프 카드 위쪽 도구에서 타입·색상·크기·막대폭·수치표시·Y축을 그래프별로 따로 설정할 수 있습니다(일괄적용 체크 시 첫 번째 그래프 설정을 전체에 적용).</p>
+    <div class="ed-charts" id="ed-charts"></div>
   </div>`;
 
   const $ = (s) => section.querySelector(s);
 
+  /* 분야 선택 — 드롭다운 대신 클릭형 배너(칩) 사용(사용자 지시, 2026-07-22) */
+  function renderFieldBanner() {
+    $("#ed-field-banner").innerHTML = FIELDS.map((f, i) =>
+      `<button type="button" class="ed-field-btn" data-idx="${i}" aria-pressed="${i === fieldIdx}">${escapeHtml(f.label)}</button>`
+    ).join("");
+  }
+  function updateFieldBannerActive() {
+    $("#ed-field-banner").querySelectorAll(".ed-field-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", String(parseInt(b.dataset.idx, 10) === fieldIdx));
+    });
+  }
+
+  /* 분야별 기준값 참고표 — 상단 안내패널 오른쪽 빈 공간에 배치(사용자 지시, 2026-07-22).
+     item/region+고정컬럼/region+가변컬럼 3가지 판정모드에 맞춰 표 형태가 갈린다. */
+  function buildReferenceTable() {
+    let theadHtml, bodyRows;
+    if (!isRegionMode()) {
+      theadHtml = `<tr><th>항목</th><th class="num">평균시간</th><th class="num">기준</th><th class="num">단위</th></tr>`;
+      bodyRows = standards.items.map((it) => {
+        const std = it.standards.find((s) => s.default) || it.standards[0];
+        return `<tr><th>${escapeHtml(it.label)}</th><td class="num">${escapeHtml(std?.averaging || "—")}</td>`
+          + `<td class="num">${fmtNum(std?.value)}</td><td class="num">${escapeHtml(std?.unit || "")}</td></tr>`;
+      });
+    } else if (columnsFixed()) {
+      theadHtml = `<tr><th>${escapeHtml(standards.regionLabel || "지역구분")}</th>`
+        + standards.periods.map((p) => `<th class="num">${escapeHtml(p.label)}</th>`).join("") + `</tr>`;
+      bodyRows = standards.regions.map((r) => {
+        const cells = standards.periods.map((p) => {
+          const v = r[p.code];
+          return `<td class="num">${Array.isArray(v) ? `${v[0]}~${v[1]}` : fmtNum(v)}</td>`;
+        }).join("");
+        return `<tr><th>${escapeHtml(r.label)}</th>${cells}</tr>`;
+      });
+    } else {
+      const dual = standards.dualStandard;
+      theadHtml = `<tr><th>항목</th>` + standards.regions.map((r) => `<th class="num">${escapeHtml(r.code)}</th>`).join("") + `</tr>`;
+      bodyRows = standards.items.map((it) => {
+        const cells = standards.regions.map((r) => {
+          const v = it.values?.[r.code];
+          const v2 = dual ? it[dual.action]?.[r.code] : null;
+          return `<td class="num">${fmtNum(v)}${v2 != null ? `/${fmtNum(v2)}` : ""}</td>`;
+        }).join("");
+        return `<tr><th>${escapeHtml(it.label)}</th>${cells}</tr>`;
+      });
+    }
+    const dualNote = standards.dualStandard
+      ? `<p class="help" style="margin:var(--space-1) 0 0">숫자 표기는 ${escapeHtml(standards.dualStandard.concernLabel)}/${escapeHtml(standards.dualStandard.actionLabel)} 순서입니다.</p>` : "";
+    const legal = `<p class="help" style="margin:var(--space-2) 0 0">
+      <b>근거</b> ${escapeHtml(standards.legal_basis || "—")}${standards.enacted ? ` · <b>고시(시행)일</b> ${escapeHtml(standards.enacted)}` : ""}
+    </p>`;
+    return `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
+      + `<thead>${theadHtml}</thead><tbody>${bodyRows.join("")}</tbody></table></div>${dualNote}${legal}`;
+  }
+
   function updateHeaderText() {
     const f = FIELDS[fieldIdx];
+    updateFieldBannerActive();
     $("#ed-title").textContent = `환경질 측정 데이터 분석 — ${f.label} (단일분석)`;
     $("#ed-desc").textContent = isRegionMode()
       ? `측정 결과를 표에 입력하면 ${standards.legal_basis} 기준 초과 여부를 지점별 지역구분에 따라 자동 판별하고 그래프를 그립니다. xlsx·csv 업로드, 붙여넣기, 표 직접 입력을 모두 지원합니다.`
@@ -356,6 +445,8 @@ export async function init(section, { toast, bridge, V }) {
     } else {
       banner.style.display = "none";
     }
+
+    $("#ed-ref-wrap").innerHTML = buildReferenceTable();
   }
 
   /* ── 항목 추가 셀렉트 채우기 (item 모드 전용) ─────────────────────── */
@@ -1172,36 +1263,49 @@ export async function init(section, { toast, bridge, V }) {
 
     const regionMode = isRegionMode();
     let any = false;
+    let cardIdx = 0; // "1번째 그래프" = 실제로 카드가 그려지는 첫 컬럼(데이터 없는 컬럼은 카드가 없다)
     for (const col of columns) {
       const data = rows.map((r) => (r.values[col.id] == null ? null : Number(r.values[col.id])));
       if (!data.some((v) => v != null)) continue;
       any = true;
+      const isLeader = cardIdx === 0;
+      const isFollower = bulkApplyCharts && !isLeader;
       const opts = chartOptsOf(col);
 
       const card = document.createElement("div");
       card.className = "panel ed-chart-card";
       card.style.width = `${opts.width}px`;
+      const dis = isFollower ? "disabled" : "";
       card.innerHTML = `
-        <div class="ed-chart-head"><h4>${escapeHtml(col.label)}</h4>
+        <div class="ed-chart-head"><h4>${escapeHtml(col.label)}${isFollower ? ' <span class="ed-chart-note" style="display:inline">(일괄적용 중)</span>' : ""}</h4>
           <button type="button" class="btn btn-secondary ed-chart-png">PNG 저장</button></div>
-        <div class="ed-chart-ctlrow">
+        <div class="ed-chart-ctlrow${isFollower ? " is-bulk-follower" : ""}">
           <div class="segment" role="group" aria-label="그래프 타입">
-            <button type="button" data-type="bar" aria-pressed="${opts.type === "bar"}">막대</button>
-            <button type="button" data-type="line" aria-pressed="${opts.type === "line"}">선</button>
+            <button type="button" data-type="bar" aria-pressed="${opts.type === "bar"}" ${dis}>막대</button>
+            <button type="button" data-type="line" aria-pressed="${opts.type === "line"}" ${dis}>선</button>
           </div>
-          <label class="ed-chk-label">색상 <input type="color" class="ed-c-color" value="${opts.color.startsWith("#") ? opts.color : "#2f6fed"}"></label>
-          <label class="ed-chk-label">가로 <input type="range" class="ed-c-width" min="240" max="640" step="10" value="${opts.width}"></label>
-          <label class="ed-chk-label">세로 <input type="range" class="ed-c-height" min="160" max="520" step="10" value="${opts.height}"></label>
-          <label class="ed-chk-label">막대굵기 <input type="range" class="ed-c-thick" min="0" max="60" step="2" value="${opts.barThickness || 0}" title="0=자동"></label>
+          <label class="ed-chk-label">색상 <input type="color" class="ed-c-color" value="${opts.color.startsWith("#") ? opts.color : "#2f6fed"}" ${dis}></label>
+          <label class="ed-chk-label">가로
+            <input type="range" class="ed-c-width" min="240" max="900" step="10" value="${opts.width}" ${dis}>
+            <input type="number" class="ed-c-width-num ed-slider-num" min="240" max="900" value="${opts.width}" ${dis}>
+          </label>
+          <label class="ed-chk-label">세로
+            <input type="range" class="ed-c-height" min="160" max="640" step="10" value="${opts.height}" ${dis}>
+            <input type="number" class="ed-c-height-num ed-slider-num" min="160" max="640" value="${opts.height}" ${dis}>
+          </label>
+          <label class="ed-chk-label">막대굵기
+            <input type="range" class="ed-c-thick" min="0" max="60" step="2" value="${opts.barThickness || 0}" title="0=자동" ${dis}>
+            <input type="number" class="ed-c-thick-num ed-slider-num" min="0" max="60" value="${opts.barThickness || 0}" ${dis}>
+          </label>
         </div>
-        <div class="ed-chart-ctlrow">
-          <label class="ed-chk-label"><input type="checkbox" class="ed-c-title" ${opts.showTitle ? "checked" : ""}> 제목</label>
-          <label class="ed-chk-label"><input type="checkbox" class="ed-c-legend" ${opts.showLegend ? "checked" : ""}> 범례</label>
-          <label class="ed-chk-label"><input type="checkbox" class="ed-c-labels" ${opts.showLabels ? "checked" : ""}> 수치표시</label>
-          <label class="ed-chk-label"><input type="checkbox" class="ed-c-ymanual" ${opts.yManual ? "checked" : ""}> Y축 직접설정</label>
-          <input type="number" class="ed-c-ymin" placeholder="최소" value="${opts.yMin ?? ""}" ${opts.yManual ? "" : "disabled"}>
-          <input type="number" class="ed-c-ymax" placeholder="최대" value="${opts.yMax ?? ""}" ${opts.yManual ? "" : "disabled"}>
-          <input type="number" class="ed-c-ystep" placeholder="간격" value="${opts.yStep ?? ""}" ${opts.yManual ? "" : "disabled"}>
+        <div class="ed-chart-ctlrow${isFollower ? " is-bulk-follower" : ""}">
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-title" ${opts.showTitle ? "checked" : ""} ${dis}> 제목</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-legend" ${opts.showLegend ? "checked" : ""} ${dis}> 범례</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-labels" ${opts.showLabels ? "checked" : ""} ${dis}> 수치표시</label>
+          <label class="ed-chk-label"><input type="checkbox" class="ed-c-ymanual" ${opts.yManual ? "checked" : ""} ${dis}> Y축 직접설정</label>
+          <input type="number" class="ed-c-ymin ed-yaxis-input" placeholder="최소" value="${opts.yMin ?? ""}" ${opts.yManual ? "" : "disabled"} ${dis}>
+          <input type="number" class="ed-c-ymax ed-yaxis-input" placeholder="최대" value="${opts.yMax ?? ""}" ${opts.yManual ? "" : "disabled"} ${dis}>
+          <input type="number" class="ed-c-ystep ed-yaxis-input" placeholder="간격" value="${opts.yStep ?? ""}" ${opts.yManual ? "" : "disabled"} ${dis}>
         </div>
         ${regionMode ? `<p class="ed-chart-note">지점마다 지역구분이 달라 기준선이 하나로 고정되지 않습니다 — 막대 위에 마우스를 올리면 그 지점의 기준을 볼 수 있습니다.</p>` : ""}
         <div class="ed-chart-canvas-wrap" style="height:${opts.height}px"><canvas></canvas></div>`;
@@ -1217,50 +1321,60 @@ export async function init(section, { toast, bridge, V }) {
         a.click();
       });
 
+      // 일괄적용 중인 팔로워 카드는 조작을 막아뒀으니(disabled+pointer-events:none) 아래
+      // 리스너들은 리더 카드에서만 실질적으로 동작한다. 리더에서 값이 바뀌면 전체를 다시 그린다.
+      const commit = () => {
+        if (bulkApplyCharts && isLeader) { applyBulkChartOpts(col); renderCharts(); return true; }
+        return false;
+      };
       card.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => {
         opts.type = b.dataset.type;
         card.querySelectorAll("[data-type]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-        rebuildChart(col, canvas);
+        if (!commit()) rebuildChart(col, canvas);
       }));
-      card.querySelector(".ed-c-color").addEventListener("input", (e) => { opts.color = e.target.value; rebuildChart(col, canvas); });
-      card.querySelector(".ed-c-width").addEventListener("input", (e) => {
-        opts.width = parseInt(e.target.value, 10);
-        card.style.width = `${opts.width}px`;
+      card.querySelector(".ed-c-color").addEventListener("input", (e) => { opts.color = e.target.value; if (!commit()) rebuildChart(col, canvas); });
+      bindRangeNumber(card.querySelector(".ed-c-width"), card.querySelector(".ed-c-width-num"), (v) => {
+        opts.width = v;
+        if (commit()) return;
+        card.style.width = `${v}px`;
         charts[col.id]?.resize();
       });
-      card.querySelector(".ed-c-height").addEventListener("input", (e) => {
-        opts.height = parseInt(e.target.value, 10);
-        card.querySelector(".ed-chart-canvas-wrap").style.height = `${opts.height}px`;
+      bindRangeNumber(card.querySelector(".ed-c-height"), card.querySelector(".ed-c-height-num"), (v) => {
+        opts.height = v;
+        if (commit()) return;
+        card.querySelector(".ed-chart-canvas-wrap").style.height = `${v}px`;
         charts[col.id]?.resize();
       });
-      card.querySelector(".ed-c-thick").addEventListener("input", (e) => {
-        opts.barThickness = parseInt(e.target.value, 10) || null;
-        rebuildChart(col, canvas);
+      bindRangeNumber(card.querySelector(".ed-c-thick"), card.querySelector(".ed-c-thick-num"), (v) => {
+        opts.barThickness = v || null;
+        if (!commit()) rebuildChart(col, canvas);
       });
-      card.querySelector(".ed-c-title").addEventListener("change", (e) => { opts.showTitle = e.target.checked; rebuildChart(col, canvas); });
-      card.querySelector(".ed-c-legend").addEventListener("change", (e) => { opts.showLegend = e.target.checked; rebuildChart(col, canvas); });
-      card.querySelector(".ed-c-labels").addEventListener("change", (e) => { opts.showLabels = e.target.checked; rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-title").addEventListener("change", (e) => { opts.showTitle = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-legend").addEventListener("change", (e) => { opts.showLegend = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
+      card.querySelector(".ed-c-labels").addEventListener("change", (e) => { opts.showLabels = e.target.checked; if (!commit()) rebuildChart(col, canvas); });
       const yMinI = card.querySelector(".ed-c-ymin"), yMaxI = card.querySelector(".ed-c-ymax"), yStepI = card.querySelector(".ed-c-ystep");
       card.querySelector(".ed-c-ymanual").addEventListener("change", (e) => {
         opts.yManual = e.target.checked;
         [yMinI, yMaxI, yStepI].forEach((el) => { el.disabled = !opts.yManual; });
-        rebuildChart(col, canvas);
+        if (!commit()) rebuildChart(col, canvas);
       });
-      yMinI.addEventListener("change", (e) => { opts.yMin = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
-      yMaxI.addEventListener("change", (e) => { opts.yMax = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
-      yStepI.addEventListener("change", (e) => { opts.yStep = e.target.value === "" ? null : Number(e.target.value); rebuildChart(col, canvas); });
+      yMinI.addEventListener("change", (e) => { opts.yMin = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
+      yMaxI.addEventListener("change", (e) => { opts.yMax = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
+      yStepI.addEventListener("change", (e) => { opts.yStep = e.target.value === "" ? null : Number(e.target.value); if (!commit()) rebuildChart(col, canvas); });
+
+      cardIdx++;
     }
     if (!any) container.innerHTML = `<div class="placeholder">표에 측정값을 입력하면 그래프가 나타납니다</div>`;
   }
 
   /* ── 분야 전환 ─────────────────────────────────────────────────────── */
   async function switchField(idx) {
+    if (idx === fieldIdx) return;
     let next;
     try {
       next = await loadStandardsFor(FIELDS[idx].file, V);
     } catch (e) {
       toast(`${FIELDS[idx].label} 기준DB 로드 실패: ${e.message}`, "fail");
-      $("#ed-field-select").value = String(fieldIdx);
       return;
     }
     fieldIdx = idx;
@@ -1273,9 +1387,13 @@ export async function init(section, { toast, bridge, V }) {
   }
 
   /* ── 툴바 이벤트 ───────────────────────────────────────────────────── */
+  renderFieldBanner();
   updateHeaderText();
   refreshAddSelect();
-  $("#ed-field-select").addEventListener("change", (e) => switchField(parseInt(e.target.value, 10)));
+  $("#ed-field-banner").addEventListener("click", (e) => {
+    const btn = e.target.closest(".ed-field-btn");
+    if (btn) switchField(parseInt(btn.dataset.idx, 10));
+  });
   $("#ed-add-item").addEventListener("change", (e) => {
     const v = e.target.value;
     if (!v) return;
@@ -1301,6 +1419,14 @@ export async function init(section, { toast, bridge, V }) {
     transposed = !transposed;
     $("#ed-transpose").setAttribute("aria-pressed", String(transposed));
     renderGrid();
+  });
+  $("#ed-chart-bulk").addEventListener("change", (e) => {
+    bulkApplyCharts = e.target.checked;
+    if (bulkApplyCharts) {
+      const leader = columns.find((c) => rows.some((r) => r.values[c.id] != null));
+      if (leader) applyBulkChartOpts(leader);
+    }
+    renderCharts();
   });
 
   /* 다중선택 전역 리스너 — mouseup은 표 밖에서 놓아도 잡아야 하고, Delete·Ctrl+C도
@@ -1351,11 +1477,9 @@ export async function init(section, { toast, bridge, V }) {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
   drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
-  $("#ed-font-size").addEventListener("input", (e) => {
-    const pct = e.target.value;
-    $("#ed-font-size-val").textContent = `${pct}%`;
-    // zoom은 폭 계산까지 통째로 스케일해줘서 표(가변 폭 다단 헤더)에 가장 안전하다.
-    // 최신 Firefox(126+)도 지원 — 미지원 구형 브라우저에서는 그냥 100%로 보인다.
+  // zoom은 폭 계산까지 통째로 스케일해줘서 표(가변 폭 다단 헤더)에 가장 안전하다.
+  // 최신 Firefox(126+)도 지원 — 미지원 구형 브라우저에서는 그냥 100%로 보인다.
+  bindRangeNumber($("#ed-font-size"), $("#ed-font-size-num"), (pct) => {
     $("#ed-scroll").style.zoom = `${pct}%`;
   });
 

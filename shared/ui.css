@@ -767,16 +767,29 @@ body.gc-resizing * { cursor: col-resize !important; }
 
 
 /* ── 환경질 측정 데이터 분석 (SYS-41) ─────────────────────────────────── */
-/* 표 60 : 그래프 40 — 좁은 화면에서는 세로로 쌓는다(2026-07-22 사용자 요청) */
-.ed-layout { display: grid; gap: var(--space-4); align-items: start; }
-@media (min-width: 1000px) {
-  /* minmax(0, Nfr) — 표가 가로로 넓어(스크롤 필요) grid 트랙의 암묵적
-     min-content가 커지면 fr 비율이 무시되고 그래프 칸이 0으로 눌린다.
-     0을 명시해 60:40 비율이 표 내용 크기와 무관하게 지켜지게 한다. */
-  .ed-layout { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .ed-side { position: sticky; top: var(--space-4); max-height: calc(100vh - var(--space-6)); overflow: auto; }
+/* 그래프를 표 아래로 이동(2026-07-22 사용자 요청) — 두 패널을 그냥 세로로 쌓는다.
+   과거의 60:40 좌우분할(.ed-layout/.ed-side)은 폐기. */
+.ed-main.panel { margin-top: var(--space-4); }
+
+/* 분야 선택 배너 — 드롭다운 대신 클릭형 칩(2026-07-22). 탭바(.tabs)와 톤을 맞춘다. */
+.ed-field-banner { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.ed-field-btn {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); border-radius: 999px; padding: 6px 14px; font-size: var(--text-sm);
+  cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.ed-main.panel, .ed-side .panel { margin-top: 0; }
+.ed-field-btn:hover { background: var(--accent-subtle); }
+.ed-field-btn[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: var(--weight-semibold); }
+
+/* 상단 안내 패널 — 왼쪽(제목·설명·업로드), 오른쪽(분야별 기준값표). 좁은 화면은 세로로 쌓는다. */
+.ed-head-flex { display: flex; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; }
+.ed-head-left { flex: 1 1 420px; min-width: 0; }
+.ed-head-right { flex: 1 1 320px; max-width: 460px; min-width: 0; }
+.ed-ref-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
+.ed-ref-table th, .ed-ref-table td { white-space: nowrap; }
+
+/* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */
+.ed-slider-num { width: 52px; height: 24px; padding: 0 5px; font-size: var(--text-xs); text-align: right; }
 
 /* 표 스크롤 컨테이너 — 모든 분야가 공유하는 단일 래퍼(#ed-scroll)라 구조는 이미 통일되어 있다.
    토양(23항목)처럼 항목이 많은 분야에서 위아래 여유가 부족하다는 지적으로 높이만 확장(560→760px). */
@@ -870,13 +883,10 @@ body.ed-resizing * { cursor: col-resize !important; }
 .ed-color-label input[type="color"] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; cursor: pointer; }
 .ed-size-label input[type="range"] { width: 140px; }
 
-/* 카드마다 개별 가로폭(chartOpts.width)을 갖기 때문에 그리드가 아니라 flex-wrap —
-   grid는 fr 트랙이 카드 실제 너비를 무시하고 균등분할해버린다 */
-.ed-charts { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
-/* max-width:100%를 주지 않는다 — 그래프 폭을 사이드바보다 크게 늘리면(내보내기용 등)
-   .ed-side의 overflow:auto가 가로 스크롤을 만들어 실제로 그 폭을 갖게 한다. 클램프하면
-   슬라이더로 늘려도 화면에는 변화가 없어 "조정이 안 된다"는 오인을 준다. */
-.ed-chart-card { padding: var(--space-3) var(--space-3) var(--space-4); flex: 0 0 auto; }
+/* 그래프가 표 아래 전체너비로 이동하면서 "1섹션씩 순차적으로 아래로"(사용자 지시,
+   2026-07-22) — 여러 카드가 한 줄에 나란히 wrap되지 않고 세로로 하나씩 쌓인다. */
+.ed-charts { display: flex; flex-direction: column; gap: var(--space-4); align-items: flex-start; }
+.ed-chart-card { padding: var(--space-3) var(--space-3) var(--space-4); width: 100%; max-width: 100%; }
 .ed-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
 .ed-chart-head h4 { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .ed-chart-head .btn { height: 26px; padding: 0 10px; font-size: var(--text-xs); }
@@ -888,6 +898,12 @@ body.ed-resizing * { cursor: col-resize !important; }
 .ed-chart-ctlrow input[type="range"] { width: 70px; }
 .ed-chart-ctlrow input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border-strong); border-radius: 5px; background: none; cursor: pointer; }
 .ed-chart-ctlrow input[type="number"] { width: 62px; height: 24px; padding: 0 5px; font-size: var(--text-xs); }
+/* Y축 직접설정 체크 여부에 따라 min/max/간격 입력을 부드럽게 흐리게(사용자 지시, 2026-07-22) —
+   브라우저 기본 disabled 회색만으로는 "지금 왜 안 눌리는지"가 잘 안 보인다는 지적. */
+.ed-yaxis-input { transition: opacity .18s ease, color .18s ease; opacity: 1; }
+.ed-yaxis-input:disabled { opacity: .35; cursor: not-allowed; }
+/* 일괄적용 체크 시 1번 카드를 뺀 나머지는 "따라가는 카드"라 조작을 막고 흐리게 표시 */
+.ed-chart-ctlrow.is-bulk-follower { opacity: .45; pointer-events: none; transition: opacity .18s ease; }
 .ed-chart-note { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
 .ed-banner {
   margin: 0 0 var(--space-4); padding: var(--space-3);
