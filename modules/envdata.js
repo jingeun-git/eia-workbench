@@ -467,6 +467,18 @@ export async function init(section, { toast, bridge, V }) {
           <p class="help">xlsx·csv는 바로 인식됩니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</p>
         </div>
 
+        <!-- 브라우저는 드래그드롭된 파일의 실제 경로를 주지 않아(보안 제약) hwp·pdf는
+             브라우저 자체 파싱이 불가능하다 — 브리지의 기존 pdf2excel_core(표 추출)·
+             hwp2pdf_core(HWP→PDF)를 그대로 재사용해 경로 기반으로 처리한다(SYS-41 9단계). -->
+        <div class="field" id="ed-bridge-parse-field" style="display:none">
+          <label>브리지로 HWP·PDF 등록문서 자동인식</label>
+          <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+            <button class="btn btn-secondary" id="ed-bridge-parse" type="button">문서 선택…</button>
+            <span id="ed-bridge-parse-status" class="help" style="margin:0"></span>
+          </div>
+        </div>
+        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWP·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>bridge/run_bridge.bat</code> 실행 후 다시 확인하세요.</p>
+
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
           <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
           <button class="btn btn-secondary" id="ed-add-row">+ 지점 추가</button>
@@ -663,7 +675,7 @@ export async function init(section, { toast, bridge, V }) {
     $("#ed-title").textContent = `환경질 측정 데이터 분석 — ${f.label} (${analysisMode === "multi" ? "다중분석" : "단일분석"})`;
     $("#ed-desc").textContent = isRegionMode()
       ? `측정 결과를 표에 입력하면 ${standards.legal_basis} 기준 초과 여부를 지점별 지역구분에 따라 자동 판별하고 그래프를 그립니다. xlsx·csv 업로드, 붙여넣기, 표 직접 입력을 모두 지원합니다.`
-      : `측정 결과를 표에 입력하면 ${standards.legal_basis} 초과 여부를 자동 판별하고 항목별 그래프를 그립니다. xlsx·csv 업로드, 엑셀에서 복사한 내용 붙여넣기, 표 직접 입력을 모두 지원합니다. HWP·PDF 등록문서 자동인식은 브리지 연동 다음 업데이트에서 지원됩니다.`;
+      : `측정 결과를 표에 입력하면 ${standards.legal_basis} 초과 여부를 자동 판별하고 항목별 그래프를 그립니다. xlsx·csv 업로드, 엑셀에서 복사한 내용 붙여넣기, 표 직접 입력을 모두 지원합니다.`;
     // 다중분석 중엔 컬럼이 프로젝트(sites/itemCodes)에서 파생되므로 구조편집(항목·지점 추가,
     // 표초기화)은 의미가 없다 — 숨긴다. 엑셀 내보내기는 별도 div라 영향받지 않는다.
     $("#ed-add-item").parentElement.style.display = (columnsFixed() || analysisMode === "multi") ? "none" : "";
@@ -1986,8 +1998,9 @@ export async function init(section, { toast, bridge, V }) {
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         applyAoaToGrid(aoa);
       } else if (["hwp", "pdf"].includes(ext)) {
-        toast("HWP·PDF 등록문서 자동인식은 브리지 연동 다음 업데이트에서 지원됩니다 — "
-          + "지금은 xlsx로 변환하거나 표에 직접 입력·붙여넣기 해주세요", "warn");
+        // 브라우저 드래그드롭은 파일의 실제 경로를 주지 않아(보안 제약) 여기서는 처리할
+        // 수 없다 — 경로 기반인 브리지 쪽 "문서 선택" 버튼으로 안내한다(SYS-41 9단계).
+        toast("HWP·PDF는 브라우저에서 직접 열 수 없습니다 — 위쪽 \"브리지로 HWP·PDF 등록문서 자동인식 → 문서 선택…\" 버튼을 사용해주세요(브리지 연결 필요)", "warn");
       } else {
         toast("지원하지 않는 파일 형식입니다 (xlsx·csv·hwp·pdf)", "fail");
       }
@@ -2452,6 +2465,40 @@ export async function init(section, { toast, bridge, V }) {
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("drag"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
   drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+  // 브리지로 HWP·PDF 등록문서 자동인식(SYS-41 9단계) — bridge.pdf2excel(표 추출)이
+  // 있어야 켜진다. hwp2pdf는 선택 파일이 실제로 .hwp/.hwpx일 때만 필요(작업 실행 시점에
+  // 확인, 여기서 미리 다 막지 않는다 — pdf만 다루는 사용자가 불필요하게 막히지 않게).
+  function renderBridgeParseUI() {
+    const ok = bridge.state === "ok" && bridge.info?.features?.pdf2excel;
+    $("#ed-bridge-parse-field").style.display = ok ? "" : "none";
+    $("#ed-bridge-parse-locked").style.display = ok ? "none" : "";
+  }
+  bridge.addEventListener("change", renderBridgeParseUI);
+  renderBridgeParseUI();
+
+  $("#ed-bridge-parse").addEventListener("click", async () => {
+    const statusEl = $("#ed-bridge-parse-status");
+    try {
+      const picked = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
+        body: { kind: "files", patterns: "*.hwp *.hwpx *.pdf" } });
+      const path = picked.path || (picked.paths || [])[0];
+      if (!path) return;
+      const name = path.split(/[\\/]/).pop();
+      statusEl.textContent = `"${name}" 처리 중…`;
+      const job = await bridge.call("/jobs", { method: "POST", body: { type: "envdata_parse", path } });
+      const done = await bridge.pollJob(job.job_id, {
+        onProgress: (p) => { if (p?.stage) statusEl.textContent = `"${name}" — ${p.stage}`; },
+      });
+      const aoa = done.result?.aoa;
+      if (!aoa || !aoa.length) { statusEl.textContent = ""; toast("표를 찾지 못했습니다", "fail"); return; }
+      applyAoaToGrid(aoa);
+      statusEl.textContent = `"${name}" 인식 완료`;
+    } catch (e) {
+      statusEl.textContent = "";
+      toast(`문서 선택·처리 실패: ${e.message}`, "fail");
+    }
+  });
 
   // zoom은 폭 계산까지 통째로 스케일해줘서 표(가변 폭 다단 헤더)에 가장 안전하다.
   // 최신 Firefox(126+)도 지원 — 미지원 구형 브라우저에서는 그냥 100%로 보인다.

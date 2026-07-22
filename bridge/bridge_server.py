@@ -617,6 +617,64 @@ def run_pdf2excel_write(job, params):
     job["result"] = {"path": str(path)}
 
 
+def run_envdata_parse(job, params):
+    """환경질 측정 데이터 분석 탭의 HWP·PDF 등록문서 자동인식(SYS-41 9단계).
+
+    새 표 추출 로직을 만들지 않는다 — pdf2excel_core.scan()/group()을 그대로
+    호출해 얻은 표를 2차원 배열(aoa)로 돌려주면, 프론트엔드가 xlsx 업로드와
+    똑같은 applyAoaToGrid()로 처리한다(안내문 제외·관리열 제외·지역구분
+    자동인식 등 스마트파싱을 이중으로 만들지 않기 위함). HWP는 hwp2pdf_core로
+    먼저 PDF화한 뒤 동일 경로를 탄다.
+    """
+    import pdf2excel_core as pc
+    src = Path(params["path"])
+    if not path_allowed(src):
+        raise RuntimeError("대상 파일이 승인된 경로가 아닙니다 — [파일 선택]으로 다시 지정하세요")
+    ext = src.suffix.lower()
+    if ext not in (".hwp", ".hwpx", ".pdf"):
+        raise RuntimeError("hwp·hwpx·pdf 파일만 처리할 수 있습니다")
+
+    pdf_path = src
+    if ext in (".hwp", ".hwpx"):
+        import hwp2pdf_core
+        job["progress"] = {"done": 0, "total": 1, "stage": "한컴으로 PDF 변환 중"}
+        job_log(job, f"HWP→PDF 변환: {src.name}")
+        tmp_out = Path(tempfile.mkdtemp(prefix="envdata_parse_"))
+        result_pdf = None
+        for ev in hwp2pdf_core.convert_batch([src], out_dir=str(tmp_out)):
+            if ev.get("phase") == "item":
+                if ev.get("ok"):
+                    result_pdf = Path(ev["pdf"])
+                else:
+                    raise RuntimeError(f"HWP→PDF 변환 실패: {ev.get('error')}")
+        if not result_pdf or not result_pdf.exists():
+            raise RuntimeError("HWP→PDF 변환 결과 파일을 찾지 못했습니다")
+        pdf_path = result_pdf
+        job_log(job, f"  ✓ PDF 변환 완료 → {pdf_path.name}")
+
+    def on_prog(done, total):
+        job["progress"] = {"done": done, "total": total, "stage": f"{done}/{total} 쪽"}
+
+    job_log(job, f"표 추출 중: {pdf_path.name}")
+    raws = pc.scan(pdf_path, "", progress=on_prog)
+    if not raws:
+        raise RuntimeError("표를 찾지 못했습니다 — 스캔 이미지 PDF는 표 추출이 불가합니다")
+    tables = pc.group(raws)
+    if not tables:
+        raise RuntimeError("표를 찾지 못했습니다")
+
+    # 표가 여럿이면 행이 가장 많은 것을 고른다 — envdata 등록문서는 대개 측정결과
+    # 표 하나가 본체이고 나머지는 캡션·범례 등 부수 표라 이 휴리스틱이 안전하다.
+    best = max(tables, key=lambda t: len(t.rows))
+    aoa = ([best.header] if best.header else []) + best.rows
+    if len(tables) > 1:
+        job_log(job, f"  표 {len(tables)}개 중 가장 큰 표를 선택했습니다"
+                     f"({best.caption or '표제 없음'} · {best.page_label} · {len(best.rows)}행)")
+    job_log(job, f"─── 추출 완료: {len(aoa)}행 × {len(aoa[0]) if aoa else 0}열")
+    job["result"] = {"aoa": aoa, "tableCount": len(tables),
+                      "caption": best.caption, "lostChars": best.lost_chars}
+
+
 def run_hwp2pdf(job, params):
     """convert_batch는 진행 dict를 yield하는 **제너레이터**다 — 순회해야 실행된다.
     (2026-07-20 실사고: 리스트로 취급해 dict에 [0] 인덱싱 → KeyError(0) → 로그 '✗ 0')"""
@@ -849,7 +907,8 @@ RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
            "hwp_probe": run_hwp_probe,
            "eiass_seq_dl": run_eiass_seq_dl,
            "hwp2pdf": run_hwp2pdf,
-           "pdf2excel_scan": run_pdf2excel_scan, "pdf2excel_write": run_pdf2excel_write}
+           "pdf2excel_scan": run_pdf2excel_scan, "pdf2excel_write": run_pdf2excel_write,
+           "envdata_parse": run_envdata_parse}
 
 def worker():
     while True:

@@ -1,6 +1,6 @@
 # envdata(환경질 측정 데이터 분석) Playwright 회귀 스위트
 
-`modules/envdata.js`(SYS-41~61) 전용 브라우저 회귀 테스트 25개 파일, 총 265건.
+`modules/envdata.js`(SYS-41~61) 전용 브라우저 회귀 테스트 26개 파일, 총 271건.
 2026-07-22까지 매 변경마다 이 스위트 전체를 실행해 실패 0건을 확인한 뒤 배포했다.
 그동안 세션 임시 스크래치패드(`/tmp`)에만 있어 세션이 끝나면 사라지는 상태였다 — 이번에 저장소로 이관.
 
@@ -60,10 +60,12 @@ LD_LIBRARY_PATH=<libasound.so.2가 있는 경로> node verify.js
 | verify24.js | 4 | **findRegionByAlias exact-match 우선순위 버그**(SYS-59) — "좋음"이 "매우좋음"의 부분문자열이라 Ib 대신 Ia로 오판정되던 것 수정 |
 | verify25.js | 6 | **다중분석에 행/열전환 버튼 부재 + 단일→다중 전환 시 상태 누출**(SYS-60) — 버튼 자체가 다중분석엔 없었고, 있었어도 전환 이력이 기본값으로 안 리셋되던 버그 수정 |
 | verify26.js | 12 | **"분석 요약" 신규 기능**(SYS-61) — 표와 그래프 사이, 단일/지점슬라이스=항목별, 항목슬라이스=지점무시 전체+지점별 세부, 목표등급 분야만 등급범위 표시. 한 표에 관련기준(소음·진동의 환경기준/축사 등)이 섞이면 기준별로 나눠 범위를 잡음(전체를 한 범위로 뭉치지 않음). 검증 중 newRound 입력폼 stale sliceAxis 오분류·다수초과 중복표기 버그도 발견·수정 |
+| verify27.js | 6 | **브리지 HWP·PDF 자동인식 프론트엔드 배선**(SYS-41 6단계) — `/ping`·`/pick`·`/jobs`(POST+GET)를 모두 mock해 브리지 연결 감지→"문서 선택…" 버튼 노출→pick→job 등록→poll→`applyAoaToGrid`까지 전 구간 검증. 브리지 쪽 `run_envdata_parse()`의 "가장 큰 표 선택" 로직은 `bridge/test_envdata_parse_logic.py`(파이썬 유닛, 별도)로 검증 — 실제 한컴 COM 경로(HWP→PDF)는 Windows 전용이라 이 환경에서 종단 검증 불가 |
 
 ## 알아둘 것
 
 - `verify.js`의 마지막 콘솔에러 검사 2건은 브리지(포트 8765~8770) 미연결 폴링 노이즈라 무관 — 항상 FAIL로 뜨는 게 정상이다.
 - verify7·verify15는 원래 토양 우려/대책기준을 **항상 동시 판정**하던 구 방식을 검증했으나, SYS-56에서
   표 상단 토글(우려기준/대책기준 중 하나만 판정)로 바뀌면서 토글 전환 단계를 추가해 보정했다.
-- 새 검증을 추가할 때는 `verify24.js`부터 이어서 번호를 매기고, 이 표에 한 줄 추가할 것.
+- 새 검증을 추가할 때는 `verify27.js`부터 이어서 번호를 매기고, 이 표에 한 줄 추가할 것.
+- `bridge/test_envdata_parse_logic.py`(파이썬)는 이 스위트(JS/Playwright)와 별개다 — 브리지 서버 로직은 `bridge/` 안에서 `python3 test_envdata_parse_logic.py -v`로 돌린다.
