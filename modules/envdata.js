@@ -851,9 +851,13 @@ export async function init(section, { toast, bridge, V }) {
       const mn = Math.min(...idxes), mx = Math.max(...idxes);
       return mn === mx ? standards.regions[mn].label : `${standards.regions[mn].label}~${standards.regions[mx].label}`;
     };
-    const exceedList = (pairs) => pairs
+    // includeCol=false — 컬럼(항목 또는 지점)이 이미 그 줄의 <b>로 한 번 나와 있는
+    // 문맥(항목별/지점별 세부 줄)에서는 초과 목록에 컬럼명을 반복하지 않는다(2026-07-22
+    // 실사용 확인 — "X-1 낮, X-2 낮, X-3 낮"처럼 항목명이 지점마다 중복 표시되던 것 정리).
+    // 컬럼이 여러 종류 섞이는 문맥(항목슬라이스의 "전체" 통합 줄)에서만 컬럼명도 함께 남긴다.
+    const exceedList = (pairs, includeCol = true) => pairs
       .filter(({ col, row, value }) => isExceed(effectiveStandard(col, row), value))
-      .map(({ col, row }) => `${row.label || ""} ${col.label || ""}`.trim())
+      .map(({ col, row }) => (includeCol ? `${row.label || ""} ${col.label || ""}`.trim() : (row.label || "").trim()))
       .filter(Boolean);
     const unitOf = (col) => col.unit || dbStandard(col)?.unit || standards.unit || "";
 
@@ -872,7 +876,7 @@ export async function init(section, { toast, bridge, V }) {
         const pairs = cells.filter((c) => c.col === col);
         if (!pairs.length) return null;
         const range = fmtRange(pairs.map((p) => p.value));
-        const exceeds = exceedList(pairs);
+        const exceeds = exceedList(pairs, false);
         const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
         return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(unitOf(col))}${exceedTxt}</li>`;
       }).filter(Boolean);
@@ -889,7 +893,7 @@ export async function init(section, { toast, bridge, V }) {
         const pairs = cells.filter((c) => c.col === col);
         if (!pairs.length) return null;
         const range = fmtRange(pairs.map((p) => p.value));
-        const exceeds = exceedList(pairs);
+        const exceeds = exceedList(pairs, false);
         const exceedTxt = exceeds.length ? ` <span class="ed-summary-exceed">⚠ 초과: ${exceeds.map(escapeHtml).join(", ")}</span>` : "";
         return `<li><b>${escapeHtml(col.label)}</b> ${escapeHtml(range)}${escapeHtml(overallUnit)}${exceedTxt}</li>`;
       }).filter(Boolean);

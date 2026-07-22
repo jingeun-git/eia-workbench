@@ -82,8 +82,25 @@ const ok = (name, cond, detail) => { results.push({ name, pass: !!cond, detail }
   ok("5. 항목슬라이스에 '전체(지점 무시)' 통합범위(3~15) 표시", html3.includes("전체(지점 무시)") && html3.includes("3~15"), html3.slice(0, 400));
   ok("6. 항목슬라이스에 지점별 세부(S-1/S-2) 표시", html3.includes("S-1") && html3.includes("S-2"), html3.slice(0, 400));
   ok("7. 초과 지점(S-1, 카드뮴15>우려4)이 전체·지점별 양쪽에 표기", (html3.match(/초과/g) || []).length >= 2, html3.slice(0, 400));
+  ok("8. 항목슬라이스 지점별 세부줄은 지점명을 반복하지 않음(회차명만, 2026-07-22 정리)", !html3.includes("초과: S-1 카드뮴") && html3.includes("초과: 1차"), html3.slice(0, 400));
 
-  ok("8. 콘솔 에러 없음", errors.length === 0, errors.join(" | "));
+  // ── 5) 단일분석에서 초과 지점이 여럿일 때 항목명이 지점마다 반복되지 않아야 함 ──
+  await page.click(".ed-field-btn:has-text('소음')");
+  await page.waitForTimeout(300);
+  await page.click(".ed-mode-btn[data-mode='single']");
+  await page.waitForTimeout(200);
+  const rows5 = page.locator("#ed-tbody tr");
+  for (let i = 0; i < 3; i++) {
+    const lbl = rows5.nth(i).locator(".ed-row-label");
+    await lbl.click(); await page.keyboard.type(`X-${i + 1}`); await lbl.dispatchEvent("input");
+    const c = rows5.nth(i).locator("td.ed-cell").nth(0);
+    await c.click(); await page.keyboard.type(String(70 + i * 10)); await c.dispatchEvent("input");
+  }
+  await page.waitForTimeout(600);
+  const html5 = await page.locator("#ed-summary").innerHTML();
+  ok("9. 다수 초과 시 항목명 반복 없이 지점명만 나열(X-1, X-2, X-3)", html5.includes("초과: X-1, X-2, X-3") && !html5.includes("X-1 낮"), html5.slice(0, 300));
+
+  ok("10. 콘솔 에러 없음", errors.length === 0, errors.join(" | "));
 
   await browser.close();
   console.log("\n=== 결과 ===");
