@@ -854,7 +854,19 @@ body.gc-resizing * { cursor: col-resize !important; }
 /* 상단 안내 패널 — 왼쪽(제목·설명·업로드), 오른쪽(분야별 기준값표). 좁은 화면은 세로로 쌓는다. */
 .ed-head-flex { display: flex; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; }
 .ed-head-left { flex: 1 1 420px; min-width: 0; }
-.ed-head-right { flex: 1 1 320px; max-width: 460px; min-width: 0; }
+.ed-head-right { flex: 1 1 320px; max-width: 620px; min-width: 0; }
+.ed-ref-headrow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
+.ed-ref-headrow h4 { margin: 0; }
+/* 근거법령이 여럿인 분야(소음·진동)는 표를 다 늘어놓는 대신 탭으로 전환한다(사용자 지시,
+   2026-07-22) — 표+비고+출처가 탭 클릭으로 통째로 바뀐다. */
+.ed-ref-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.ed-ref-tab {
+  appearance: none; border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text-muted); border-radius: 999px; padding: 3px 10px; font-size: var(--text-xs);
+  cursor: pointer; white-space: nowrap; transition: background .15s ease, color .15s ease;
+}
+.ed-ref-tab:hover { background: var(--accent-subtle); }
+.ed-ref-tab[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: var(--weight-semibold); }
 .ed-ref-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md, 8px); }
 /* 본문 표(.ed-table)와 동일 원칙 — 내부 텍스트는 전부 중앙정렬(사용자 지시, 2026-07-22) */
 .ed-ref-table th, .ed-ref-table td { white-space: nowrap; text-align: center; }
@@ -879,8 +891,14 @@ body.gc-resizing * { cursor: col-resize !important; }
   color: var(--warn); background: var(--warn-subtle); border-radius: 999px; vertical-align: middle;
 }
 .ed-ref-intro { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6; }
-.ed-item-slice-info { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
-.ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); }
+/* 한글은 글자 사이 어디서나 줄바꿈이 허용돼 좁은 flex 아이템 안에서 라벨 텍스트가
+   "일산화" / "탄소" / "(CO)"처럼 세 줄로 쪼개지는 사고가 재발했다(2026-07-22, "글자크기"
+   라벨 때와 동일 함정 — 이번엔 항목명·기준 부분에 nowrap을 안 줬던 게 원인). 항목명·기준
+   텍스트는 한 줄로, 컨트롤 사이 구분은 공백 대신 세로선으로 시각적으로 정리한다. */
+.ed-item-slice-info { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); flex-wrap: nowrap; white-space: nowrap; }
+.ed-item-slice-info > b, .ed-item-slice-info > span { white-space: nowrap; flex-shrink: 0; }
+.ed-item-slice-info > span { display: flex; align-items: center; gap: 4px; padding-left: var(--space-3); border-left: 1px solid var(--border); }
+.ed-item-slice-info select, .ed-item-slice-info input { height: 26px; font-size: var(--text-xs); flex-shrink: 0; }
 .ed-item-slice-info input[type="number"] { width: 70px; text-align: center; }
 
 /* 슬라이더 옆 수치 직접입력 — 표 글자크기에만 있던 걸 그래프 조절바에도 동일 적용 */

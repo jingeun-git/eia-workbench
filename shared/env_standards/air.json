@@ -2,79 +2,180 @@
   "field": "대기질",
   "type": "item",
   "legal_basis": "환경정책기본법 시행령 별표1 (환경기준, 제2조 관련)",
+  "mainTitle": "환경기준",
   "enacted": "2025-10-01",
   "verified_via": "law_client.py annex --mst 280511 --no 0001 (2026-07-22 직접 조회, 개정 2025.10.1)",
   "items": [
     {
       "code": "SO2",
       "label": "아황산가스(SO2)",
-      "aliases": ["SO2", "아황산가스", "이산화황"],
+      "aliases": [
+        "SO2",
+        "아황산가스",
+        "이산화황"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 0.02, "unit": "ppm" },
-        { "averaging": "24시간", "value": 0.05, "unit": "ppm", "default": true },
-        { "averaging": "1시간", "value": 0.15, "unit": "ppm" }
+        {
+          "averaging": "연간",
+          "value": 0.02,
+          "unit": "ppm"
+        },
+        {
+          "averaging": "24시간",
+          "value": 0.05,
+          "unit": "ppm",
+          "default": true
+        },
+        {
+          "averaging": "1시간",
+          "value": 0.15,
+          "unit": "ppm"
+        }
       ]
     },
     {
       "code": "CO",
       "label": "일산화탄소(CO)",
-      "aliases": ["CO", "일산화탄소"],
+      "aliases": [
+        "CO",
+        "일산화탄소"
+      ],
       "standards": [
-        { "averaging": "8시간", "value": 9, "unit": "ppm", "default": true },
-        { "averaging": "1시간", "value": 25, "unit": "ppm" }
+        {
+          "averaging": "8시간",
+          "value": 9,
+          "unit": "ppm",
+          "default": true
+        },
+        {
+          "averaging": "1시간",
+          "value": 25,
+          "unit": "ppm"
+        }
       ]
     },
     {
       "code": "NO2",
       "label": "이산화질소(NO2)",
-      "aliases": ["NO2", "이산화질소"],
+      "aliases": [
+        "NO2",
+        "이산화질소"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 0.03, "unit": "ppm" },
-        { "averaging": "24시간", "value": 0.06, "unit": "ppm", "default": true },
-        { "averaging": "1시간", "value": 0.10, "unit": "ppm" }
+        {
+          "averaging": "연간",
+          "value": 0.03,
+          "unit": "ppm"
+        },
+        {
+          "averaging": "24시간",
+          "value": 0.06,
+          "unit": "ppm",
+          "default": true
+        },
+        {
+          "averaging": "1시간",
+          "value": 0.1,
+          "unit": "ppm"
+        }
       ]
     },
     {
       "code": "PM10",
       "label": "미세먼지(PM-10)",
-      "aliases": ["PM-10", "PM10", "미세먼지"],
+      "aliases": [
+        "PM-10",
+        "PM10",
+        "미세먼지"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 50, "unit": "㎍/㎥" },
-        { "averaging": "24시간", "value": 100, "unit": "㎍/㎥", "default": true }
+        {
+          "averaging": "연간",
+          "value": 50,
+          "unit": "㎍/㎥"
+        },
+        {
+          "averaging": "24시간",
+          "value": 100,
+          "unit": "㎍/㎥",
+          "default": true
+        }
       ]
     },
     {
       "code": "PM25",
       "label": "초미세먼지(PM-2.5)",
-      "aliases": ["PM-2.5", "PM2.5", "PM25", "초미세먼지"],
+      "aliases": [
+        "PM-2.5",
+        "PM2.5",
+        "PM25",
+        "초미세먼지"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 15, "unit": "㎍/㎥" },
-        { "averaging": "24시간", "value": 35, "unit": "㎍/㎥", "default": true }
+        {
+          "averaging": "연간",
+          "value": 15,
+          "unit": "㎍/㎥"
+        },
+        {
+          "averaging": "24시간",
+          "value": 35,
+          "unit": "㎍/㎥",
+          "default": true
+        }
       ]
     },
     {
       "code": "O3",
       "label": "오존(O3)",
-      "aliases": ["O3", "오존"],
+      "aliases": [
+        "O3",
+        "오존"
+      ],
       "standards": [
-        { "averaging": "8시간", "value": 0.06, "unit": "ppm", "default": true },
-        { "averaging": "1시간", "value": 0.1, "unit": "ppm" }
+        {
+          "averaging": "8시간",
+          "value": 0.06,
+          "unit": "ppm",
+          "default": true
+        },
+        {
+          "averaging": "1시간",
+          "value": 0.1,
+          "unit": "ppm"
+        }
       ]
     },
     {
       "code": "Pb",
       "label": "납(Pb)",
-      "aliases": ["Pb", "납"],
+      "aliases": [
+        "Pb",
+        "납"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 0.5, "unit": "㎍/㎥", "default": true }
+        {
+          "averaging": "연간",
+          "value": 0.5,
+          "unit": "㎍/㎥",
+          "default": true
+        }
       ]
     },
     {
       "code": "Benzene",
       "label": "벤젠",
-      "aliases": ["벤젠", "Benzene"],
+      "aliases": [
+        "벤젠",
+        "Benzene"
+      ],
       "standards": [
-        { "averaging": "연간", "value": 5, "unit": "㎍/㎥", "default": true }
+        {
+          "averaging": "연간",
+          "value": 5,
+          "unit": "㎍/㎥",
+          "default": true
+        }
       ]
     }
   ],

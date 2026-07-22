@@ -4,39 +4,462 @@
   "columnsFixed": false,
   "regionLabel": "지역구분",
   "legal_basis": "토양환경보전법 시행규칙 별표3(토양오염우려기준, 제1조의5 관련)·별표7(토양오염대책기준, 제20조 관련)",
+  "mainTitle": "우려·대책기준",
   "enacted": "2025-08-07",
   "verified_via": "law_client.py annex --mst 287443 --no 0003, --no 0007 (2026-07-22 직접 조회)",
   "unit": "mg/kg",
-  "dualStandard": { "action": "actionValues", "actionLabel": "대책기준", "concernLabel": "우려기준" },
+  "dualStandard": {
+    "action": "actionValues",
+    "actionLabel": "대책기준",
+    "concernLabel": "우려기준"
+  },
   "regions": [
-    { "code": "r1", "label": "1지역(전답·과수원·주거용대지·학교용지·공원 등)" },
-    { "code": "r2", "label": "2지역(임야·염전·창고용지·하천·체육용지 등)" },
-    { "code": "r3", "label": "3지역(공장용지·주차장·주유소·도로·철도용지 등)" }
+    {
+      "code": "r1",
+      "label": "1지역(전답·과수원·주거용대지·학교용지·공원 등)"
+    },
+    {
+      "code": "r2",
+      "label": "2지역(임야·염전·창고용지·하천·체육용지 등)"
+    },
+    {
+      "code": "r3",
+      "label": "3지역(공장용지·주차장·주유소·도로·철도용지 등)"
+    }
   ],
   "items": [
-    { "code": "Cd", "label": "카드뮴", "aliases": ["카드뮴", "Cd"], "unit": "mg/kg", "values": { "r1": 4, "r2": 10, "r3": 60 }, "actionValues": { "r1": 12, "r2": 30, "r3": 180 } },
-    { "code": "Cu", "label": "구리", "aliases": ["구리", "Cu"], "unit": "mg/kg", "values": { "r1": 150, "r2": 500, "r3": 2000 }, "actionValues": { "r1": 450, "r2": 1500, "r3": 6000 } },
-    { "code": "As", "label": "비소", "aliases": ["비소", "As"], "unit": "mg/kg", "values": { "r1": 25, "r2": 50, "r3": 200 }, "actionValues": { "r1": 75, "r2": 150, "r3": 600 } },
-    { "code": "Hg", "label": "수은", "aliases": ["수은", "Hg"], "unit": "mg/kg", "values": { "r1": 4, "r2": 10, "r3": 20 }, "actionValues": { "r1": 12, "r2": 30, "r3": 60 } },
-    { "code": "Pb", "label": "납", "aliases": ["납", "Pb"], "unit": "mg/kg", "values": { "r1": 200, "r2": 400, "r3": 700 }, "actionValues": { "r1": 600, "r2": 1200, "r3": 2100 } },
-    { "code": "Cr6", "label": "6가크롬", "aliases": ["6가크롬", "Cr6+", "크롬6가"], "unit": "mg/kg", "values": { "r1": 5, "r2": 15, "r3": 40 }, "actionValues": { "r1": 15, "r2": 45, "r3": 120 } },
-    { "code": "Zn", "label": "아연", "aliases": ["아연", "Zn"], "unit": "mg/kg", "values": { "r1": 300, "r2": 600, "r3": 2000 }, "actionValues": { "r1": 900, "r2": 1800, "r3": 5000 } },
-    { "code": "Ni", "label": "니켈", "aliases": ["니켈", "Ni"], "unit": "mg/kg", "values": { "r1": 100, "r2": 200, "r3": 500 }, "actionValues": { "r1": 300, "r2": 600, "r3": 1500 } },
-    { "code": "F", "label": "불소", "aliases": ["불소", "F"], "unit": "mg/kg", "values": { "r1": 800, "r2": 1300, "r3": 2000 }, "actionValues": { "r1": 2400, "r2": 3900, "r3": 6000 } },
-    { "code": "OrgP", "label": "유기인화합물", "aliases": ["유기인화합물", "유기인"], "unit": "mg/kg", "values": { "r1": 10, "r2": 10, "r3": 30 }, "actionValues": { "r1": null, "r2": null, "r3": null } },
-    { "code": "PCB", "label": "폴리클로리네이티드비페닐(PCB)", "aliases": ["PCB", "폴리클로리네이티드비페닐"], "unit": "mg/kg", "values": { "r1": 1, "r2": 4, "r3": 12 }, "actionValues": { "r1": 3, "r2": 12, "r3": 36 } },
-    { "code": "CN", "label": "시안", "aliases": ["시안", "CN"], "unit": "mg/kg", "values": { "r1": 2, "r2": 2, "r3": 120 }, "actionValues": { "r1": 5, "r2": 5, "r3": 300 } },
-    { "code": "Phenol", "label": "페놀", "aliases": ["페놀"], "unit": "mg/kg", "values": { "r1": 4, "r2": 4, "r3": 20 }, "actionValues": { "r1": 10, "r2": 10, "r3": 50 } },
-    { "code": "Benzene", "label": "벤젠", "aliases": ["벤젠"], "unit": "mg/kg", "values": { "r1": 1, "r2": 1, "r3": 3 }, "actionValues": { "r1": 3, "r2": 3, "r3": 9 } },
-    { "code": "Toluene", "label": "톨루엔", "aliases": ["톨루엔"], "unit": "mg/kg", "values": { "r1": 20, "r2": 20, "r3": 60 }, "actionValues": { "r1": 60, "r2": 60, "r3": 180 } },
-    { "code": "Ethylbenzene", "label": "에틸벤젠", "aliases": ["에틸벤젠"], "unit": "mg/kg", "values": { "r1": 50, "r2": 50, "r3": 340 }, "actionValues": { "r1": 150, "r2": 150, "r3": 1020 } },
-    { "code": "Xylene", "label": "크실렌", "aliases": ["크실렌"], "unit": "mg/kg", "values": { "r1": 15, "r2": 15, "r3": 45 }, "actionValues": { "r1": 45, "r2": 45, "r3": 135 } },
-    { "code": "TPH", "label": "석유계총탄화수소(TPH)", "aliases": ["TPH", "석유계총탄화수소"], "unit": "mg/kg", "values": { "r1": 500, "r2": 800, "r3": 2000 }, "actionValues": { "r1": 2000, "r2": 2400, "r3": 6000 } },
-    { "code": "TCE", "label": "트리클로로에틸렌(TCE)", "aliases": ["TCE", "트리클로로에틸렌"], "unit": "mg/kg", "values": { "r1": 8, "r2": 8, "r3": 40 }, "actionValues": { "r1": 24, "r2": 24, "r3": 120 } },
-    { "code": "PCE", "label": "테트라클로로에틸렌(PCE)", "aliases": ["PCE", "테트라클로로에틸렌"], "unit": "mg/kg", "values": { "r1": 4, "r2": 4, "r3": 25 }, "actionValues": { "r1": 12, "r2": 12, "r3": 75 } },
-    { "code": "BaP", "label": "벤조(a)피렌", "aliases": ["벤조(a)피렌", "벤조a피렌"], "unit": "mg/kg", "values": { "r1": 0.7, "r2": 2, "r3": 7 }, "actionValues": { "r1": 2, "r2": 6, "r3": 21 } },
-    { "code": "DCE", "label": "1,2-디클로로에탄", "aliases": ["1,2-디클로로에탄", "디클로로에탄"], "unit": "mg/kg", "values": { "r1": 5, "r2": 7, "r3": 70 }, "actionValues": { "r1": 15, "r2": 20, "r3": 210 } },
-    { "code": "Dioxin", "label": "다이옥신(퓨란 포함)", "aliases": ["다이옥신"], "unit": "pg-TEQ/g", "values": { "r1": 160, "r2": 340, "r3": 1000 }, "actionValues": { "r1": 500, "r2": 1000, "r3": 3000 } }
+    {
+      "code": "Cd",
+      "label": "카드뮴",
+      "aliases": [
+        "카드뮴",
+        "Cd"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 4,
+        "r2": 10,
+        "r3": 60
+      },
+      "actionValues": {
+        "r1": 12,
+        "r2": 30,
+        "r3": 180
+      }
+    },
+    {
+      "code": "Cu",
+      "label": "구리",
+      "aliases": [
+        "구리",
+        "Cu"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 150,
+        "r2": 500,
+        "r3": 2000
+      },
+      "actionValues": {
+        "r1": 450,
+        "r2": 1500,
+        "r3": 6000
+      }
+    },
+    {
+      "code": "As",
+      "label": "비소",
+      "aliases": [
+        "비소",
+        "As"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 25,
+        "r2": 50,
+        "r3": 200
+      },
+      "actionValues": {
+        "r1": 75,
+        "r2": 150,
+        "r3": 600
+      }
+    },
+    {
+      "code": "Hg",
+      "label": "수은",
+      "aliases": [
+        "수은",
+        "Hg"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 4,
+        "r2": 10,
+        "r3": 20
+      },
+      "actionValues": {
+        "r1": 12,
+        "r2": 30,
+        "r3": 60
+      }
+    },
+    {
+      "code": "Pb",
+      "label": "납",
+      "aliases": [
+        "납",
+        "Pb"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 200,
+        "r2": 400,
+        "r3": 700
+      },
+      "actionValues": {
+        "r1": 600,
+        "r2": 1200,
+        "r3": 2100
+      }
+    },
+    {
+      "code": "Cr6",
+      "label": "6가크롬",
+      "aliases": [
+        "6가크롬",
+        "Cr6+",
+        "크롬6가"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 5,
+        "r2": 15,
+        "r3": 40
+      },
+      "actionValues": {
+        "r1": 15,
+        "r2": 45,
+        "r3": 120
+      }
+    },
+    {
+      "code": "Zn",
+      "label": "아연",
+      "aliases": [
+        "아연",
+        "Zn"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 300,
+        "r2": 600,
+        "r3": 2000
+      },
+      "actionValues": {
+        "r1": 900,
+        "r2": 1800,
+        "r3": 5000
+      }
+    },
+    {
+      "code": "Ni",
+      "label": "니켈",
+      "aliases": [
+        "니켈",
+        "Ni"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 100,
+        "r2": 200,
+        "r3": 500
+      },
+      "actionValues": {
+        "r1": 300,
+        "r2": 600,
+        "r3": 1500
+      }
+    },
+    {
+      "code": "F",
+      "label": "불소",
+      "aliases": [
+        "불소",
+        "F"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 800,
+        "r2": 1300,
+        "r3": 2000
+      },
+      "actionValues": {
+        "r1": 2400,
+        "r2": 3900,
+        "r3": 6000
+      }
+    },
+    {
+      "code": "OrgP",
+      "label": "유기인화합물",
+      "aliases": [
+        "유기인화합물",
+        "유기인"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 10,
+        "r2": 10,
+        "r3": 30
+      },
+      "actionValues": {
+        "r1": null,
+        "r2": null,
+        "r3": null
+      }
+    },
+    {
+      "code": "PCB",
+      "label": "폴리클로리네이티드비페닐(PCB)",
+      "aliases": [
+        "PCB",
+        "폴리클로리네이티드비페닐"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 1,
+        "r2": 4,
+        "r3": 12
+      },
+      "actionValues": {
+        "r1": 3,
+        "r2": 12,
+        "r3": 36
+      }
+    },
+    {
+      "code": "CN",
+      "label": "시안",
+      "aliases": [
+        "시안",
+        "CN"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 2,
+        "r2": 2,
+        "r3": 120
+      },
+      "actionValues": {
+        "r1": 5,
+        "r2": 5,
+        "r3": 300
+      }
+    },
+    {
+      "code": "Phenol",
+      "label": "페놀",
+      "aliases": [
+        "페놀"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 4,
+        "r2": 4,
+        "r3": 20
+      },
+      "actionValues": {
+        "r1": 10,
+        "r2": 10,
+        "r3": 50
+      }
+    },
+    {
+      "code": "Benzene",
+      "label": "벤젠",
+      "aliases": [
+        "벤젠"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 1,
+        "r2": 1,
+        "r3": 3
+      },
+      "actionValues": {
+        "r1": 3,
+        "r2": 3,
+        "r3": 9
+      }
+    },
+    {
+      "code": "Toluene",
+      "label": "톨루엔",
+      "aliases": [
+        "톨루엔"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 20,
+        "r2": 20,
+        "r3": 60
+      },
+      "actionValues": {
+        "r1": 60,
+        "r2": 60,
+        "r3": 180
+      }
+    },
+    {
+      "code": "Ethylbenzene",
+      "label": "에틸벤젠",
+      "aliases": [
+        "에틸벤젠"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 50,
+        "r2": 50,
+        "r3": 340
+      },
+      "actionValues": {
+        "r1": 150,
+        "r2": 150,
+        "r3": 1020
+      }
+    },
+    {
+      "code": "Xylene",
+      "label": "크실렌",
+      "aliases": [
+        "크실렌"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 15,
+        "r2": 15,
+        "r3": 45
+      },
+      "actionValues": {
+        "r1": 45,
+        "r2": 45,
+        "r3": 135
+      }
+    },
+    {
+      "code": "TPH",
+      "label": "석유계총탄화수소(TPH)",
+      "aliases": [
+        "TPH",
+        "석유계총탄화수소"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 500,
+        "r2": 800,
+        "r3": 2000
+      },
+      "actionValues": {
+        "r1": 2000,
+        "r2": 2400,
+        "r3": 6000
+      }
+    },
+    {
+      "code": "TCE",
+      "label": "트리클로로에틸렌(TCE)",
+      "aliases": [
+        "TCE",
+        "트리클로로에틸렌"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 8,
+        "r2": 8,
+        "r3": 40
+      },
+      "actionValues": {
+        "r1": 24,
+        "r2": 24,
+        "r3": 120
+      }
+    },
+    {
+      "code": "PCE",
+      "label": "테트라클로로에틸렌(PCE)",
+      "aliases": [
+        "PCE",
+        "테트라클로로에틸렌"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 4,
+        "r2": 4,
+        "r3": 25
+      },
+      "actionValues": {
+        "r1": 12,
+        "r2": 12,
+        "r3": 75
+      }
+    },
+    {
+      "code": "BaP",
+      "label": "벤조(a)피렌",
+      "aliases": [
+        "벤조(a)피렌",
+        "벤조a피렌"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 0.7,
+        "r2": 2,
+        "r3": 7
+      },
+      "actionValues": {
+        "r1": 2,
+        "r2": 6,
+        "r3": 21
+      }
+    },
+    {
+      "code": "DCE",
+      "label": "1,2-디클로로에탄",
+      "aliases": [
+        "1,2-디클로로에탄",
+        "디클로로에탄"
+      ],
+      "unit": "mg/kg",
+      "values": {
+        "r1": 5,
+        "r2": 7,
+        "r3": 70
+      },
+      "actionValues": {
+        "r1": 15,
+        "r2": 20,
+        "r3": 210
+      }
+    },
+    {
+      "code": "Dioxin",
+      "label": "다이옥신(퓨란 포함)",
+      "aliases": [
+        "다이옥신"
+      ],
+      "unit": "pg-TEQ/g",
+      "values": {
+        "r1": 160,
+        "r2": 340,
+        "r3": 1000
+      },
+      "actionValues": {
+        "r1": 500,
+        "r2": 1000,
+        "r3": 3000
+      }
+    }
   ],
   "notes": [
     "지역구분(1·2·3지역)은 공간정보의 구축 및 관리 등에 관한 법률에 따른 지목 기준 — 위 label은 요약이며 정확한 판정은 원문 비고 참조.",

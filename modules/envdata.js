@@ -231,6 +231,7 @@ export async function init(section, { toast, bridge, V }) {
   let roundSeq = 0;
   let savedSingle = null; // 다중분석 전환 시 단일분석 columns/rows를 잠시 보관
   let currentEditRoundId = null; // multiViewMode==="newRound"일 때 지금 채우고 있는 회차 id
+  let refTabIndex = 0; // 분야별 기준값 패널 — 근거법령이 여럿일 때 탭 인덱스(분야 전환 시 0으로 리셋)
   const defaultChartColor = cssVar("--accent", "#2f6fed");
   /* 그래프 옵션은 전역이 아니라 컬럼(항목)마다 따로 갖는다 — "그래프별 개별 설정"
      요청 반영. 처음 렌더될 때 col.chartOpts가 없으면 기본값으로 채운다. */
@@ -392,7 +393,10 @@ export async function init(section, { toast, bridge, V }) {
       </div>
 
       <div class="ed-head-right">
-        <h4 style="margin:0 0 var(--space-2)">분야별 기준값</h4>
+        <div class="ed-ref-headrow">
+          <h4 id="ed-ref-heading">분야별 기준값</h4>
+          <div class="ed-ref-tabs" id="ed-ref-tabs" style="display:none"></div>
+        </div>
         <div id="ed-ref-wrap"></div>
       </div>
     </div>
@@ -441,8 +445,11 @@ export async function init(section, { toast, bridge, V }) {
   }
 
   /* 분야별 기준값 참고표 — 상단 안내패널 오른쪽 빈 공간에 배치(사용자 지시, 2026-07-22).
-     item/region+고정컬럼/region+가변컬럼 3가지 판정모드에 맞춰 표 형태가 갈린다. */
-  function buildReferenceTable() {
+     item/region+고정컬럼/region+가변컬럼 3가지 판정모드에 맞춰 표 형태가 갈린다.
+     소음·진동처럼 근거법령이 다른 기준이 여러 개면(additionalStandards) 전부 쌓아
+     보여주는 대신 탭(패널)으로 나눈다 — 세로로 다 늘어놓으면 스크롤이 지나치게
+     길어진다는 실사용 지적(2026-07-22)으로 재설계. */
+  function buildReferencePanels() {
     let theadHtml, bodyRows;
     if (!isRegionMode()) {
       theadHtml = `<tr><th>항목</th><th class="num">평균시간</th><th class="num">기준</th><th class="num">단위</th></tr>`;
@@ -481,14 +488,38 @@ export async function init(section, { toast, bridge, V }) {
     // 원문 비고·보정조항·경고는 법적 판단에 직결되는 단서라 생략하지 않는다(사용자 지시,
     // 2026-07-22) — 지금까지 JSON에 있어도 화면에 안 뜨던 사각지대였다(notes 미출력 확인됨).
     const legal = `<p class="ed-ref-source">* 출처 : ${escapeHtml(standards.legal_basis || "—")}${standards.enacted ? ` / ${escapeHtml(standards.enacted)}` : ""}</p>`;
-    const mainTable = `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
+    const mainHtml = `<div class="ed-ref-scroll"><table class="cap-table ed-ref-table">`
       + `<thead>${theadHtml}</thead><tbody>${bodyRows.join("")}</tbody></table></div>`
       + notesListHtml(standards.notes) + correctionsListHtml(standards.corrections) + flagsListHtml(standards.criticalFlags)
       + dualNote + currencyWarningHtml(standards.currencyWarning) + legal;
-    const intro = standards.additionalStandardsIntro
+    const panels = [{ title: standards.mainTitle || "환경기준", html: mainHtml }];
+    for (const extra of (standards.additionalStandards || [])) {
+      panels.push({ title: extra.shortTitle || extra.title, html: renderExtraStandardTable(extra) });
+    }
+    return panels;
+  }
+
+  // 탭(패널) 방식으로 바뀌면서 "분야별 기준값" 제목도 고정문구가 아니라 상황에 맞게 바뀐다 —
+  // 기준이 하나면 그 기준 이름을, 여러 개면 "관련 기준"+탭버튼을 보여준다(사용자 지시, 2026-07-22).
+  function renderReferencePanel() {
+    const panels = buildReferencePanels();
+    if (refTabIndex >= panels.length) refTabIndex = 0;
+    const heading = $("#ed-ref-heading");
+    const tabsEl = $("#ed-ref-tabs");
+    if (panels.length > 1) {
+      heading.textContent = "관련 기준";
+      tabsEl.style.display = "";
+      tabsEl.innerHTML = panels.map((p, i) =>
+        `<button type="button" class="ed-ref-tab" data-i="${i}" aria-pressed="${i === refTabIndex}">${escapeHtml(p.title)}</button>`
+      ).join("");
+    } else {
+      heading.textContent = panels[0].title;
+      tabsEl.style.display = "none";
+      tabsEl.innerHTML = "";
+    }
+    const intro = (panels.length > 1 && standards.additionalStandardsIntro)
       ? `<p class="ed-ref-intro">${escapeHtml(standards.additionalStandardsIntro)}</p>` : "";
-    const extraTables = (standards.additionalStandards || []).map(renderExtraStandardTable).join("");
-    return mainTable + (extraTables ? intro + extraTables : "");
+    $("#ed-ref-wrap").innerHTML = intro + panels[refTabIndex].html;
   }
 
   // notes·corrections·criticalFlags·currencyWarning은 법적 판단에 직결되는 단서라 절대
@@ -541,7 +572,7 @@ export async function init(section, { toast, bridge, V }) {
     // 표초기화)은 의미가 없다 — 숨긴다. 엑셀 내보내기는 별도 div라 영향받지 않는다.
     $("#ed-add-item").parentElement.style.display = (columnsFixed() || analysisMode === "multi") ? "none" : "";
 
-    $("#ed-ref-wrap").innerHTML = buildReferenceTable();
+    renderReferencePanel();
   }
 
   /* ── 항목 추가 셀렉트 채우기 (item 모드 전용) ─────────────────────── */
@@ -1942,6 +1973,7 @@ export async function init(section, { toast, bridge, V }) {
     }
     fieldIdx = idx;
     standards = next;
+    refTabIndex = 0;
     initColumnsAndRows();
     // 분야가 바뀌면 프로젝트도 분야별 저장소를 다시 읽고, 다중분석 선택 상태는 초기화한다
     // (다른 분야의 프로젝트를 보여주는 건 의미가 없다).
@@ -1998,6 +2030,12 @@ export async function init(section, { toast, bridge, V }) {
   $("#ed-round-label").addEventListener("change", renameCurrentRound);
   $("#ed-round-done").addEventListener("click", finishNewRound);
   $("#ed-round-delete").addEventListener("click", deleteCurrentRound);
+  $("#ed-ref-tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".ed-ref-tab");
+    if (!btn) return;
+    refTabIndex = parseInt(btn.dataset.i, 10);
+    renderReferencePanel();
+  });
   $("#ed-export-xlsx").addEventListener("click", exportTableToExcel);
   $("#ed-add-item").addEventListener("change", (e) => {
     const v = e.target.value;

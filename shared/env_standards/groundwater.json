@@ -2,53 +2,694 @@
   "field": "지하수질",
   "type": "item",
   "legal_basis": "환경정책기본법 시행령 별표1(수질 및 수생태계 환경기준 中 지하수 다목 — \"「먹는물관리법」 제5조 및 「수도법」 제26조에 따른 수질기준을 적용\")이 준용하는 먹는물 수질기준 및 검사 등에 관한 규칙 별표1(먹는물의 수질기준, 제2조 관련)",
+  "mainTitle": "먹는물 수질기준",
   "enacted": "2021-09-16",
   "verified_via": "law_client.py annex --mst 280511 --no 0001 (환경기준 준용조항) + annex --mst 278905 --no 0001 (먹는물 수질기준 본문, 2026-07-22 직접 조회)",
   "items": [
-    { "code": "TBC", "label": "일반세균", "aliases": ["일반세균"], "standards": [{ "averaging": "기준", "value": 100, "unit": "CFU/mL", "default": true }] },
-    { "code": "TColi", "label": "총대장균군", "aliases": ["총대장균군"], "standards": [{ "averaging": "기준(불검출, 100mL당)", "value": 0, "unit": "군수/100mL", "default": true }] },
-    { "code": "FColi", "label": "대장균·분원성대장균군", "aliases": ["대장균", "분원성대장균군"], "standards": [{ "averaging": "기준(불검출, 100mL당)", "value": 0, "unit": "군수/100mL", "default": true }] },
-    { "code": "Pb", "label": "납(Pb)", "aliases": ["납", "Pb"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "F", "label": "불소", "aliases": ["불소", "F"], "standards": [{ "averaging": "기준", "value": 1.5, "unit": "mg/L", "default": true }] },
-    { "code": "As", "label": "비소(As)", "aliases": ["비소", "As"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "Se", "label": "셀레늄", "aliases": ["셀레늄"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "Hg", "label": "수은(Hg)", "aliases": ["수은", "Hg"], "standards": [{ "averaging": "기준", "value": 0.001, "unit": "mg/L", "default": true }] },
-    { "code": "CN", "label": "시안(CN)", "aliases": ["시안", "CN"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "Cr", "label": "크롬", "aliases": ["크롬", "Cr"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
-    { "code": "NH3N", "label": "암모니아성질소", "aliases": ["암모니아성질소"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
-    { "code": "NO3N", "label": "질산성질소", "aliases": ["질산성질소", "NO3-N"], "standards": [{ "averaging": "기준", "value": 10, "unit": "mg/L", "default": true }] },
-    { "code": "Cd", "label": "카드뮴(Cd)", "aliases": ["카드뮴", "Cd"], "standards": [{ "averaging": "기준", "value": 0.005, "unit": "mg/L", "default": true }] },
-    { "code": "B", "label": "붕소", "aliases": ["붕소"], "standards": [{ "averaging": "기준", "value": 1.0, "unit": "mg/L", "default": true }] },
-    { "code": "Phenol", "label": "페놀", "aliases": ["페놀"], "standards": [{ "averaging": "기준", "value": 0.005, "unit": "mg/L", "default": true }] },
-    { "code": "Diazinon", "label": "다이아지논", "aliases": ["다이아지논"], "standards": [{ "averaging": "기준", "value": 0.02, "unit": "mg/L", "default": true }] },
-    { "code": "Parathion", "label": "파라티온", "aliases": ["파라티온"], "standards": [{ "averaging": "기준", "value": 0.06, "unit": "mg/L", "default": true }] },
-    { "code": "Fenitrothion", "label": "페니트로티온", "aliases": ["페니트로티온"], "standards": [{ "averaging": "기준", "value": 0.04, "unit": "mg/L", "default": true }] },
-    { "code": "Carbaryl", "label": "카바릴", "aliases": ["카바릴"], "standards": [{ "averaging": "기준", "value": 0.07, "unit": "mg/L", "default": true }] },
-    { "code": "TCA111", "label": "1,1,1-트리클로로에탄", "aliases": ["1,1,1-트리클로로에탄"], "standards": [{ "averaging": "기준", "value": 0.1, "unit": "mg/L", "default": true }] },
-    { "code": "PCE", "label": "테트라클로로에틸렌", "aliases": ["테트라클로로에틸렌", "PCE"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "TCE", "label": "트리클로로에틸렌", "aliases": ["트리클로로에틸렌", "TCE"], "standards": [{ "averaging": "기준", "value": 0.03, "unit": "mg/L", "default": true }] },
-    { "code": "DCM", "label": "디클로로메탄", "aliases": ["디클로로메탄"], "standards": [{ "averaging": "기준", "value": 0.02, "unit": "mg/L", "default": true }] },
-    { "code": "Benzene", "label": "벤젠", "aliases": ["벤젠"], "standards": [{ "averaging": "기준", "value": 0.01, "unit": "mg/L", "default": true }] },
-    { "code": "Toluene", "label": "톨루엔", "aliases": ["톨루엔"], "standards": [{ "averaging": "기준", "value": 0.7, "unit": "mg/L", "default": true }] },
-    { "code": "Ethylbenzene", "label": "에틸벤젠", "aliases": ["에틸벤젠"], "standards": [{ "averaging": "기준", "value": 0.3, "unit": "mg/L", "default": true }] },
-    { "code": "Xylene", "label": "크실렌", "aliases": ["크실렌"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
-    { "code": "DCE11", "label": "1,1-디클로로에틸렌", "aliases": ["1,1-디클로로에틸렌"], "standards": [{ "averaging": "기준", "value": 0.03, "unit": "mg/L", "default": true }] },
-    { "code": "CCl4", "label": "사염화탄소", "aliases": ["사염화탄소"], "standards": [{ "averaging": "기준", "value": 0.002, "unit": "mg/L", "default": true }] },
-    { "code": "DBCP", "label": "1,2-디브로모-3-클로로프로판", "aliases": ["디브로모클로로프로판"], "standards": [{ "averaging": "기준", "value": 0.003, "unit": "mg/L", "default": true }] },
-    { "code": "Dioxane14", "label": "1,4-다이옥산", "aliases": ["1,4-다이옥산"], "standards": [{ "averaging": "기준", "value": 0.05, "unit": "mg/L", "default": true }] },
-    { "code": "Hardness", "label": "경도", "aliases": ["경도"], "standards": [{ "averaging": "기준", "value": 1000, "unit": "mg/L", "default": true }] },
-    { "code": "KMnO4", "label": "과망간산칼륨소비량", "aliases": ["과망간산칼륨소비량"], "standards": [{ "averaging": "기준", "value": 10, "unit": "mg/L", "default": true }] },
-    { "code": "Cu", "label": "동(구리)", "aliases": ["동", "구리"], "standards": [{ "averaging": "기준", "value": 1, "unit": "mg/L", "default": true }] },
-    { "code": "Color", "label": "색도", "aliases": ["색도"], "standards": [{ "averaging": "기준", "value": 5, "unit": "도", "default": true }] },
-    { "code": "ABS", "label": "세제(음이온계면활성제)", "aliases": ["ABS", "음이온계면활성제", "세제"], "standards": [{ "averaging": "기준", "value": 0.5, "unit": "mg/L", "default": true }] },
-    { "code": "pH", "label": "수소이온농도(pH)", "aliases": ["pH", "수소이온농도"], "standards": [{ "averaging": "기준", "value": [5.8, 8.5], "direction": "range", "unit": "", "default": true }] },
-    { "code": "Zn", "label": "아연", "aliases": ["아연", "Zn"], "standards": [{ "averaging": "기준", "value": 3, "unit": "mg/L", "default": true }] },
-    { "code": "ClIon", "label": "염소이온", "aliases": ["염소이온", "Cl-"], "standards": [{ "averaging": "기준", "value": 250, "unit": "mg/L", "default": true }] },
-    { "code": "Fe", "label": "철", "aliases": ["철", "Fe"], "standards": [{ "averaging": "기준", "value": 0.3, "unit": "mg/L", "default": true }] },
-    { "code": "Mn", "label": "망간", "aliases": ["망간", "Mn"], "standards": [{ "averaging": "기준", "value": 0.3, "unit": "mg/L", "default": true }] },
-    { "code": "Turbidity", "label": "탁도", "aliases": ["탁도"], "standards": [{ "averaging": "기준", "value": 1, "unit": "NTU", "default": true }] },
-    { "code": "SO4", "label": "황산이온", "aliases": ["황산이온"], "standards": [{ "averaging": "기준", "value": 200, "unit": "mg/L", "default": true }] },
-    { "code": "Al", "label": "알루미늄", "aliases": ["알루미늄", "Al"], "standards": [{ "averaging": "기준", "value": 0.2, "unit": "mg/L", "default": true }] }
+    {
+      "code": "TBC",
+      "label": "일반세균",
+      "aliases": [
+        "일반세균"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 100,
+          "unit": "CFU/mL",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "TColi",
+      "label": "총대장균군",
+      "aliases": [
+        "총대장균군"
+      ],
+      "standards": [
+        {
+          "averaging": "기준(불검출, 100mL당)",
+          "value": 0,
+          "unit": "군수/100mL",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "FColi",
+      "label": "대장균·분원성대장균군",
+      "aliases": [
+        "대장균",
+        "분원성대장균군"
+      ],
+      "standards": [
+        {
+          "averaging": "기준(불검출, 100mL당)",
+          "value": 0,
+          "unit": "군수/100mL",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Pb",
+      "label": "납(Pb)",
+      "aliases": [
+        "납",
+        "Pb"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "F",
+      "label": "불소",
+      "aliases": [
+        "불소",
+        "F"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 1.5,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "As",
+      "label": "비소(As)",
+      "aliases": [
+        "비소",
+        "As"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Se",
+      "label": "셀레늄",
+      "aliases": [
+        "셀레늄"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Hg",
+      "label": "수은(Hg)",
+      "aliases": [
+        "수은",
+        "Hg"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.001,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "CN",
+      "label": "시안(CN)",
+      "aliases": [
+        "시안",
+        "CN"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Cr",
+      "label": "크롬",
+      "aliases": [
+        "크롬",
+        "Cr"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.05,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "NH3N",
+      "label": "암모니아성질소",
+      "aliases": [
+        "암모니아성질소"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.5,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "NO3N",
+      "label": "질산성질소",
+      "aliases": [
+        "질산성질소",
+        "NO3-N"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 10,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Cd",
+      "label": "카드뮴(Cd)",
+      "aliases": [
+        "카드뮴",
+        "Cd"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.005,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "B",
+      "label": "붕소",
+      "aliases": [
+        "붕소"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 1.0,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Phenol",
+      "label": "페놀",
+      "aliases": [
+        "페놀"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.005,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Diazinon",
+      "label": "다이아지논",
+      "aliases": [
+        "다이아지논"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.02,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Parathion",
+      "label": "파라티온",
+      "aliases": [
+        "파라티온"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.06,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Fenitrothion",
+      "label": "페니트로티온",
+      "aliases": [
+        "페니트로티온"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.04,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Carbaryl",
+      "label": "카바릴",
+      "aliases": [
+        "카바릴"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.07,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "TCA111",
+      "label": "1,1,1-트리클로로에탄",
+      "aliases": [
+        "1,1,1-트리클로로에탄"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.1,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "PCE",
+      "label": "테트라클로로에틸렌",
+      "aliases": [
+        "테트라클로로에틸렌",
+        "PCE"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "TCE",
+      "label": "트리클로로에틸렌",
+      "aliases": [
+        "트리클로로에틸렌",
+        "TCE"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.03,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "DCM",
+      "label": "디클로로메탄",
+      "aliases": [
+        "디클로로메탄"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.02,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Benzene",
+      "label": "벤젠",
+      "aliases": [
+        "벤젠"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.01,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Toluene",
+      "label": "톨루엔",
+      "aliases": [
+        "톨루엔"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.7,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Ethylbenzene",
+      "label": "에틸벤젠",
+      "aliases": [
+        "에틸벤젠"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.3,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Xylene",
+      "label": "크실렌",
+      "aliases": [
+        "크실렌"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.5,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "DCE11",
+      "label": "1,1-디클로로에틸렌",
+      "aliases": [
+        "1,1-디클로로에틸렌"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.03,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "CCl4",
+      "label": "사염화탄소",
+      "aliases": [
+        "사염화탄소"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.002,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "DBCP",
+      "label": "1,2-디브로모-3-클로로프로판",
+      "aliases": [
+        "디브로모클로로프로판"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.003,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Dioxane14",
+      "label": "1,4-다이옥산",
+      "aliases": [
+        "1,4-다이옥산"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.05,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Hardness",
+      "label": "경도",
+      "aliases": [
+        "경도"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 1000,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "KMnO4",
+      "label": "과망간산칼륨소비량",
+      "aliases": [
+        "과망간산칼륨소비량"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 10,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Cu",
+      "label": "동(구리)",
+      "aliases": [
+        "동",
+        "구리"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 1,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Color",
+      "label": "색도",
+      "aliases": [
+        "색도"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 5,
+          "unit": "도",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "ABS",
+      "label": "세제(음이온계면활성제)",
+      "aliases": [
+        "ABS",
+        "음이온계면활성제",
+        "세제"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.5,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "pH",
+      "label": "수소이온농도(pH)",
+      "aliases": [
+        "pH",
+        "수소이온농도"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": [
+            5.8,
+            8.5
+          ],
+          "direction": "range",
+          "unit": "",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Zn",
+      "label": "아연",
+      "aliases": [
+        "아연",
+        "Zn"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 3,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "ClIon",
+      "label": "염소이온",
+      "aliases": [
+        "염소이온",
+        "Cl-"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 250,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Fe",
+      "label": "철",
+      "aliases": [
+        "철",
+        "Fe"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.3,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Mn",
+      "label": "망간",
+      "aliases": [
+        "망간",
+        "Mn"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.3,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Turbidity",
+      "label": "탁도",
+      "aliases": [
+        "탁도"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 1,
+          "unit": "NTU",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "SO4",
+      "label": "황산이온",
+      "aliases": [
+        "황산이온"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 200,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    },
+    {
+      "code": "Al",
+      "label": "알루미늄",
+      "aliases": [
+        "알루미늄",
+        "Al"
+      ],
+      "standards": [
+        {
+          "averaging": "기준",
+          "value": 0.2,
+          "unit": "mg/L",
+          "default": true
+        }
+      ]
+    }
   ],
   "notes": [
     "환경정책기본법 시행령 별표1은 지하수 환경기준을 독자 수치표로 정하지 않고 「먹는물관리법」·「수도법」에 따른 먹는물 수질기준을 그대로 준용한다 — 그 준용 대상인 먹는물 수질기준 및 검사 등에 관한 규칙 별표1 전문(총 6개 범주·60여 항목) 중 일반 지하수 원수에 적용 가능한 미생물·건강상 유해영향 무기물질·유기물질·심미적 영향물질 44항목만 발췌했다.",
