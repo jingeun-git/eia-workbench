@@ -359,7 +359,7 @@ export function init(section, { bridge, toast }, kind) {
                       scanned.every((r) => r.start_page == null);
         if (noCur) {
           toast("현재 쪽번호를 읽지 못했습니다 — 브리지 창을 닫고 "
-                + "run_bridge.bat을 다시 실행한 뒤 스캔해주세요 "
+                + "브리지 런처를 다시 실행한 뒤 스캔해주세요 "
                 + `(현재 연결: v${bridge.info?.bridge_version ?? "?"})`, "fail");
         } else {
           toast(`스캔 완료 — 표를 확인한 뒤 [2. 쪽번호 적용]을 누르세요`, "ok");

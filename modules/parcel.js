@@ -181,7 +181,7 @@ async function fetchXml(url) {
   } else {
     throw new Error("건축물대장 조회는 브리지가 필요합니다 — "
       + "공공데이터포털이 브라우저 직접 호출을 허용하지 않습니다(CORS). "
-      + "run_bridge.bat을 실행한 뒤 다시 시도하세요");
+      + "브리지 런처를 실행한 뒤 다시 시도하세요");
   }
   if (!r.ok) throw new Error(`건축물대장 API 오류 (HTTP ${r.status})`);
   const text = await r.text();

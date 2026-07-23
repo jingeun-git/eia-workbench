@@ -485,7 +485,7 @@ export async function init(section, { toast, bridge, V }) {
             <span id="ed-bridge-parse-status" class="help" style="margin:0"></span>
           </div>
         </div>
-        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWPX·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>bridge/run_bridge.bat</code> 실행 후 다시 확인하세요.</p>
+        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWPX·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>브리지 런처</code> 실행 후 다시 확인하세요.</p>
 
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
           <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>

@@ -68,9 +68,9 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const inited = new Set();
 
-/* 셸 잠금 상태 (SYS-67 T7). 승인된 브리지를 확인하기 전에는 어떤 탭도
-   초기화·활성화하지 않는다 — 오버레이를 지워도 빈 셸이 남게 하는 정직한 게이트. */
-let shellUnlocked = false;
+/* C안(SYS-67): 셸은 항상 열린다(소프트 모델). 브라우저 전용 탭은 브리지와 무관하게
+   쓰고, 브리지 의존 기능은 서버측(브리지 403)이 최종 차단한다. 공개 GitHub Pages라
+   웹 클라이언트 하드게이트는 실효가 없어 제거했다(구 T7 하드게이트 폐기). */
 
 /* ── 테마 ───────────────────────────────────────────────────────────
    라이트가 기본이다(2026-07-20 사용자 확정). OS 설정을 자동 추종하지 않고,
@@ -96,7 +96,6 @@ function initTheme() {
 
 /* ── 탭 ───────────────────────────────────────────────────────────── */
 async function activate(id, pushHash = true) {
-  if (!shellUnlocked) return;      // 승인 전에는 탭을 열지 않는다 (SYS-67 T7)
   const tool = TOOLS.find((t) => t.id === id && !t.planned) || TOOLS[0];
   $$(".tab").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.tool === tool.id)));
@@ -157,7 +156,7 @@ function initTabs() {
   }
   addEventListener("hashchange", () =>
     activate(location.hash.slice(1) || TOOLS[0].id, false));
-  // 초기 탭 활성화는 셸 잠금이 풀린 뒤 initShellGate가 호출한다 (SYS-67 T7)
+  // 초기 탭 활성화는 부트에서 직접 한다 (SYS-67 C안, 하드게이트 없음)
 }
 
 /* ── 브리지 상태칩 ─────────────────────────────────────────────────── */
@@ -174,7 +173,7 @@ function initBridgeChip() {
       s === "stub" ? "⚠ 진단 스텁 감지 — 클릭" :
       s === "off"  ? "○ 브리지 미연결" : "◌ 확인 중…";
     if (s === "stub")
-      chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 run_bridge.bat를 실행하세요";
+      chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 브리지 런처를 실행하세요";
     // 버전이 둘이라 "안 맞는 것 아닌가" 하는 오해가 생긴다(2026-07-21 사용자 지적).
     // 숫자만 보여주지 말고 **맞는지 아닌지**를 말해준다.
     else if (s === "ok") {
@@ -271,59 +270,31 @@ function initPairing() {
   }
 }
 
-/* ── 셸 자가게이트 (SYS-67 T7) ────────────────────────────────────────
-   이 도구는 **승인된 로컬 브리지가 가동 중일 때만** 열린다. 부팅 시 오버레이가
-   앱을 덮고 있고(index.html 기본 표시), /ping의 nodelock.ok=true를 확인하면
-   오버레이를 걷고 첫 탭을 활성화한다. 승인 근거는 브리지가 판정한다(T2/T6) —
-   웹은 그 결과 신호만 소비한다.
-
-   보안 관점: 이 게이트는 클라이언트측이라 devtools로 우회 가능하다. 그러나
-   ⓐ위협모델상 전문 크랙은 비목표이고 ⓑ고가치 네이티브 기능(한컴·OCR·EIASS
-   등)은 브리지가 서버측에서 별도 하드게이트하며(T6, 미승인 시 403) ⓒ우회로
-   얻는 것은 브라우저만으로 되는 저가치 탭뿐이다. 캐주얼 미승인 사용 차단이 목적. */
-function initShellGate() {
-  const gate = $("#lock-gate");
-  const msgEl = $("#lock-gate-msg");
-  const stepsEl = $("#lock-gate-steps");
-  const RUN_STEPS =
-    `<li><code>99.Tools\\unified_workbench\\bridge\\run_bridge.bat</code> 를 더블클릭합니다</li>`
-    + `<li>브라우저가 자동으로 열리고 토큰이 등록됩니다</li>`
-    + `<li>승인된 PC라면 이 화면이 사라지고 도구가 열립니다</li>`;
+/* ── 브리지 소프트 배너 (SYS-67 C안, 구 T7 하드게이트 대체) ────────────────
+   하드 오버레이를 없앴다. 셸·브라우저 전용 탭은 항상 열리고, 브리지 상태는 상단
+   얇은 배너로만 안내한다. 브리지 의존 기능(한컴·PDF·사진·EIASS)의 실제 차단은
+   브리지 서버측(미승인 시 403)이 담당한다 — 공개 웹의 클라이언트 게이트는 실효가
+   없기 때문. 배너는 브리지가 승인·연결됐을 때만 사라진다. */
+function initBridgeBanner() {
+  const banner = $("#bridge-banner");
+  const msgEl = $("#bridge-banner-msg");
+  if (!banner || !msgEl) return;
 
   const render = () => {
     const s = bridge.state;
-    const nl = bridge.info?.nodelock;      // T6부터 /ping에 실려온다
-    const approved = s === "ok" && nl && nl.ok === true;
+    const nl = bridge.info?.nodelock;      // C안 브리지가 /ping에 싣는다
+    const approved = s === "ok" && (!nl || nl.ok === true);
 
-    if (approved) {
-      if (!shellUnlocked) {
-        shellUnlocked = true;
-        activate(location.hash.slice(1) || TOOLS[0].id, false);   // 첫 탭은 여기서 연다
-      }
-      gate.classList.add("unlocked");
-      return;
-    }
-
-    gate.classList.remove("unlocked");     // 승인 잃으면(브리지 종료 등) 다시 잠근다
+    if (approved) { banner.hidden = true; return; }
+    banner.hidden = false;
     if (s === "checking") {
-      msgEl.innerHTML = "승인된 브리지를 확인하는 중입니다…";
-      stepsEl.innerHTML = "";
+      msgEl.textContent = "브리지 연결을 확인하는 중입니다…";
     } else if (s === "stub") {
-      msgEl.innerHTML = "진단 스텁 창이 켜져 있습니다.<br>그 창을 닫고 아래를 실행하세요.";
-      stepsEl.innerHTML = RUN_STEPS;
+      msgEl.textContent = "진단 스텁 창이 열려 있습니다 — 그 창을 닫고 런처를 실행하세요.";
     } else if (s === "ok" && nl && nl.ok === false) {
-      // 브리지는 떴으나 이 PC가 승인 목록에 없다. 지문은 브리지 자체 잠금화면이 표시(T6).
-      msgEl.innerHTML = "이 PC는 아직 <b>승인되지 않았습니다</b>.<br>"
-        + "브리지 창에 표시된 <b>고유생성값</b>을 개발자에게 전달한 뒤 브리지를 다시 실행하세요.";
-      stepsEl.innerHTML = "";
-    } else if (s === "ok" && !nl) {
-      // nodelock을 모르는 구버전 브리지 — 갱신을 요구한다
-      msgEl.innerHTML = "브리지를 <b>최신 버전으로 갱신</b>해야 합니다.<br>"
-        + "열려 있는 브리지 창을 모두 닫고 아래를 다시 실행하세요.";
-      stepsEl.innerHTML = RUN_STEPS;
+      msgEl.textContent = "이 PC는 아직 승인되지 않았습니다 — 등록 요청 후 승인되면 로컬 기능이 열립니다.";
     } else {                                // off — 브리지 없음
-      msgEl.innerHTML = "이 도구는 <b>승인된 로컬 브리지</b>에서만 동작합니다.";
-      stepsEl.innerHTML = RUN_STEPS;
+      msgEl.textContent = "브리지 미연결 — 한컴·PDF·사진 등 로컬 기능은 런처 실행·승인 후 사용할 수 있습니다. (브라우저 기능은 그대로 사용 가능)";
     }
   };
 
@@ -335,8 +306,9 @@ function initShellGate() {
 initVersion();
 initTheme();
 initPairing();   // bridge.start() 전에 토큰부터 확보
-initTabs();      // 탭 버튼만 구성 (초기 활성화는 게이트 해제 후)
-initShellGate(); // bridge.start() 전에 change 리스너를 걸어 첫 신호를 놓치지 않는다
+initTabs();      // 탭 버튼 구성
+activate(location.hash.slice(1) || TOOLS[0].id, false);  // C안: 첫 탭 즉시 활성(하드게이트 없음)
+initBridgeBanner(); // bridge.start() 전에 change 리스너를 걸어 첫 신호를 놓치지 않는다
 initBridgeChip();
 initSettings();
 initModals();

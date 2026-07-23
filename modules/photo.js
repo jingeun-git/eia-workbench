@@ -152,7 +152,7 @@ export async function init(section, { bridge, toast, V }) {
     $("#ph-locked").style.display = ok ? "none" : "";
     if (!ok) {
       $("#ph-locked").textContent = bridge.state !== "ok"
-        ? "○ 브리지 미연결 — run_bridge.bat(또는 브리지 exe)을 실행하세요."
+        ? "○ 브리지 미연결 — 브리지 런처를 실행하세요."
         : "⚠ 브리지에 photo_exif가 없습니다 — 브리지를 최신 버전으로 다시 실행하세요.";
       return;
     }

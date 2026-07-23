@@ -145,7 +145,7 @@ export class BridgeClient extends EventTarget {
       let d = ""; try { d = (await res.json()).error || ""; } catch (_) {}
       if (/unknown job type/i.test(d))
         throw new Error(`이 브리지(v${this.info?.bridge_version ?? "?"})가 지원하지 않는 기능입니다 — `
-          + `열려 있는 브리지 창을 모두 닫고 run_bridge.bat을 다시 실행하세요`);
+          + `열려 있는 브리지 창을 모두 닫고 브리지 런처를 다시 실행하세요`);
       throw new Error(d || "브리지 요청 오류 (400)");
     }
     if (!res.ok) {

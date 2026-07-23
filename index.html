@@ -10,21 +10,12 @@
 </head>
 <body>
 
-<!-- 셸 자가게이트 (SYS-67 T7).
-     이 도구는 **승인된 로컬 브리지가 가동 중일 때만** 열린다. HTML에서 기본 표시라
-     JS 로드 전에도 앱이 새어 보이지 않는다(플래시 방지). app.js가 /ping의
-     nodelock.ok=true를 확인하면 오버레이를 제거하고 탭을 활성화한다.
-     · 미승인/무브리지/구버전은 상태별 안내로 전환된다(app.js initShellGate).
-     · devtools로 지울 수 있으나(위협모델 밖), 지워도 셸은 탭 미초기화 상태다 —
-       고가치 네이티브 기능은 브리지가 서버측에서 별도 차단(T6). -->
-<div id="lock-gate" class="lock-gate" role="dialog" aria-modal="true" aria-labelledby="lock-gate-title">
-  <div class="lock-card">
-    <span class="lock-badge">승인 필요</span>
-    <h1 id="lock-gate-title">승인된 브리지에서 실행됩니다</h1>
-    <p class="lock-msg" id="lock-gate-msg">승인된 브리지를 확인하는 중입니다…</p>
-    <ol class="lock-steps" id="lock-gate-steps"></ol>
-    <p class="lock-foot">이 도구는 승인된 사용자를 위한 것입니다. 승인이 필요하면 개발자에게 문의하세요.</p>
-  </div>
+<!-- 브리지 소프트 배너 (SYS-67 C안, 구 T7 하드게이트 대체).
+     셸·브라우저 전용 탭은 항상 열린다. 이 배너는 브리지 상태 안내만 하며(차단 아님),
+     브리지가 승인·연결되면 app.js(initBridgeBanner)가 숨긴다. 로컬 기능의 실제 차단은
+     브리지 서버측(미승인 403)이 담당한다 — 공개 웹의 클라이언트 게이트는 실효 없음. -->
+<div id="bridge-banner" class="bridge-banner" role="status" hidden>
+  <span id="bridge-banner-msg">브리지 연결을 확인하는 중입니다…</span>
 </div>
 
 <header class="shell-header">
@@ -128,12 +119,12 @@
       <b>두 버전 숫자가 다른 것이 정상입니다.</b> 별개 프로그램이라 각자 필요할 때만 올라갑니다 —
       브리지는 PC에서 하는 작업이 바뀔 때만 갱신되므로 웹보다 낮은 것이 보통입니다.
       맞지 않으면 상태칩에 <b style="color:var(--warn)">⚠ 갱신 필요</b>가 뜹니다.<br><br>
-      <b>브리지 실행</b>: <code>99.Tools\unified_workbench\bridge\run_bridge.bat</code> 더블클릭 — 끝.
+      <b>브리지 실행</b>: 받으신 번들 폴더의 <code>launcher.vbs</code> 더블클릭 — 끝.
       브라우저가 자동으로 열리며 토큰이 스스로 등록됩니다.
       (지오코딩·EIASS 수집·문서→MD 탭은 브리지 없이도 동작합니다)<br><br>
       상태칩이 <b style="color:var(--ok)">● 연결됨</b>으로 바뀌면 관련 탭이 활성화됩니다.
       <b style="color:var(--warn)">⚠ 진단 스텁 감지</b>가 뜨면 예전 PoC 스텁 창이 켜져 있는 것입니다
-      — 그 창을 닫고 run_bridge.bat를 실행하세요.
+      — 그 창을 닫고 브리지 런처(launcher.vbs)를 다시 실행하세요.
     </p>
     <div class="modal-actions">
       <button class="btn btn-secondary" data-close-modal type="button">닫기</button>

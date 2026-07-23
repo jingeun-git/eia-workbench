@@ -80,7 +80,7 @@ export function init(section, { bridge, toast }) {
     $("#px-locked").style.display = ok ? "none" : "";
     if (!ok) {
       $("#px-locked").textContent = bridge.state !== "ok"
-        ? "○ 브리지 미연결 — run_bridge.bat(또는 브리지 exe)을 실행하세요."
+        ? "○ 브리지 미연결 — 브리지 런처를 실행하세요."
         : "⚠ 브리지에 pdf2excel_core가 없습니다 — 브리지 구성을 확인하세요.";
     }
   };
