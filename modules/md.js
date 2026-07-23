@@ -10,7 +10,7 @@
  * HWP·HWPX는 브라우저 변환 불가 — 브리지(7단계) 경로로 안내.
  */
 
-const BRIDGE_EXTS = ["hwp", "hwpx"];
+const BRIDGE_EXTS = ["hwpx"];
 
 /* ── vendor lazy 로드 ─────────────────────────────────────────────── */
 function loadScript(src) {
@@ -186,14 +186,14 @@ export function init(section, { bridge, toast }) {
      쪽번호는 pdf_to_markdown이 '## Page N'을 넣는 PDF에만 있고,
      한글·Word는 쪽 나눔이 파일에 저장되지 않아 원리상 불가능하다.
      표: HWPX <hp:tbl> · PDF find_tables() · Excel DataFrame · Word docx.table
-         (HWP는 pyhwp/COM이 평문만 뽑아 표가 문장으로 흩어진다) */
+         (구형 HWP는 미지원 — HWPX로 저장 안내) */
   const CAPS = [
-    ["", "HWP", "HWPX", "PDF", "Excel", "Word"],
-    ["쪽번호 <code>## Page N</code>", 0, 0, 1, 0, 0],
-    ["표 → 마크다운 표", 0, 1, 1, 1, 1],
-    ["제목·목차(헤딩)", 0, 1, 1, "시트명", 1],
-    ["스캔 문서 OCR", "—", "—", 1, "—", "—"],
-    ["브라우저만으로 변환", 0, 0, 1, 1, 1],
+    ["", "HWPX", "PDF", "Excel", "Word"],
+    ["쪽번호 <code>## Page N</code>", 0, 1, 0, 0],
+    ["표 → 마크다운 표", 1, 1, 1, 1],
+    ["제목·목차(헤딩)", 1, 1, "시트명", 1],
+    ["스캔 문서 OCR", "—", 1, "—", "—"],
+    ["브라우저만으로 변환", 0, 1, 1, 1],
   ];
   const cell = (v) =>
     v === 1 ? '<span class="cap-y">○</span>' :
@@ -211,8 +211,8 @@ export function init(section, { bridge, toast }) {
       프로그램이 화면에 그릴 때 정합니다. 그래서 파일을 읽는 방식으로는 알 수 없습니다.
       검토 지적처럼 <b>"몇 쪽인지"가 필요하면 PDF로 변환한 뒤 MD 변환</b>하세요.
     </p>
-    <p class="help"><b>HWP와 HWPX가 다릅니다</b> — HWPX는 내부가 XML이라 목차·표를 그대로 읽지만,
-      구형 HWP는 평문만 추출돼 표가 문장으로 흩어집니다. 가능하면 HWPX로 저장해 변환하세요.</p>`;
+    <p class="help"><b>HWPX로 저장해 변환하세요</b> — HWPX는 내부가 XML이라 목차·표 구조가 그대로 살아납니다.
+      구형 HWP(.hwp)는 지원하지 않으니 한글에서 HWPX로 저장해 변환해 주세요.</p>`;
 
   section.innerHTML = `
   <div class="md-layout">
@@ -220,12 +220,12 @@ export function init(section, { bridge, toast }) {
   <div class="panel">
     <h2>문서 → 마크다운 변환</h2>
     <p class="desc">PDF·Word·Excel을 브라우저 안에서 마크다운으로 변환합니다 (파일은 업로드되지 않습니다).
-      HWP·HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>브리지 경로</b>에서 처리합니다.</p>
+      HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>브리지 경로</b>에서 처리합니다.</p>
 
     <div class="field">
       <label>변환할 파일 <span class="req">*</span></label>
       <label class="dropzone" id="md-drop">
-        <input type="file" id="md-files" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.hwp,.hwpx">
+        <input type="file" id="md-files" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.hwpx">
         <span>PDF·DOCX·XLSX 파일을 끌어다 놓거나 클릭해 선택하세요 (여러 개 가능)</span>
       </label>
     </div>
@@ -260,11 +260,11 @@ export function init(section, { bridge, toast }) {
 
   <div class="panel">
     <h2>한글·스캔 문서 변환 (브리지)</h2>
-    <p class="desc">브라우저가 열 수 없는 형식(HWP·HWPX·스캔 PDF)과 폴더 일괄 처리를 담당합니다
+    <p class="desc">브라우저가 열 수 없는 형식(HWPX·스캔 PDF)과 폴더 일괄 처리를 담당합니다
       — <b>변환 품질이 다른 것이 아니라 다룰 수 있는 형식이 다릅니다.</b> 로컬 브리지의 convert_core 엔진을 씁니다
       — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 대상 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
     <p class="help" style="margin-top:-6px">
-      <b>내용만 필요하면</b> 한글 문서(HWP·HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
+      <b>내용만 필요하면</b> 한글 문서(HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
       다만 <b>쪽번호처럼 "문서 안 어디에 있는지"가 중요한 경우에는 PDF로 먼저 변환한 뒤 MD 변환</b>을 권합니다.
       한글 문서는 쪽 나눔이 파일에 저장되지 않고 한글이 화면에 그릴 때 정해지므로, 변환 결과에 쪽번호를 남길 수 없습니다.
     </p>
@@ -355,15 +355,18 @@ export function init(section, { bridge, toast }) {
   }
 
   function addFiles(newFiles) {
-    let bridgeCnt = 0;
+    let bridgeCnt = 0, rejected = 0;
     for (const f of newFiles) {
       const e = ext(f.name);
+      if (e === "hwp") { rejected++; continue; }   // 구형 HWP(.hwp)는 미지원 — HWPX로 저장 안내
       if (files.some((x) => x.name === f.name)) continue;
       files.push({ file: f, name: f.name, ext: e, status: "ready" });
       if (BRIDGE_EXTS.includes(e)) bridgeCnt++;
     }
+    if (rejected)
+      toast(`구형 HWP(.hwp) ${rejected}건은 지원하지 않습니다 — 한글에서 HWPX로 저장해 변환해 주세요`, "fail");
     if (bridgeCnt)
-      toast(`HWP·HWPX ${bridgeCnt}건은 브리지 연결 시 아래 한글·스캔 문서 변환에서 처리됩니다`, "warn");
+      toast(`HWPX ${bridgeCnt}건은 브리지 연결 시 아래 한글·스캔 문서 변환에서 처리됩니다`, "warn");
     renderList(); updateUI(); warnIfHeavy();
   }
 
@@ -515,7 +518,7 @@ export function init(section, { bridge, toast }) {
   $("#mb-pick-files").addEventListener("click", async () => {
     try {
       const r = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
-        body: { kind: "files", patterns: "*.pdf *.hwp *.hwpx *.docx *.xlsx *.xls" } });
+        body: { kind: "files", patterns: "*.pdf *.hwpx *.docx *.xlsx *.xls" } });
       if (r.paths?.length) { mbPaths = r.paths; mbShow(); }
     } catch (e) { toast(e.message, "fail"); }
   });

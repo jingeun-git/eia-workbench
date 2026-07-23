@@ -281,6 +281,72 @@ input:focus, textarea:focus, select:focus {
   margin-top: var(--space-5);
 }
 
+/* ── 셸 자가게이트 (SYS-67 T7) ────────────────────────────────────────
+   승인된 브리지가 없으면 앱 전체를 덮는다. scrim이 아니라 **불투명 배경**으로
+   완전히 가린다(테마 토큰이라 라이트/다크 모두 자연스럽게 덮인다). 최상위
+   레이어라 z-index를 토스트(1000)·모달(100)보다 위에 둔다. */
+.lock-gate {
+  position: fixed; inset: 0; z-index: 2000;
+  background: var(--bg); color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-4);
+}
+.lock-gate.unlocked { display: none; }
+.lock-card {
+  width: 100%; max-width: 460px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+}
+.lock-badge {
+  display: inline-block; margin-bottom: var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  background: var(--warn-subtle); color: var(--warn);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  letter-spacing: .02em;
+}
+.lock-card h1 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg); font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+.lock-msg {
+  margin: 0 0 var(--space-4); color: var(--text-muted);
+  font-size: var(--text-base); line-height: var(--leading-body);
+}
+.lock-steps {
+  margin: 0 auto var(--space-4); padding: 0; max-width: 380px;
+  text-align: left; list-style: none; counter-reset: lock-step;
+}
+.lock-steps:empty { display: none; }
+.lock-steps li {
+  position: relative; counter-increment: lock-step;
+  padding: var(--space-2) 0 var(--space-2) var(--space-6);
+  font-size: var(--text-sm); color: var(--text); line-height: var(--leading-body);
+  border-top: 1px solid var(--border);
+}
+.lock-steps li:first-child { border-top: none; }
+.lock-steps li::before {
+  content: counter(lock-step);
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: var(--radius-full);
+  background: var(--accent-subtle); color: var(--accent);
+  font-size: var(--text-xs); font-weight: var(--weight-bold);
+  display: flex; align-items: center; justify-content: center;
+}
+.lock-steps code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px 5px; word-break: break-all;
+}
+.lock-foot {
+  margin: 0; padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim); font-size: var(--text-xs); line-height: var(--leading-body);
+}
+
 /* ── 토스트 ─────────────────────────────────────────────────────────── */
 .toasts { position: fixed; right: var(--space-4); bottom: var(--space-4);
   z-index: var(--z-toast); display: flex; flex-direction: column;
@@ -1078,12 +1144,22 @@ body.ed-resizing * { cursor: col-resize !important; }
    스크롤되면 텍스트끼리 겹쳐 둘 다 못 읽게 되는 사고가 있었다(2026-07-22 실측,
    지하수질·하천수질 등 출처 문구가 긴 분야에서 재현) — 옅은 배경을 줘서 항상
    워터마크가 위에 깔끔히 보이도록 한다. */
-.feedback-mark {
+/* 우하단 워터마크 묶음: 면책(상시)+연락처 (SYS-67 P1/P4) */
+.corner-mark {
   position: fixed; right: 14px; bottom: 10px; z-index: var(--z-sticky);
-  font-size: 11px; line-height: 1.4; color: var(--text-dim);
-  pointer-events: auto; user-select: text;   /* 주소를 끌어 복사할 수 있게 */
-  text-align: right; max-width: min(92vw, 420px);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  pointer-events: none; text-align: right; max-width: min(92vw, 440px);
+}
+.corner-mark > * {
+  pointer-events: auto; user-select: text;
   background: var(--surface); padding: 3px 8px; border-radius: var(--radius-md, 8px);
   box-shadow: 0 1px 4px color-mix(in srgb, black 15%, transparent);
+  font-size: 11px; line-height: 1.4;
 }
-@media (max-width: 760px) { .feedback-mark { position: static; margin: var(--space-4) var(--space-3); text-align: center; max-width: none; } }
+/* 면책·연락처 동일 디자인 (사용자 지시 2026-07-23) — 둘 다 dim 워터마크 톤 */
+.corner-mark .disclaimer,
+.feedback-mark { color: var(--text-dim); }
+@media (max-width: 760px) {
+  .corner-mark { position: static; align-items: stretch; margin: var(--space-4) var(--space-3); max-width: none; }
+  .corner-mark > * { text-align: center; }
+}

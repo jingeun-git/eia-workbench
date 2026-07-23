@@ -5,7 +5,7 @@
  * 분야는 두 갈래 판정방식으로 갈린다(마스터플랜 §1):
  *  - "item"   대기질 등 — 항목별 평균시간 기준과 비교(임계값 1개)
  *  - "region" 소음·진동 — 측정지점마다 지역구분을 고르면 그 지역의 낮/밤 기준과 비교
- * 입력 4단계 폴백: HWP/PDF 자동파싱(브리지, 이번 초안에서는 미구현) → xlsx/csv 업로드
+ * 입력 4단계 폴백: HWPX/PDF 자동파싱(브리지, 이번 초안에서는 미구현) → xlsx/csv 업로드
  *   → 붙여넣기 → 그리드 직접입력. 기준DB는 law_client.py로 원문 직접 검증한 값만 담는다.
  */
 
@@ -94,8 +94,16 @@ function findItemByAlias(standards, text) {
 function findPeriodByAlias(standards, text) {
   const n = norm(text);
   if (!n) return null;
-  return standards.periods.find((p) => { const pn = norm(p.label); return pn.includes(n) || n.includes(pn.slice(0, 1)); })
-      || standards.periods.find((p) => norm(p.code) === n);
+  const periods = standards.periods || [];
+  // ① code 정확일치 ② label(또는 괄호앞 핵심명) 정확일치 ③ 그래도 없으면 substring 폴백.
+  // 옛 폴백 n.includes(pn.slice(0,1))은 헤더가 표준라벨 첫 글자 한 자만 겹쳐도 매칭돼
+  // "총대장균군"이 "총유기탄소량(TOC)"의 "총"에 걸려 tcol 대신 toc로 가로채졌다(2026-07-23).
+  // 바로 아래 findRegionByAlias가 2026-07-22 겪은 substring 가로채기와 같은 계열이라
+  // 동일하게 "정확일치 먼저, substring 폴백 나중"으로 바로잡는다.
+  const core = (p) => norm(String(p.label || "").split(/[(（]/)[0]);
+  return periods.find((p) => norm(p.code) === n)
+      || periods.find((p) => norm(p.label) === n || core(p) === n)
+      || periods.find((p) => { const pn = norm(p.label); return pn.includes(n) || n.includes(pn); });
 }
 // "나" 한 글자만으로 매칭하면 다른 지역의 설명문 속 "나"에도 걸릴 위험이 있어
 // 코드 정확일치를 먼저 보고, 라벨은 괄호 앞 핵심명(2글자 이상)만 비교한다.
@@ -459,25 +467,25 @@ export async function init(section, { toast, bridge, V }) {
         <p class="desc" id="ed-desc"></p>
 
         <div class="field">
-          <label>등록문서 업로드 (xlsx·csv·hwp·pdf)</label>
+          <label>등록문서 업로드 (xlsx·csv·hwpx·pdf)</label>
           <label class="dropzone" id="ed-drop">
-            <input type="file" id="ed-file" accept=".xlsx,.xls,.csv,.hwp,.pdf">
+            <input type="file" id="ed-file" accept=".xlsx,.xls,.csv,.hwpx,.pdf">
             <span id="ed-drop-msg">파일을 선택하거나 끌어다 놓으세요 — 첫 행은 항목명, 첫 열은 측정지점으로 인식합니다</span>
           </label>
           <p class="help">xlsx·csv는 바로 인식됩니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</p>
         </div>
 
-        <!-- 브라우저는 드래그드롭된 파일의 실제 경로를 주지 않아(보안 제약) hwp·pdf는
+        <!-- 브라우저는 드래그드롭된 파일의 실제 경로를 주지 않아(보안 제약) hwpx·pdf는
              브라우저 자체 파싱이 불가능하다 — 브리지의 기존 pdf2excel_core(표 추출)·
-             hwp2pdf_core(HWP→PDF)를 그대로 재사용해 경로 기반으로 처리한다(SYS-41 9단계). -->
+             hwp2pdf_core(HWPX→PDF)를 그대로 재사용해 경로 기반으로 처리한다(SYS-41 9단계). -->
         <div class="field" id="ed-bridge-parse-field" style="display:none">
-          <label>브리지로 HWP·PDF 등록문서 자동인식</label>
+          <label>브리지로 HWPX·PDF 등록문서 자동인식</label>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="ed-bridge-parse" type="button">문서 선택…</button>
             <span id="ed-bridge-parse-status" class="help" style="margin:0"></span>
           </div>
         </div>
-        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWP·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>bridge/run_bridge.bat</code> 실행 후 다시 확인하세요.</p>
+        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWPX·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>bridge/run_bridge.bat</code> 실행 후 다시 확인하세요.</p>
 
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
           <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
@@ -1951,9 +1959,17 @@ export async function init(section, { toast, bridge, V }) {
       // 관리열(비고·판정 등)은 폴백 후보에서도 제외 — 안 그러면 못 찾은 항목이 관리열 값을
       // 잘못 주워가는 경우가 생긴다(예: TOC를 못 찾으면 다음 후보인 "비고"열을 대신 읽어버림).
       const restIdxs = header.map((_, idx) => idx).filter((idx) => idx !== labelCol && idx !== regionCol && !isAdminHeader(header[idx]));
-      newColumns.forEach((col, ci) => {
+      // 라벨매칭 결과를 먼저 모은다. 하나라도 성공하면 위치폴백을 끈다(못 찾은 표준항목은
+      // 빈칸=-1) — 항목 일부만 담긴 실무 파일(예: 하천수질에 COD·TOC 미측정)이 없는
+      // 표준항목 칸에 다른 열 값을 주워오는 오매핑을 막는다(2026-07-23). 헤더가 전부
+      // 비표준인 순수 위치기반 파일(매칭 0건)일 때만 순서 폴백(restIdxs)을 유지한다.
+      newColumns.forEach((col) => {
         const hi = header.findIndex((h, idx) => idx !== labelCol && idx !== regionCol && findPeriodByAlias(standards, h)?.code === col.code);
-        colIndexMap.push(hi >= 0 ? hi : restIdxs[ci]);
+        colIndexMap.push(hi);
+      });
+      const anyLabelMatch = colIndexMap.some((hi) => hi >= 0);
+      colIndexMap.forEach((hi, ci) => {
+        if (hi < 0) colIndexMap[ci] = anyLabelMatch ? -1 : restIdxs[ci];
       });
     }
 
@@ -1997,12 +2013,14 @@ export async function init(section, { toast, bridge, V }) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         applyAoaToGrid(aoa);
-      } else if (["hwp", "pdf"].includes(ext)) {
+      } else if (["hwpx", "pdf"].includes(ext)) {
         // 브라우저 드래그드롭은 파일의 실제 경로를 주지 않아(보안 제약) 여기서는 처리할
         // 수 없다 — 경로 기반인 브리지 쪽 "문서 선택" 버튼으로 안내한다(SYS-41 9단계).
-        toast("HWP·PDF는 브라우저에서 직접 열 수 없습니다 — 위쪽 \"브리지로 HWP·PDF 등록문서 자동인식 → 문서 선택…\" 버튼을 사용해주세요(브리지 연결 필요)", "warn");
+        toast("HWPX·PDF는 브라우저에서 직접 열 수 없습니다 — 위쪽 \"브리지로 HWPX·PDF 등록문서 자동인식 → 문서 선택…\" 버튼을 사용해주세요(브리지 연결 필요)", "warn");
+      } else if (ext === "hwp") {
+        toast("구형 HWP(.hwp)는 지원하지 않습니다 — 한글에서 HWPX로 저장해 변환해 주세요", "fail");
       } else {
-        toast("지원하지 않는 파일 형식입니다 (xlsx·csv·hwp·pdf)", "fail");
+        toast("지원하지 않는 파일 형식입니다 (xlsx·csv·hwpx·pdf)", "fail");
       }
     } catch (e) {
       toast(`파일 읽기 실패: ${e.message}`, "fail");
@@ -2466,8 +2484,8 @@ export async function init(section, { toast, bridge, V }) {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("drag"); }));
   drop.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
-  // 브리지로 HWP·PDF 등록문서 자동인식(SYS-41 9단계) — bridge.pdf2excel(표 추출)이
-  // 있어야 켜진다. hwp2pdf는 선택 파일이 실제로 .hwp/.hwpx일 때만 필요(작업 실행 시점에
+  // 브리지로 HWPX·PDF 등록문서 자동인식(SYS-41 9단계) — bridge.pdf2excel(표 추출)이
+  // 있어야 켜진다. hwp2pdf는 선택 파일이 실제로 .hwpx일 때만 필요(작업 실행 시점에
   // 확인, 여기서 미리 다 막지 않는다 — pdf만 다루는 사용자가 불필요하게 막히지 않게).
   function renderBridgeParseUI() {
     const ok = bridge.state === "ok" && bridge.info?.features?.pdf2excel;
@@ -2481,7 +2499,7 @@ export async function init(section, { toast, bridge, V }) {
     const statusEl = $("#ed-bridge-parse-status");
     try {
       const picked = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
-        body: { kind: "files", patterns: "*.hwp *.hwpx *.pdf" } });
+        body: { kind: "files", patterns: "*.hwpx *.pdf" } });
       const path = picked.path || (picked.paths || [])[0];
       if (!path) return;
       const name = path.split(/[\\/]/).pop();

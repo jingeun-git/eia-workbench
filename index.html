@@ -10,6 +10,23 @@
 </head>
 <body>
 
+<!-- 셸 자가게이트 (SYS-67 T7).
+     이 도구는 **승인된 로컬 브리지가 가동 중일 때만** 열린다. HTML에서 기본 표시라
+     JS 로드 전에도 앱이 새어 보이지 않는다(플래시 방지). app.js가 /ping의
+     nodelock.ok=true를 확인하면 오버레이를 제거하고 탭을 활성화한다.
+     · 미승인/무브리지/구버전은 상태별 안내로 전환된다(app.js initShellGate).
+     · devtools로 지울 수 있으나(위협모델 밖), 지워도 셸은 탭 미초기화 상태다 —
+       고가치 네이티브 기능은 브리지가 서버측에서 별도 차단(T6). -->
+<div id="lock-gate" class="lock-gate" role="dialog" aria-modal="true" aria-labelledby="lock-gate-title">
+  <div class="lock-card">
+    <span class="lock-badge">승인 필요</span>
+    <h1 id="lock-gate-title">승인된 브리지에서 실행됩니다</h1>
+    <p class="lock-msg" id="lock-gate-msg">승인된 브리지를 확인하는 중입니다…</p>
+    <ol class="lock-steps" id="lock-gate-steps"></ol>
+    <p class="lock-foot">이 도구는 승인된 사용자를 위한 것입니다. 승인이 필요하면 개발자에게 문의하세요.</p>
+  </div>
+</div>
+
 <header class="shell-header">
   <div class="shell-bar">
     <div class="brand">
@@ -46,7 +63,7 @@
   <section id="sec-md" class="tool-section" aria-label="md 변환"></section>
 
   <section id="sec-eiass" class="tool-section" aria-label="EIASS 다운로더"></section>
-  <section id="sec-hwppdf" class="tool-section" aria-label="HWP를 PDF로 변환"></section>
+  <section id="sec-hwppdf" class="tool-section" aria-label="HWPX를 PDF로 변환"></section>
   <section id="sec-pagenum" class="tool-section" aria-label="쪽번호"></section>
   <section id="sec-pdf2xl" class="tool-section" aria-label="PDF 표를 엑셀로 변환"></section>
   <section id="sec-photo" class="tool-section" aria-label="사진 좌표 조회"></section>
@@ -105,7 +122,7 @@
       이 도구는 <b>두 부분</b>으로 되어 있습니다.<br><br>
       <b>① 웹</b> — 지금 보고 계신 화면입니다. 설치도 실행도 없는 인터넷 주소이며,
       새로고침하면 항상 최신을 받아옵니다. 왼쪽 위에 <b>웹 버전</b>이 표시됩니다.<br>
-      <b>② 브리지</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWP) 작업·한글/스캔 문서 변환·
+      <b>② 브리지</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWPX) 작업·한글/스캔 문서 변환·
       EIASS 자동탐색·사진 폴더 읽기처럼 <b>브라우저가 할 수 없는 일</b>만 담당합니다.
       상태칩에 <b>브리지 버전</b>이 표시됩니다.<br><br>
       <b>두 버전 숫자가 다른 것이 정상입니다.</b> 별개 프로그램이라 각자 필요할 때만 올라갑니다 —
@@ -119,7 +136,6 @@
       — 그 창을 닫고 run_bridge.bat를 실행하세요.
     </p>
     <div class="modal-actions">
-      <a class="btn btn-secondary" href="poc/" target="_blank" rel="noopener" style="text-decoration:none">연결 진단</a>
       <button class="btn btn-secondary" data-close-modal type="button">닫기</button>
     </div>
   </div>
@@ -127,9 +143,14 @@
 
 <div class="toasts" aria-live="polite"></div>
 
-<!-- 의견 수집 — 화면 우하단 워터마크. 링크가 아니라 **복사 가능한 텍스트**다
-     (메일 클라이언트가 안 뜨는 환경이 있어 사용자가 링크를 원치 않았다) -->
-<div class="feedback-mark">Tool 버그, 개선 등의 의견은 메일로 알려주세요(asd1684@sunjin.co.kr)</div>
+<!-- 우하단 워터마크 (SYS-67).
+     · 면책(P1): 동의 게이트 없이 **상시 표기** — 결과는 사용자 검증 필수·책임은 사용자.
+     · 연락처(P4): 이메일은 공개 저장소에서 제거. #contact-slot은 브리지가 서빙 시
+       주입할 수 있는 자리(기본값 "개발자"). 승인 사용자는 발급 핸드셰이크로 이미 연락처를 안다. -->
+<div class="corner-mark">
+  <div class="disclaimer">결과는 사용자 검증 필수, 오류 책임은 사용자에게 있습니다</div>
+  <div class="feedback-mark">버그·개선 의견은 <span id="contact-slot">개발자</span>에게 알려주세요</div>
+</div>
 
 <script src="vendor/shp.min.js"></script>
 <script src="vendor/proj4.js"></script>
@@ -141,6 +162,6 @@
 <script src="vendor/chartjs-plugin-annotation.min.js"></script>
 <script src="vendor/chartjs-plugin-datalabels.min.js"></script>
 <!-- ?v= 는 배포 시 갱신 — 없으면 브라우저가 옛 app.js를 계속 쓴다(2026-07-20) -->
-<script type="module" src="shared/app.js?v=3.58.0"></script>
+<script type="module" src="shared/app.js?v=3.60.0"></script>
 </body>
 </html>

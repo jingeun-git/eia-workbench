@@ -9,8 +9,8 @@
 /* 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제 */
 const META = {
   pdf: {
-    title: "HWP → PDF 일괄 변환",
-    desc: "선택한 폴더(하위 포함)의 HWP·HWPX를 PDF로 일괄 변환합니다. 모아찍기 무시·단면, 텍스트 보존(이미지화 안 함).",
+    title: "HWPX → PDF 일괄 변환",
+    desc: "선택한 폴더(하위 포함)의 HWPX를 PDF로 일괄 변환합니다. 모아찍기 무시·단면, 텍스트 보존(이미지화 안 함).",
     feature: "hwp2pdf",
   },
   pagenum: {
@@ -170,7 +170,7 @@ export function init(section, { bridge, toast }, kind) {
     $("#hw-pick-files").addEventListener("click", async () => {
       try {
         const r = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
-          body: { kind: "files", patterns: "*.hwp *.hwpx" } });
+          body: { kind: "files", patterns: "*.hwpx" } });
         if (r.paths?.length) { hwPaths = r.paths; hwShow(); }
       } catch (e) { toast(e.message, "fail"); }
     });

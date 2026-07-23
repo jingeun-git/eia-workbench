@@ -7,14 +7,14 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.58.0";
+export const V = "3.60.0";
 
 /* 브리지가 마지막으로 **실제로 바뀐** 버전.
    웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
    브리지는 PC에서 하는 일(한컴·파일 접근)이 늘어날 때만 바뀐다.
    여기 값을 웹 버전에 맞춰 올리면 안 된다 — 바뀐 것도 없는데 사용자에게
    매번 재시작을 시키게 된다. **브리지 코드를 고칠 때만** 올린다. */
-const MIN_BRIDGE = "3.24.0";
+const MIN_BRIDGE = "3.26.0";   // nodelock(/ping) 지원 최소 버전 — 셸 게이트가 이 신호를 요구한다
 const cmpVer = (a, b) => {
   const pa = String(a).split("."), pb = String(b).split(".");
   for (let i = 0; i < 3; i++) {
@@ -52,14 +52,14 @@ const TOOLS = [
     load: () => import(`../modules/parcel.js?v=${V}`) },
   { id: "pdf2xl", group: "author",  label: "PDF 표 → 엑셀", needsBridge: true,
     load: () => import(`../modules/pdf2excel.js?v=${V}`) },
-  // 환경질 분석은 브라우저만으로 완결(xlsx·붙여넣기·직접입력) — HWP/PDF 자동파싱만
+  // 환경질 분석은 브라우저만으로 완결(xlsx·붙여넣기·직접입력) — HWPX/PDF 자동파싱만
   // 브리지 연동 다음 단계(SYS-41 step 6)에서 추가로 열린다(md 탭과 동일한 하이브리드 패턴)
   { id: "envdata", group: "author",  label: "환경질 분석",   needsBridge: false,
     load: () => import(`../modules/envdata.js?v=${V}`) },
 
   { id: "pagenum",group: "finish",  label: "쪽번호",      needsBridge: true,
     load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
-  { id: "hwppdf", group: "finish",  label: "HWP → PDF",   needsBridge: true,
+  { id: "hwppdf", group: "finish",  label: "HWPX → PDF",   needsBridge: true,
     load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pdf") })) },
   // 차례·끼워넣기: 2026-07-20 사용자 지시로 기능 삭제
 ];
@@ -67,6 +67,10 @@ const TOOLS = [
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const inited = new Set();
+
+/* 셸 잠금 상태 (SYS-67 T7). 승인된 브리지를 확인하기 전에는 어떤 탭도
+   초기화·활성화하지 않는다 — 오버레이를 지워도 빈 셸이 남게 하는 정직한 게이트. */
+let shellUnlocked = false;
 
 /* ── 테마 ───────────────────────────────────────────────────────────
    라이트가 기본이다(2026-07-20 사용자 확정). OS 설정을 자동 추종하지 않고,
@@ -92,6 +96,7 @@ function initTheme() {
 
 /* ── 탭 ───────────────────────────────────────────────────────────── */
 async function activate(id, pushHash = true) {
+  if (!shellUnlocked) return;      // 승인 전에는 탭을 열지 않는다 (SYS-67 T7)
   const tool = TOOLS.find((t) => t.id === id && !t.planned) || TOOLS[0];
   $$(".tab").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.tool === tool.id)));
@@ -152,7 +157,7 @@ function initTabs() {
   }
   addEventListener("hashchange", () =>
     activate(location.hash.slice(1) || TOOLS[0].id, false));
-  activate(location.hash.slice(1) || TOOLS[0].id, false);
+  // 초기 탭 활성화는 셸 잠금이 풀린 뒤 initShellGate가 호출한다 (SYS-67 T7)
 }
 
 /* ── 브리지 상태칩 ─────────────────────────────────────────────────── */
@@ -266,11 +271,72 @@ function initPairing() {
   }
 }
 
+/* ── 셸 자가게이트 (SYS-67 T7) ────────────────────────────────────────
+   이 도구는 **승인된 로컬 브리지가 가동 중일 때만** 열린다. 부팅 시 오버레이가
+   앱을 덮고 있고(index.html 기본 표시), /ping의 nodelock.ok=true를 확인하면
+   오버레이를 걷고 첫 탭을 활성화한다. 승인 근거는 브리지가 판정한다(T2/T6) —
+   웹은 그 결과 신호만 소비한다.
+
+   보안 관점: 이 게이트는 클라이언트측이라 devtools로 우회 가능하다. 그러나
+   ⓐ위협모델상 전문 크랙은 비목표이고 ⓑ고가치 네이티브 기능(한컴·OCR·EIASS
+   등)은 브리지가 서버측에서 별도 하드게이트하며(T6, 미승인 시 403) ⓒ우회로
+   얻는 것은 브라우저만으로 되는 저가치 탭뿐이다. 캐주얼 미승인 사용 차단이 목적. */
+function initShellGate() {
+  const gate = $("#lock-gate");
+  const msgEl = $("#lock-gate-msg");
+  const stepsEl = $("#lock-gate-steps");
+  const RUN_STEPS =
+    `<li><code>99.Tools\\unified_workbench\\bridge\\run_bridge.bat</code> 를 더블클릭합니다</li>`
+    + `<li>브라우저가 자동으로 열리고 토큰이 등록됩니다</li>`
+    + `<li>승인된 PC라면 이 화면이 사라지고 도구가 열립니다</li>`;
+
+  const render = () => {
+    const s = bridge.state;
+    const nl = bridge.info?.nodelock;      // T6부터 /ping에 실려온다
+    const approved = s === "ok" && nl && nl.ok === true;
+
+    if (approved) {
+      if (!shellUnlocked) {
+        shellUnlocked = true;
+        activate(location.hash.slice(1) || TOOLS[0].id, false);   // 첫 탭은 여기서 연다
+      }
+      gate.classList.add("unlocked");
+      return;
+    }
+
+    gate.classList.remove("unlocked");     // 승인 잃으면(브리지 종료 등) 다시 잠근다
+    if (s === "checking") {
+      msgEl.innerHTML = "승인된 브리지를 확인하는 중입니다…";
+      stepsEl.innerHTML = "";
+    } else if (s === "stub") {
+      msgEl.innerHTML = "진단 스텁 창이 켜져 있습니다.<br>그 창을 닫고 아래를 실행하세요.";
+      stepsEl.innerHTML = RUN_STEPS;
+    } else if (s === "ok" && nl && nl.ok === false) {
+      // 브리지는 떴으나 이 PC가 승인 목록에 없다. 지문은 브리지 자체 잠금화면이 표시(T6).
+      msgEl.innerHTML = "이 PC는 아직 <b>승인되지 않았습니다</b>.<br>"
+        + "브리지 창에 표시된 <b>고유생성값</b>을 개발자에게 전달한 뒤 브리지를 다시 실행하세요.";
+      stepsEl.innerHTML = "";
+    } else if (s === "ok" && !nl) {
+      // nodelock을 모르는 구버전 브리지 — 갱신을 요구한다
+      msgEl.innerHTML = "브리지를 <b>최신 버전으로 갱신</b>해야 합니다.<br>"
+        + "열려 있는 브리지 창을 모두 닫고 아래를 다시 실행하세요.";
+      stepsEl.innerHTML = RUN_STEPS;
+    } else {                                // off — 브리지 없음
+      msgEl.innerHTML = "이 도구는 <b>승인된 로컬 브리지</b>에서만 동작합니다.";
+      stepsEl.innerHTML = RUN_STEPS;
+    }
+  };
+
+  bridge.addEventListener("change", render);
+  render();                                 // 초기 표시(state=checking)
+}
+
 /* ── 부트 ─────────────────────────────────────────────────────────── */
 initVersion();
 initTheme();
 initPairing();   // bridge.start() 전에 토큰부터 확보
-initTabs();
+initTabs();      // 탭 버튼만 구성 (초기 활성화는 게이트 해제 후)
+initShellGate(); // bridge.start() 전에 change 리스너를 걸어 첫 신호를 놓치지 않는다
 initBridgeChip();
 initSettings();
 initModals();
