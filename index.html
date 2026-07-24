@@ -15,7 +15,7 @@
      브리지가 승인·연결되면 app.js(initBridgeBanner)가 숨긴다. 로컬 기능의 실제 차단은
      브리지 서버측(미승인 403)이 담당한다 — 공개 웹의 클라이언트 게이트는 실효 없음. -->
 <div id="bridge-banner" class="bridge-banner" role="status" hidden>
-  <span id="bridge-banner-msg">브리지 연결을 확인하는 중입니다…</span>
+  <span id="bridge-banner-msg">로컬 런처 연결을 확인하는 중입니다…</span>
 </div>
 
 <header class="shell-header">
@@ -26,7 +26,7 @@
       <span class="ver" id="web-ver" title="웹 버전 — 새로고침하면 항상 최신을 받아옵니다"></span>
     </div>
 
-    <button id="bridge-chip" class="chip warn" aria-label="브리지 연결 상태">◌ 확인 중…</button>
+    <button id="bridge-chip" class="chip warn" aria-label="로컬 런처 연결 상태">◌ 확인 중…</button>
 
   <button id="settings-btn" class="icon-btn" aria-label="설정 (API 키·토큰)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -90,12 +90,12 @@
     </div>
 
     <div class="field">
-      <label for="set-token">브리지 토큰 (브리지 사용 시)</label>
+      <label for="set-token">로컬 런처 토큰 (로컬 런처 사용 시)</label>
       <div class="input-row">
         <input type="password" id="set-token" autocomplete="off" spellcheck="false">
         <button class="btn btn-secondary" data-reveal="#set-token" type="button">표시</button>
       </div>
-      <p class="help">브리지 트레이 아이콘 → "토큰 복사"로 얻은 값을 붙여넣으세요.</p>
+      <p class="help">로컬 런처 트레이 아이콘 → "토큰 복사"로 얻은 값을 붙여넣으세요.</p>
     </div>
 
     <div class="modal-actions">
@@ -108,23 +108,23 @@
 <!-- 브리지 안내 모달 -->
 <div id="bridge-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bridge-title">
   <div class="modal">
-    <h3 id="bridge-title">로컬 브리지</h3>
+    <h3 id="bridge-title">로컬 런처</h3>
     <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
       이 도구는 <b>두 부분</b>으로 되어 있습니다.<br><br>
       <b>① 웹</b> — 지금 보고 계신 화면입니다. 설치도 실행도 없는 인터넷 주소이며,
       새로고침하면 항상 최신을 받아옵니다. 왼쪽 위에 <b>웹 버전</b>이 표시됩니다.<br>
-      <b>② 브리지</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWPX) 작업·한글/스캔 문서 변환·
+      <b>② 로컬 런처</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWPX) 작업·한글/스캔 문서 변환·
       EIASS 자동탐색·사진 폴더 읽기처럼 <b>브라우저가 할 수 없는 일</b>만 담당합니다.
-      상태칩에 <b>브리지 버전</b>이 표시됩니다.<br><br>
+      상태칩에 <b>로컬 런처 버전</b>이 표시됩니다.<br><br>
       <b>두 버전 숫자가 다른 것이 정상입니다.</b> 별개 프로그램이라 각자 필요할 때만 올라갑니다 —
-      브리지는 PC에서 하는 작업이 바뀔 때만 갱신되므로 웹보다 낮은 것이 보통입니다.
+      로컬 런처는 PC에서 하는 작업이 바뀔 때만 갱신되므로 웹보다 낮은 것이 보통입니다.
       맞지 않으면 상태칩에 <b style="color:var(--warn)">⚠ 갱신 필요</b>가 뜹니다.<br><br>
-      <b>브리지 실행</b>: 받으신 번들 폴더의 <code>launcher.vbs</code> 더블클릭 — 끝.
+      <b>로컬 런처 실행</b>: 받으신 번들 폴더의 <code>launcher.vbs</code> 더블클릭 — 끝.
       브라우저가 자동으로 열리며 토큰이 스스로 등록됩니다.
-      (지오코딩·EIASS 수집·문서→MD 탭은 브리지 없이도 동작합니다)<br><br>
+      (지오코딩·EIASS 수집·문서→MD 탭은 로컬 런처 없이도 동작합니다)<br><br>
       상태칩이 <b style="color:var(--ok)">● 연결됨</b>으로 바뀌면 관련 탭이 활성화됩니다.
       <b style="color:var(--warn)">⚠ 진단 스텁 감지</b>가 뜨면 예전 PoC 스텁 창이 켜져 있는 것입니다
-      — 그 창을 닫고 브리지 런처(launcher.vbs)를 다시 실행하세요.
+      — 그 창을 닫고 로컬 런처(launcher.vbs)를 다시 실행하세요.
     </p>
     <div class="modal-actions">
       <button class="btn btn-secondary" data-close-modal type="button">닫기</button>

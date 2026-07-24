@@ -467,25 +467,25 @@ export async function init(section, { toast, bridge, V }) {
         <p class="desc" id="ed-desc"></p>
 
         <div class="field">
-          <label>등록문서 업로드 (xlsx·csv·hwpx·pdf)</label>
+          <label>측정 데이터 불러오기</label>
           <label class="dropzone" id="ed-drop">
             <input type="file" id="ed-file" accept=".xlsx,.xls,.csv,.hwpx,.pdf">
-            <span id="ed-drop-msg">파일을 선택하거나 끌어다 놓으세요 — 첫 행은 항목명, 첫 열은 측정지점으로 인식합니다</span>
+            <b class="dz-formats">지원 파일 — 엑셀 · CSV</b>
+            <span class="dz-hint" id="ed-drop-hint">끌어다 놓으면 첫 행은 항목명, 첫 열은 측정지점으로 읽습니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</span>
           </label>
-          <p class="help">xlsx·csv는 바로 인식됩니다. 표의 셀을 클릭한 뒤 Ctrl+V로 엑셀 내용을 직접 붙여넣을 수도 있습니다.</p>
         </div>
 
         <!-- 브라우저는 드래그드롭된 파일의 실제 경로를 주지 않아(보안 제약) hwpx·pdf는
              브라우저 자체 파싱이 불가능하다 — 브리지의 기존 pdf2excel_core(표 추출)·
              hwp2pdf_core(HWPX→PDF)를 그대로 재사용해 경로 기반으로 처리한다(SYS-41 9단계). -->
         <div class="field" id="ed-bridge-parse-field" style="display:none">
-          <label>브리지로 HWPX·PDF 등록문서 자동인식</label>
+          <label>로컬 런처로 HWPX·PDF 등록문서 자동인식</label>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
             <button class="btn btn-secondary" id="ed-bridge-parse" type="button">문서 선택…</button>
             <span id="ed-bridge-parse-status" class="help" style="margin:0"></span>
           </div>
         </div>
-        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWPX·PDF 등록문서 자동인식은 로컬 브리지가 필요합니다 — <code>브리지 런처</code> 실행 후 다시 확인하세요.</p>
+        <p class="help" id="ed-bridge-parse-locked" style="display:none">HWPX·PDF 등록문서 자동인식은 로컬 런처가 필요합니다 — <code>로컬 런처</code> 실행 후 다시 확인하세요.</p>
 
         <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;margin-bottom:0">
           <select id="ed-add-item" class="ed-add-select"><option value="">+ 항목 추가…</option></select>
@@ -1185,7 +1185,7 @@ export async function init(section, { toast, bridge, V }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "측정데이터");
     XLSX.writeFile(wb, `${standards.field}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    toast("엑셀로 내보냈습니다 — 차트는 엑셀에서 표를 선택한 뒤 삽입 메뉴로 추가해주세요", "ok");
+    toast("엑셀을 다운로드 폴더에 저장했습니다 — 차트는 엑셀에서 표를 선택한 뒤 삽입 메뉴로 추가해주세요", "ok");
   }
 
   /* ── 그리드 렌더 ───────────────────────────────────────────────────── */
@@ -2004,6 +2004,81 @@ export async function init(section, { toast, bridge, V }) {
     toast(parts.join(" · "), unmatchedHeaders.length || skippedAdmin.length ? "warn" : "ok");
   }
 
+  // 다중분석: 들어온 표(aoa)를 현재 회차의 지점×항목 셀에 맞춰 채운다. 프로젝트의 고정
+  // 지점·항목은 그대로 두고 값만 매핑한다 — 파일의 지점명·항목명이 프로젝트와 다르면
+  // 그 칸은 건너뛴다(오매핑 방지). applyAoaToGrid의 헤더·방향 판별을 같은 방식으로 재사용.
+  function applyAoaToRound(aoa) {
+    if (!aoa.length) { toast("빈 파일입니다", "fail"); return; }
+    const round = activeProject.rounds.find((r) => r.id === currentEditRoundId);
+    if (!round || !rows.length) { toast("입력할 회차가 열려 있지 않습니다", "fail"); return; }
+    const fixedCols = columnsFixed();
+    const matchFn = fixedCols
+      ? (cell) => !!findPeriodByAlias(standards, cell)
+      : (cell) => !!findItemByAlias(standards, cell);
+    const rowScan = scanBestHeaderRow(aoa, matchFn);
+    const colScan = scanBestHeaderRow(aoaTranspose(aoa), matchFn);
+    const flipped = colScan.score > rowScan.score;
+    const work = flipped ? aoaTranspose(aoa) : aoa;
+    const headerScan = flipped ? colScan : rowScan;
+    const headerRowIdx = headerScan.idx >= 0 ? headerScan.idx : 0;
+    const header = work[headerRowIdx] || [];
+    const dataRows = work.slice(headerRowIdx + 1);
+    const scanCols = Math.min(header.length, 6);
+    let labelCol = 0, labelScore = -1;
+    for (let c = 0; c < scanCols; c++) {
+      let filled = 0, textish = 0;
+      for (const line of dataRows) {
+        const v = line[c];
+        if (v == null || String(v).trim() === "") continue;
+        filled++; if (parseNum(v) == null) textish++;
+      }
+      const score = filled > 0 ? textish / filled : -1;
+      if (score > labelScore) { labelScore = score; labelCol = c; }
+    }
+    const colFileIdx = columns.map((col) =>
+      header.findIndex((h, idx) => {
+        if (idx === labelCol) return false;
+        const it = fixedCols ? findPeriodByAlias(standards, h) : findItemByAlias(standards, h);
+        return it && it.code === col.code;
+      }));
+    const norm = (s) => String(s ?? "").replace(/\s+/g, "").toLowerCase();
+    let matchedSites = 0, filledCells = 0;
+    const unmatched = [];
+    for (const line of dataRows) {
+      const flabel = norm(line[labelCol]);
+      if (!flabel) continue;
+      const row = rows.find((r) => norm(r.label) === flabel);
+      if (!row) { unmatched.push(String(line[labelCol]).trim()); continue; }
+      matchedSites++;
+      columns.forEach((col, ci) => {
+        const fi = colFileIdx[ci];
+        if (fi < 0) return;
+        const v = parseNum(line[fi]);
+        if (v != null) { row.values[col.id] = v; filledCells++; }
+      });
+    }
+    if (!matchedSites) {
+      toast("파일의 지점명이 이 프로젝트의 지점과 맞지 않습니다 — 지점명을 프로젝트와 똑같이 맞춰주세요", "warn");
+      return;
+    }
+    persistSliceEdits(); renderGrid(); scheduleCharts();
+    const parts = [`회차 "${round.label}"에 지점 ${matchedSites}개·값 ${filledCells}개를 채웠습니다`];
+    if (flipped) parts.push("행/열이 뒤집힌 표를 자동으로 맞춤");
+    if (unmatched.length) parts.push(`프로젝트에 없는 지점 ${unmatched.length}개는 건너뜀(${unmatched.slice(0, 3).join("·")}${unmatched.length > 3 ? " 등" : ""})`);
+    toast(parts.join(" · "), unmatched.length ? "warn" : "ok");
+  }
+
+  // 표 데이터(aoa) 진입 통일: 단일분석은 그리드 교체, 다중분석은 회차에 매핑한다.
+  // 다중분석에서 회차가 안 열려 있으면 새 회차를 자동으로 만들어 바로 채운다.
+  function ingestAoa(aoa) {
+    if (analysisMode !== "multi") { applyAoaToGrid(aoa); return; }
+    if (!activeProject) {
+      toast("먼저 위에서 프로젝트를 만들거나 선택한 뒤 파일을 올려주세요", "warn"); return;
+    }
+    if (multiViewMode !== "newRound" || !currentEditRoundId) startNewRound();
+    applyAoaToRound(aoa);
+  }
+
   async function handleFile(file) {
     const ext = file.name.toLowerCase().split(".").pop();
     try {
@@ -2012,11 +2087,11 @@ export async function init(section, { toast, bridge, V }) {
         const wb = XLSX.read(buf, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        applyAoaToGrid(aoa);
+        ingestAoa(aoa);
       } else if (["hwpx", "pdf"].includes(ext)) {
         // 브라우저 드래그드롭은 파일의 실제 경로를 주지 않아(보안 제약) 여기서는 처리할
         // 수 없다 — 경로 기반인 브리지 쪽 "문서 선택" 버튼으로 안내한다(SYS-41 9단계).
-        toast("HWPX·PDF는 브라우저에서 직접 열 수 없습니다 — 위쪽 \"브리지로 HWPX·PDF 등록문서 자동인식 → 문서 선택…\" 버튼을 사용해주세요(브리지 연결 필요)", "warn");
+        toast("HWPX·PDF는 브라우저에서 직접 열 수 없습니다 — 위쪽 \"로컬 런처로 HWPX·PDF 등록문서 자동인식 → 문서 선택…\" 버튼을 사용해주세요(로컬 런처 연결 필요)", "warn");
       } else if (ext === "hwp") {
         toast("구형 HWP(.hwp)는 지원하지 않습니다 — 한글에서 HWPX로 저장해 변환해 주세요", "fail");
       } else {
@@ -2243,6 +2318,7 @@ export async function init(section, { toast, bridge, V }) {
 
       card.querySelector(".ed-chart-png").addEventListener("click", () => {
         exportChartPNG(col, `${standards.field}_${col.code || col.label}_${new Date().toISOString().slice(0, 10)}.png`);
+        toast("차트 이미지를 다운로드 폴더에 저장했습니다", "ok");
       });
 
       // 일괄적용 중인 팔로워 카드는 조작을 막아뒀으니(disabled+pointer-events:none) 아래
@@ -2476,7 +2552,7 @@ export async function init(section, { toast, bridge, V }) {
   const drop = $("#ed-drop"), fileInput = $("#ed-file");
   fileInput.addEventListener("change", () => {
     if (fileInput.files[0]) {
-      $("#ed-drop-msg").textContent = `선택됨: ${fileInput.files[0].name}`;
+      $("#ed-drop-hint").textContent = `선택됨: ${fileInput.files[0].name}`;
       handleFile(fileInput.files[0]);
     }
   });
@@ -2510,7 +2586,7 @@ export async function init(section, { toast, bridge, V }) {
       });
       const aoa = done.result?.aoa;
       if (!aoa || !aoa.length) { statusEl.textContent = ""; toast("표를 찾지 못했습니다", "fail"); return; }
-      applyAoaToGrid(aoa);
+      ingestAoa(aoa);
       statusEl.textContent = `"${name}" 인식 완료`;
     } catch (e) {
       statusEl.textContent = "";

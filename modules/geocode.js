@@ -831,8 +831,8 @@ export async function init(section, { bridge, toast, V }) {
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
     window.XLSX.writeFile(wb, `지오코딩_${stamp}.xlsx`);
     log(`엑셀 ${out.length}건 저장${picked.size ? " (선택분만)" : " (전체)"}`
-        + ` — 출처 칼럼으로 ${SRC_UPLOAD}/${SRC_MAP}이 구분됩니다`, "ok");
-    toast(`${picked.size ? "선택한 " : ""}${out.length}건을 엑셀로 저장했습니다`, "ok");
+        + ` — 다운로드 폴더에 있습니다. 출처 칼럼으로 ${SRC_UPLOAD}/${SRC_MAP}이 구분됩니다`, "ok");
+    toast(`${picked.size ? "선택한 " : ""}${out.length}건을 다운로드 폴더에 저장했습니다`, "ok");
   });
 
   /* ── 칼럼 너비 조절 ────────────────────────────────────────────────

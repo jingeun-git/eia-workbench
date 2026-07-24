@@ -220,13 +220,14 @@ export function init(section, { bridge, toast }) {
   <div class="panel">
     <h2>문서 → 마크다운 변환</h2>
     <p class="desc">PDF·Word·Excel을 브라우저 안에서 마크다운으로 변환합니다 (파일은 업로드되지 않습니다).
-      HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>브리지 경로</b>에서 처리합니다.</p>
+      HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>로컬 런처</b>에서 처리합니다.</p>
 
     <div class="field">
       <label>변환할 파일 <span class="req">*</span></label>
       <label class="dropzone" id="md-drop">
         <input type="file" id="md-files" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.hwpx">
-        <span>PDF·DOCX·XLSX 파일을 끌어다 놓거나 클릭해 선택하세요 (여러 개 가능)</span>
+        <b class="dz-formats">지원 파일 — PDF · Word · Excel</b>
+        <span class="dz-hint">끌어다 놓거나 클릭해 선택하세요 (여러 개 가능). 구형 .hwp는 열지 못하니 한글에서 HWPX로 저장해 주세요.</span>
       </label>
     </div>
 
@@ -259,17 +260,17 @@ export function init(section, { bridge, toast }) {
   </div>
 
   <div class="panel">
-    <h2>한글·스캔 문서 변환 (브리지)</h2>
-    <p class="desc">브라우저가 열 수 없는 형식(HWPX·스캔 PDF)과 폴더 일괄 처리를 담당합니다
-      — <b>변환 품질이 다른 것이 아니라 다룰 수 있는 형식이 다릅니다.</b> 로컬 브리지의 convert_core 엔진을 씁니다
-      — 듀얼 PDF 엔진·품질 게이트 포함. 결과는 대상 폴더의 <code>markdown_output/</code>에 저장됩니다.</p>
+    <h2>한글·스캔 문서 변환 (로컬 런처)</h2>
+    <p class="desc">브라우저가 열 수 없는 한글(HWPX)·스캔 PDF와 폴더 통째 변환을 여기서 처리합니다.
+      <b>변환 품질이 다른 게 아니라, 다룰 수 있는 형식이 다릅니다.</b>
+      변환 결과는 원본이 있는 폴더 안 <code>markdown_output</code> 폴더에 만들어집니다.</p>
     <p class="help" style="margin-top:-6px">
       <b>내용만 필요하면</b> 한글 문서(HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
       다만 <b>쪽번호처럼 "문서 안 어디에 있는지"가 중요한 경우에는 PDF로 먼저 변환한 뒤 MD 변환</b>을 권합니다.
       한글 문서는 쪽 나눔이 파일에 저장되지 않고 한글이 화면에 그릴 때 정해지므로, 변환 결과에 쪽번호를 남길 수 없습니다.
     </p>
     <div id="mb-locked" class="placeholder" style="margin-bottom:var(--space-2)">
-      ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
+      ○ 로컬 런처 미연결 — 로컬 런처 실행 후 활성화됩니다.
     </div>
     <div id="mb-form" style="display:none">
       <div class="field">
@@ -281,7 +282,7 @@ export function init(section, { bridge, toast }) {
         </div>
       </div>
       <div style="display:flex;gap:var(--space-2);align-items:center">
-        <button class="btn btn-primary" id="mb-run">브리지 변환 실행</button>
+        <button class="btn btn-primary" id="mb-run">로컬 런처로 변환</button>
         <button class="btn btn-secondary" id="mb-reset">초기화</button>
       </div>
       <div class="progress-wrap" id="mb-prog">
@@ -320,7 +321,7 @@ export function init(section, { bridge, toast }) {
       const st =
         item.status === "ok"  ? `<span class="pill ok">✓ 완료</span>` :
         item.status === "err" ? `<span class="pill fail">✗ 오류</span>` :
-        isBridge              ? `<span class="pill warn">브리지 필요</span>` :
+        isBridge              ? `<span class="pill warn">로컬 런처 필요</span>` :
                                 `<span class="pill">대기</span>`;
       row.innerHTML = `<span class="md-name" title="${item.name}">${item.name}</span>${st}
         <button class="icon-btn" data-rm="${i}" aria-label="${item.name} 제거" style="width:26px;height:26px">✕</button>`;
@@ -351,7 +352,7 @@ export function init(section, { bridge, toast }) {
     if (!reasons.length) { el.style.display = "none"; return; }
     el.style.display = "";
     el.innerHTML = `⚠ <b>${reasons.join(" · ")}</b> — 브라우저 변환은 파일을 메모리에 올려 처리하므로
-      탭이 멈추거나 종료될 수 있습니다. 아래 <b>브리지 변환</b>으로 폴더째 처리하시길 권합니다.`;
+      탭이 멈추거나 종료될 수 있습니다. 아래 <b>한글·스캔 문서 변환(로컬 런처)</b>으로 폴더째 처리하시길 권합니다.`;
   }
 
   function addFiles(newFiles) {
@@ -366,7 +367,7 @@ export function init(section, { bridge, toast }) {
     if (rejected)
       toast(`구형 HWP(.hwp) ${rejected}건은 지원하지 않습니다 — 한글에서 HWPX로 저장해 변환해 주세요`, "fail");
     if (bridgeCnt)
-      toast(`HWPX ${bridgeCnt}건은 브리지 연결 시 아래 한글·스캔 문서 변환에서 처리됩니다`, "warn");
+      toast(`HWPX ${bridgeCnt}건은 로컬 런처 연결 시 아래 한글·스캔 문서 변환에서 처리됩니다`, "warn");
     renderList(); updateUI(); warnIfHeavy();
   }
 
@@ -479,7 +480,9 @@ export function init(section, { bridge, toast }) {
   });
   $("#md-save").addEventListener("click", () => {
     const cur = results[activeTab];
-    if (cur) downloadMd(cur.name.replace(/\.[^.]+$/, "") + ".md", cur.md);
+    if (!cur) return;
+    downloadMd(cur.name.replace(/\.[^.]+$/, "") + ".md", cur.md);
+    toast("MD 파일을 다운로드 폴더에 저장했습니다", "ok");
   });
   /* ── 브리지 경로(한글·스캔·일괄) ─────────────────────────────────── */
   let mbRunning = false;
@@ -496,7 +499,7 @@ export function init(section, { bridge, toast }) {
     $("#mb-locked").style.display = ok ? "none" : "";
     $("#mb-form").style.display = ok ? "" : "none";
     if (!ok && bridge.state === "ok")
-      $("#mb-locked").textContent = "⚠ 브리지에 convert_core가 없습니다 — 브리지 설치 구성을 확인하세요.";
+      $("#mb-locked").textContent = "⚠ 로컬 런처에서 이 기능을 찾지 못했습니다 — 로컬 런처를 최신 버전으로 다시 실행하세요.";
   };
   bridge.addEventListener("change", renderBridge);
   renderBridge();
@@ -550,14 +553,14 @@ export function init(section, { bridge, toast }) {
         },
       });
       mbLog("─── 완료", "ok");
-      toast("브리지 변환 완료 — markdown_output 폴더를 확인하세요", "ok");
+      toast("변환 완료 — 원본 폴더 안 markdown_output 폴더를 확인하세요", "ok");
     } catch (e) {
       mbLog(`✗ ${e.message}`, "fail");
       toast(e.message, "fail");
     } finally {
       mbRunning = false;
       $("#mb-run").disabled = false;
-      $("#mb-run").textContent = "브리지 변환 실행";
+      $("#mb-run").textContent = "로컬 런처로 변환";
     }
   });
 
@@ -573,6 +576,6 @@ export function init(section, { bridge, toast }) {
       downloadMd(fn, targets[i].md);
       await new Promise((r) => setTimeout(r, 250));   // 연속 다운로드 차단 회피 (원본 동일)
     }
-    toast(`전체 저장 완료 (${targets.length}개)`, "ok");
+    toast(`${targets.length}개를 다운로드 폴더에 저장했습니다`, "ok");
   });
 }

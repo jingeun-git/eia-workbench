@@ -190,6 +190,9 @@ input:focus, textarea:focus, select:focus {
 }
 .dropzone.hasfile { border-style: solid; border-color: var(--ok); }
 .dropzone input { display: none; }
+/* 드롭존 안 지원파일 강조(볼드) + 상세(일반) 이원화 */
+.dz-formats { display: block; font-size: var(--text-sm); color: var(--text); font-weight: 700; margin-bottom: 4px; }
+.dz-hint { display: block; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 
 /* 모드 선택 (라디오 세그먼트) */
 .segment { display: inline-flex; background: var(--surface-2);

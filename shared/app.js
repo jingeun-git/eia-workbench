@@ -147,7 +147,7 @@ function initTabs() {
         b.title = "구현 예정";
       } else if (t.needsBridge) {
         b.dataset.needsBridge = "1";
-        b.title = "브리지 연결 필요";
+        b.title = "로컬 런처 연결 필요";
       }
       b.addEventListener("click", () => !b.disabled && activate(t.id));
       wrap.appendChild(b);
@@ -169,11 +169,11 @@ function initBridgeChip() {
     const bv = bridge.info?.bridge_version ?? "?";
     const stale = s === "ok" && cmpVer(bv, MIN_BRIDGE) < 0;
     chip.textContent =
-      s === "ok"   ? `● 브리지 v${bv}${stale ? " ⚠ 갱신 필요" : ""}` :
+      s === "ok"   ? `● 로컬 런처 v${bv}${stale ? " ⚠ 갱신 필요" : ""}` :
       s === "stub" ? "⚠ 진단 스텁 감지 — 클릭" :
-      s === "off"  ? "○ 브리지 미연결" : "◌ 확인 중…";
+      s === "off"  ? "○ 로컬 런처 미연결" : "◌ 확인 중…";
     if (s === "stub")
-      chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 브리지 런처를 실행하세요";
+      chip.title = "PoC 진단 스텁이 켜져 있습니다 — 그 창을 닫고 로컬 런처를 실행하세요";
     // 버전이 둘이라 "안 맞는 것 아닌가" 하는 오해가 생긴다(2026-07-21 사용자 지적).
     // 숫자만 보여주지 말고 **맞는지 아닌지**를 말해준다.
     else if (s === "ok") {
@@ -182,7 +182,7 @@ function initBridgeChip() {
       chip.style.cursor = "default";
       // 툴팁은 **상태만** 말한다. 왜 버전이 다른지 같은 설명은 사용자가 알 필요가
       // 없다(2026-07-21 사용자 지시) — 필요한 사람은 사용법 문서를 본다.
-      chip.title = stale ? "브리지 갱신 필요" : "정상";
+      chip.title = stale ? "로컬 런처 갱신 필요" : "정상";
     }
     /* 브리지 중복 경고는 **띄우지 않는다**(2026-07-21 사용자 지시).
        예전에는 인스턴스가 쌓여 경고가 필요했지만 그 원인 두 가지를 고쳤다 —
@@ -194,7 +194,7 @@ function initBridgeChip() {
     $$(".tab[data-needs-bridge]").forEach((b) => {
       if (b.dataset.planned) return;         // 구현 예정 탭은 항상 잠김
       b.disabled = s !== "ok";
-      b.title = s === "ok" ? "" : "브리지 연결 필요 — 상태칩을 눌러 안내를 확인하세요";
+      b.title = s === "ok" ? "" : "로컬 런처 연결 필요 — 상태칩을 눌러 안내를 확인하세요";
     });
   };
   bridge.addEventListener("change", render);
@@ -266,7 +266,7 @@ function initPairing() {
     bridge.token = token;
     if (port) localStorage.setItem("eiaw.bridge.port", port);
     history.replaceState(null, "", location.pathname + location.search);
-    toast("브리지 토큰이 자동 등록됐습니다 — 곧 연결됩니다", "ok");
+    toast("로컬 런처 토큰이 자동 등록됐습니다 — 곧 연결됩니다", "ok");
   }
 }
 
@@ -288,13 +288,13 @@ function initBridgeBanner() {
     if (approved) { banner.hidden = true; return; }
     banner.hidden = false;
     if (s === "checking") {
-      msgEl.textContent = "브리지 연결을 확인하는 중입니다…";
+      msgEl.textContent = "로컬 런처 연결을 확인하는 중입니다…";
     } else if (s === "stub") {
       msgEl.textContent = "진단 스텁 창이 열려 있습니다 — 그 창을 닫고 런처를 실행하세요.";
     } else if (s === "ok" && nl && nl.ok === false) {
       msgEl.textContent = "이 PC는 아직 승인되지 않았습니다 — 등록 요청 후 승인되면 로컬 기능이 열립니다.";
     } else {                                // off — 브리지 없음
-      msgEl.textContent = "브리지 미연결 — 한컴·PDF·사진 등 로컬 기능은 런처 실행·승인 후 사용할 수 있습니다. (브라우저 기능은 그대로 사용 가능)";
+      msgEl.textContent = "로컬 런처가 실행되지 않았습니다 — 한컴·PDF·사진 등 로컬 기능은 로컬 런처를 실행·승인한 뒤 사용할 수 있습니다. (브라우저 기능은 그대로 사용 가능)";
     }
   };
 

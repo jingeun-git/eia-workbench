@@ -15,7 +15,7 @@ export function init(section, { bridge, toast }) {
     <p class="desc">PDF 안의 표만 골라 엑셀로 옮깁니다 — 연속된 페이지에 걸친 표는 하나로 합치고,
       중간에 반복되는 머리행은 지웁니다. 표마다 <b>표명·출처</b> 2행이 머리부로 붙습니다.</p>
     <div id="px-locked" class="placeholder" style="margin-bottom:var(--space-2)">
-      ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
+      ○ 로컬 런처 미연결 — 로컬 런처 실행 후 활성화됩니다.
     </div>
     <div id="px-form" style="display:none">
       <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4)">
@@ -80,8 +80,8 @@ export function init(section, { bridge, toast }) {
     $("#px-locked").style.display = ok ? "none" : "";
     if (!ok) {
       $("#px-locked").textContent = bridge.state !== "ok"
-        ? "○ 브리지 미연결 — 브리지 런처를 실행하세요."
-        : "⚠ 브리지에 pdf2excel_core가 없습니다 — 브리지 구성을 확인하세요.";
+        ? "○ 로컬 런처 미연결 — 로컬 런처를 실행하세요."
+        : "⚠ 로컬 런처에서 이 기능을 찾지 못했습니다 — 로컬 런처를 최신 버전으로 다시 실행하세요.";
     }
   };
   bridge.addEventListener("change", renderState);

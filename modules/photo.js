@@ -35,7 +35,7 @@ export async function init(section, { bridge, toast, V }) {
       좌표는 <b>CSV·KML</b>로 내보낼 수 있습니다.</p>
 
     <div id="ph-locked" class="placeholder" style="margin-bottom:var(--space-2)">
-      ○ 브리지 미연결 — 브리지 실행 후 활성화됩니다.
+      ○ 로컬 런처 미연결 — 로컬 런처 실행 후 활성화됩니다.
     </div>
 
     <div id="ph-form" style="display:none">
@@ -152,8 +152,8 @@ export async function init(section, { bridge, toast, V }) {
     $("#ph-locked").style.display = ok ? "none" : "";
     if (!ok) {
       $("#ph-locked").textContent = bridge.state !== "ok"
-        ? "○ 브리지 미연결 — 브리지 런처를 실행하세요."
-        : "⚠ 브리지에 photo_exif가 없습니다 — 브리지를 최신 버전으로 다시 실행하세요.";
+        ? "○ 로컬 런처 미연결 — 로컬 런처를 실행하세요."
+        : "⚠ 로컬 런처에서 이 기능을 찾지 못했습니다 — 로컬 런처를 최신 버전으로 다시 실행하세요.";
       return;
     }
     // HEIC 미지원 같은 사정은 상단에 상시 경고하지 않는다 — 실제로 그런 사진을

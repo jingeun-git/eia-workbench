@@ -139,8 +139,8 @@ export function init(section, { bridge, toast }, kind) {
     $("#hw-form").style.display = ok ? "" : "none";
     if (!ok) {
       $("#hw-locked").textContent = bridge.state !== "ok"
-        ? "○ 브리지 미연결 — 브리지 실행 후 이 탭이 활성화됩니다."
-        : "⚠ 브리지는 연결됐지만 이 기능을 쓸 수 없습니다 — Windows + 한컴오피스 + 해당 도구가 필요합니다.";
+        ? "○ 로컬 런처 미연결 — 로컬 런처 실행 후 이 탭이 활성화됩니다."
+        : "⚠ 로컬 런처는 연결됐지만 이 기능을 쓸 수 없습니다 — Windows + 한컴오피스 + 해당 도구가 필요합니다.";
     }
   };
   bridge.addEventListener("change", renderState);
@@ -358,8 +358,8 @@ export function init(section, { bridge, toast }, kind) {
         const noCur = scanned.some((r) => !r.skip) &&
                       scanned.every((r) => r.start_page == null);
         if (noCur) {
-          toast("현재 쪽번호를 읽지 못했습니다 — 브리지 창을 닫고 "
-                + "브리지 런처를 다시 실행한 뒤 스캔해주세요 "
+          toast("현재 쪽번호를 읽지 못했습니다 — 로컬 런처 창을 닫고 "
+                + "로컬 런처를 다시 실행한 뒤 스캔해주세요 "
                 + `(현재 연결: v${bridge.info?.bridge_version ?? "?"})`, "fail");
         } else {
           toast(`스캔 완료 — 표를 확인한 뒤 [2. 쪽번호 적용]을 누르세요`, "ok");

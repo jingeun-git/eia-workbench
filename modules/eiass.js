@@ -36,12 +36,12 @@ export function init(section, { bridge, toast }) {
   section.innerHTML = `
   <div class="panel">
     <h2>EIASS 원문 다운로더</h2>
-    <p class="desc">FILE_SEQ 직접 입력(웹 완결) 또는 사업코드 자동탐색(브리지 연결 시)으로 EIASS 원문을 내려받습니다.</p>
+    <p class="desc">FILE_SEQ 직접 입력(웹 완결) 또는 사업코드 자동탐색(로컬 런처 연결 시)으로 EIASS 원문을 내려받습니다.</p>
 
     <div class="field">
       <div class="segment" role="group" aria-label="다운로드 방식">
         <button type="button" data-emode="seq" aria-pressed="true">FILE_SEQ 직접</button>
-        <button type="button" data-emode="code" aria-pressed="false">사업코드 자동 (브리지)</button>
+        <button type="button" data-emode="code" aria-pressed="false">사업코드 자동 (로컬 런처)</button>
       </div>
     </div>
 
@@ -54,19 +54,19 @@ export function init(section, { bridge, toast }) {
       </div>
 
       <div class="field">
-        <label>저장 폴더 <span style="color:var(--text-dim);font-weight:400">(선택 — 지정하면 브리지가 처리)</span></label>
+        <label>저장 폴더 <span style="color:var(--text-dim);font-weight:400">(선택 — 지정하면 로컬 런처가 처리)</span></label>
         <div class="input-row">
           <input type="text" id="es-dir" readonly placeholder="미지정 — 브라우저 기본 다운로드 폴더로 저장">
           <button class="btn btn-secondary" id="es-pick" type="button">폴더 선택</button>
         </div>
-        <p class="help" id="es-mode-hint">폴더를 지정하면 <b>브리지</b>가 받아 저장하므로 실패가 로그로 검증되고 파일 크기가 남습니다.
+        <p class="help" id="es-mode-hint">폴더를 지정하면 <b>로컬 런처</b>가 받아 저장하므로 실패가 로그로 검증되고 파일 크기가 남습니다.
           미지정 시 브라우저가 받아 <b>저장 성공 여부를 확인할 수 없습니다</b>.</p>
       </div>
 
       <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" id="es-run">전체 다운로드</button>
         <label style="font-size:var(--text-sm);display:flex;align-items:center;gap:6px">
-          <input type="checkbox" id="es-zip"> ZIP으로 묶기 <span style="color:var(--text-dim)">(브리지 경로만)</span>
+          <input type="checkbox" id="es-zip"> ZIP으로 묶기 <span style="color:var(--text-dim)">(로컬 런처 연결 시만)</span>
         </label>
         <button class="btn btn-secondary" id="es-reset">초기화</button>
         <button class="btn btn-danger" id="es-stop" style="display:none">중지</button>
@@ -83,7 +83,7 @@ export function init(section, { bridge, toast }) {
     <!-- ② 사업코드 자동 (브리지) -->
     <div data-epane="code" style="display:none">
       <div id="ec-locked" class="placeholder" style="margin-bottom:var(--space-4)">
-        ○ 브리지 미연결 — 이 방식은 로컬 브리지가 필요합니다. 우상단 상태칩에서 안내를 확인하세요.
+        ○ 로컬 런처 미연결 — 이 방식은 로컬 런처가 필요합니다. 우상단 상태칩에서 안내를 확인하세요.
       </div>
       <div id="ec-form">
         <div class="field" style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end">
@@ -124,7 +124,7 @@ export function init(section, { bridge, toast }) {
           <div class="field" style="margin-top:var(--space-4)">
             <label>저장 폴더 <span class="req">*</span></label>
             <div class="input-row">
-              <input type="text" id="ec-dir" readonly placeholder="[폴더 선택]을 누르면 브리지가 선택창을 띄웁니다">
+              <input type="text" id="ec-dir" readonly placeholder="[폴더 선택]을 누르면 로컬 런처가 선택창을 띄웁니다">
               <button class="btn btn-secondary" id="ec-pick" type="button">폴더 선택</button>
             </div>
           </div>
@@ -180,7 +180,7 @@ export function init(section, { bridge, toast }) {
   /* 저장 폴더 선택 — 브리지 연결 시에만 의미가 있다 */
   $("#es-pick").addEventListener("click", async () => {
     if (bridge.state !== "ok") {
-      toast("브리지가 연결돼 있어야 폴더를 지정할 수 있습니다 (미지정 시 브라우저 다운로드 폴더 사용)", "warn");
+      toast("로컬 런처가 연결돼 있어야 폴더를 지정할 수 있습니다 (미지정 시 브라우저 다운로드 폴더 사용)", "warn");
       return;
     }
     try {
@@ -205,7 +205,7 @@ export function init(section, { bridge, toast }) {
       if (viaBridge) {
         /* 브리지 경로 — 실패가 예외로 잡히고 저장 파일 크기가 로그에 남는다.
            웹 iframe 경로의 "조용한 누락"이 구조적으로 불가능하다(SYS-32). */
-        esLog(`${seqs.length}건 — 브리지로 다운로드 (저장 검증됨)`);
+        esLog(`${seqs.length}건 — 로컬 런처로 다운로드 (저장 검증됨)`);
         const job = await bridge.call("/jobs", {
           method: "POST",
           body: { type: "eiass_seq_dl", seqs, out_dir: dir, zip: $("#es-zip").checked },
@@ -228,7 +228,7 @@ export function init(section, { bridge, toast }) {
         esLog(`${seqs.length}건 — 브라우저로 요청 전송 (간격 1.2초)`);
         esLog("※ 이 경로는 저장 성공 여부를 확인할 수 없습니다. 완료 후 브라우저 다운로드 목록에서 건수를 대조하세요.", "warn");
         if (bridge.state === "ok")
-          esLog("※ 저장 폴더를 지정하면 브리지로 처리되어 실패가 검증됩니다.", "warn");
+          esLog("※ 저장 폴더를 지정하면 로컬 런처로 처리되어 실패가 검증됩니다.", "warn");
         let sent = 0;
         for (let i = 0; i < seqs.length; i++) {
           if (stopping) { esLog("── 사용자에 의해 중지됨", "warn"); break; }

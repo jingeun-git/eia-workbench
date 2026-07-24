@@ -179,9 +179,9 @@ async function fetchXml(url) {
       headers: _bridgeRef.token ? { Authorization: `Bearer ${_bridgeRef.token}` } : {},
     });
   } else {
-    throw new Error("건축물대장 조회는 브리지가 필요합니다 — "
+    throw new Error("건축물대장 조회는 로컬 런처가 필요합니다 — "
       + "공공데이터포털이 브라우저 직접 호출을 허용하지 않습니다(CORS). "
-      + "브리지 런처를 실행한 뒤 다시 시도하세요");
+      + "로컬 런처를 실행한 뒤 다시 시도하세요");
   }
   if (!r.ok) throw new Error(`건축물대장 API 오류 (HTTP ${r.status})`);
   const text = await r.text();
@@ -317,7 +317,7 @@ async function queryBuildings(parcels, pkey, log, checkCancel, onProgress) {
       nFail ? "fail" : "ok");
   if (nFail) {
     log(`⚠ ${nFail}개 필지는 조회에 실패했습니다 — "건축물 없음"이 아닙니다. `
-        + `브리지 연결과 API 상태를 확인한 뒤 다시 실행하세요.`, "fail");
+        + `로컬 런처 연결과 API 상태를 확인한 뒤 다시 실행하세요.`, "fail");
   }
   return results;
 }
@@ -480,7 +480,8 @@ export function init(section, { toast, bridge }) {
         <label>사업지구 경계 파일 <span class="req">*</span></label>
         <label class="dropzone" id="pc-drop">
           <input type="file" id="pc-files" multiple accept=".shp,.dbf,.prj,.cpg,.shx,.zip">
-          <span id="pc-drop-msg">shp·dbf·prj 파일을 함께 선택하거나 ZIP을 끌어다 놓으세요</span>
+          <b class="dz-formats">지원 파일 — SHP 세트 또는 ZIP</b>
+          <span class="dz-hint" id="pc-drop-msg">shp·dbf·prj 파일을 함께 선택하거나 ZIP을 끌어다 놓으세요</span>
         </label>
         <p class="help">prj가 없으면 EPSG:5186(TM중부)으로 간주합니다. 파일은 브라우저 안에서만 처리되며 업로드되지 않습니다.</p>
       </div>
@@ -719,7 +720,9 @@ export function init(section, { toast, bridge }) {
 
   $("#pc-save").addEventListener("click", () => {
     if (!results?.length) return;
-    try { saveExcel(results); }
-    catch (e) { toast(`Excel 저장 실패: ${e.message}`, "fail"); }
+    try {
+      saveExcel(results);
+      toast("건축물대장 엑셀을 다운로드 폴더에 저장했습니다", "ok");
+    } catch (e) { toast(`Excel 저장 실패: ${e.message}`, "fail"); }
   });
 }
