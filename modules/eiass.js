@@ -211,6 +211,7 @@ export function init(section, { bridge, toast }) {
           body: { type: "eiass_seq_dl", seqs, out_dir: dir, zip: $("#es-zip").checked },
         });
         await bridge.pollJob(job.job_id, {
+          label: "EIASS 파일 다운로드",
           onLog: (line) => esLog(line),
           onProgress: (p) => {
             if (!p) return;
@@ -488,6 +489,7 @@ export function init(section, { bridge, toast }) {
     try {
       const job = await bridge.call("/jobs", { method: "POST", body });
       await bridge.pollJob(job.job_id, {
+        label: "EIASS 원문 다운로드",
         onLog: (line) => ecLog(line),
         onProgress: (p) => {
           if (!p) return;

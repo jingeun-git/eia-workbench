@@ -33,6 +33,11 @@ export async function init(section, { bridge, toast, V }) {
     <p class="desc">현장사진의 EXIF에서 <b>촬영지점과 촬영방향</b>을 읽어 지도에 표시합니다.
       지도의 지점을 누르면 그 사진이, 사진을 누르면 그 지점이 선택됩니다.
       좌표는 <b>CSV·KML</b>로 내보낼 수 있습니다.</p>
+    <p class="desc" style="margin-top:calc(-1*var(--space-2))">
+      <b>지원 파일 — EXIF에 GPS가 담긴 사진(JPG·JPEG 등)</b> ·
+      확장자로 걸러내지 않고 <b>폴더 안 파일을 일단 열어봅니다</b>(모르는 확장자도 시도).
+      좌표가 없는 사진은 목록에 <b>사유와 함께</b> 남으니 무엇이 빠졌는지 바로 보입니다.
+      휴대폰 기본 설정에서 <b>위치 정보가 꺼져 있으면 좌표가 저장되지 않습니다</b>.</p>
 
     <div id="ph-locked" class="placeholder" style="margin-bottom:var(--space-2)">
       ○ 로컬 런처 미연결 — 로컬 런처 실행 후 활성화됩니다.

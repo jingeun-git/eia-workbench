@@ -132,6 +132,26 @@
   </div>
 </div>
 
+<!-- 작업 중 탭 전환 경고 (SYS-76 W3).
+     한컴 작업은 탭을 떠나도 백그라운드에 남아 좀비가 됐다. 전환하려면 진행 중인
+     작업을 반드시 멈추게 하고, 대신 무엇이 남고 무엇이 사라지는지 먼저 알린다. -->
+<div id="busy-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="busy-title">
+  <div class="modal">
+    <h3 id="busy-title">작업이 진행 중입니다</h3>
+    <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
+      <b id="busy-what">진행 중인 작업</b>이 아직 끝나지 않았습니다.<br><br>
+      탭을 옮기면 이 작업을 <b>중단</b>합니다.
+      <b style="color:var(--ok)">이미 만들어진 파일은 그대로 남고</b>,
+      아직 처리하지 않은 파일은 원본 그대로 남습니다.<br><br>
+      계속 진행하려면 이 탭에 머물러 주세요.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="busy-stay" type="button">머무르기</button>
+      <button class="btn" id="busy-go" type="button">중단하고 이동</button>
+    </div>
+  </div>
+</div>
+
 <div class="toasts" aria-live="polite"></div>
 
 <!-- 우하단 워터마크 (SYS-67).
@@ -153,6 +173,6 @@
 <script src="vendor/chartjs-plugin-annotation.min.js"></script>
 <script src="vendor/chartjs-plugin-datalabels.min.js"></script>
 <!-- ?v= 는 배포 시 갱신 — 없으면 브라우저가 옛 app.js를 계속 쓴다(2026-07-20) -->
-<script type="module" src="shared/app.js?v=3.60.0"></script>
+<script type="module" src="shared/app.js?v=3.61.0"></script>
 </body>
 </html>

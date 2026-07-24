@@ -15,6 +15,30 @@ export class BridgeClient extends EventTarget {
     this.info = null;          // /ping 응답 (버전·기능 목록)
     this.state = "checking";   // checking | ok | off
     this._timer = null;
+    /* 지금 돌고 있는 작업 — 탭 전환·앱 종료 안전장치가 이걸 본다(SYS-76 W3).
+       브리지 워커는 **순차 단일**이라 실질적으로 하나지만, 큐에 쌓인 것까지
+       세려면 집합이어야 한다. 모듈마다 따로 관리하면 한 곳이 빠져도 모르니
+       `pollJob`이 유일한 폴링 경로라는 점을 이용해 여기서만 기록한다. */
+    this.activeJobs = new Map();   // jobId → { label, since }
+  }
+
+  /** 돌고 있는 작업이 있는가 (탭 전환 가드용) */
+  get busy() { return this.activeJobs.size > 0; }
+
+  /** 작업 취소 — 브리지가 한컴을 끊어 실제로 멈춘다. 완료분은 남는다. */
+  async cancelJob(jobId) {
+    return this.call(`/jobs/${jobId}/cancel`, { method: "POST", timeoutMs: 25000 });
+  }
+
+  /** 돌고 있는 작업 전부 취소 (탭 전환 '진행' · 앱 종료) */
+  async cancelAll() {
+    const ids = [...this.activeJobs.keys()];
+    const out = [];
+    for (const id of ids) {
+      try { out.push(await this.cancelJob(id)); }
+      catch (e) { out.push({ ok: false, error: String(e.message || e) }); }
+    }
+    return out;
   }
 
   get token() { return localStorage.getItem("eiaw.bridge.token") || ""; }
@@ -179,28 +203,43 @@ export class BridgeClient extends EventTarget {
   /** 장시간 작업 폴링 — 새 로그 라인·진행 상태를 콜백으로 전달, 종료 시 resolve.
    *  일시적 통신 오류는 재시도하되(OCR 등 수십 분 작업 중 한 번 끊겼다고 죽이지 않는다),
    *  연속 실패가 누적되면 중단한다. 브리지 재시작으로 작업 정보가 사라진 경우는 즉시 구분. */
-  async pollJob(jobId, { onLog, onProgress, intervalMs = 1000, maxRetries = 15 } = {}) {
+  async pollJob(jobId, { onLog, onProgress, intervalMs = 1000, maxRetries = 15,
+                         label = "" } = {}) {
     let logOffset = 0;
     let fails = 0;
-    for (;;) {
-      let j;
-      try {
-        j = await this.call(`/jobs/${jobId}?log_from=${logOffset}`, { timeoutMs: 15000 });
-        fails = 0;
-      } catch (e) {
-        if (/HTTP 404|job not found/i.test(e.message))
-          throw new Error("브리지가 재시작되어 작업 정보가 사라졌습니다 — 다시 실행해주세요");
-        if (++fails > maxRetries)
-          throw new Error(`브리지 응답 없음 (${fails}회 연속) — 브리지 창이 닫혔는지 확인하세요`);
-        onLog?.(`⚠ 브리지 응답 지연 — 재시도 ${fails}/${maxRetries}`);
-        await new Promise((r) => setTimeout(r, 2000));
-        continue;
+    this.activeJobs.set(jobId, { label, since: Date.now() });
+    this.dispatchEvent(new CustomEvent("busy", { detail: { busy: true, jobId } }));
+    try {
+      for (;;) {
+        let j;
+        try {
+          j = await this.call(`/jobs/${jobId}?log_from=${logOffset}`, { timeoutMs: 15000 });
+          fails = 0;
+        } catch (e) {
+          if (/HTTP 404|job not found/i.test(e.message))
+            throw new Error("브리지가 재시작되어 작업 정보가 사라졌습니다 — 다시 실행해주세요");
+          if (++fails > maxRetries)
+            throw new Error(`브리지 응답 없음 (${fails}회 연속) — 브리지 창이 닫혔는지 확인하세요`);
+          onLog?.(`⚠ 브리지 응답 지연 — 재시도 ${fails}/${maxRetries}`);
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        for (const line of j.log || []) { onLog?.(line); logOffset++; }
+        onProgress?.(j.progress || null);
+        if (j.status === "done") return j;   // j.result에 스캔 표 데이터가 실려온다
+        /* 취소는 실패가 아니다 — 사용자가 멈춘 것이다. 빨간 오류로 던지면
+           "한컴을 확인하세요" 같은 틀린 진단이 뜬다. 부른 쪽이 status로
+           구분할 수 있게 그대로 돌려준다(SYS-76 W3). */
+        if (j.status === "cancelled") return j;
+        if (j.status === "error") throw new Error(j.error || "브리지 작업 실패");
+        await new Promise((r) => setTimeout(r, intervalMs));
       }
-      for (const line of j.log || []) { onLog?.(line); logOffset++; }
-      onProgress?.(j.progress || null);
-      if (j.status === "done") return j;   // j.result에 스캔 표 데이터가 실려온다
-      if (j.status === "error") throw new Error(j.error || "브리지 작업 실패");
-      await new Promise((r) => setTimeout(r, intervalMs));
+    } finally {
+      /* 성공·실패·취소 어느 쪽이든 반드시 지운다 — 여기서 새면 탭 전환이
+         영구히 막힌다(있지도 않은 작업 때문에 경고창이 계속 뜬다). */
+      this.activeJobs.delete(jobId);
+      this.dispatchEvent(new CustomEvent("busy",
+        { detail: { busy: this.busy, jobId } }));
     }
   }
 

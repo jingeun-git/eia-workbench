@@ -2582,6 +2582,7 @@ export async function init(section, { toast, bridge, V }) {
       statusEl.textContent = `"${name}" 처리 중…`;
       const job = await bridge.call("/jobs", { method: "POST", body: { type: "envdata_parse", path } });
       const done = await bridge.pollJob(job.job_id, {
+        label: "측정자료 표 인식",
         onProgress: (p) => { if (p?.stage) statusEl.textContent = `"${name}" — ${p.stage}`; },
       });
       const aoa = done.result?.aoa;

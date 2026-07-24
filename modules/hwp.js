@@ -27,6 +27,16 @@ export function init(section, { bridge, toast }, kind) {
   <div class="panel">
     <h2>${m.title}</h2>
     <p class="desc">${m.desc}</p>
+    <p class="desc" style="margin-top:calc(-1*var(--space-2))">
+      <b>지원 파일 — HWP · HWPX</b> · 설치된 한글로 처리합니다(파일은 PC 밖으로 나가지 않습니다).</p>
+    ${kind === "pagenum" ? `
+    <div class="help" style="background:var(--surface-2,rgba(127,127,127,.08));border-radius:8px;padding:10px 13px;margin-bottom:var(--space-4);line-height:1.75">
+      <b>파일 이름 규칙</b> — 번호가 매겨지려면 장별 파일 이름에 <b>네 자리 코드</b>가 있어야 합니다(앞 두 자리 = 장, 뒤 두 자리 = 절).<br>
+      · 예: <code>0100 사업개요.hwp</code> · <code>0711 동식물상.hwp</code><br>
+      · 이름 앞에 사업명 등이 붙어도 됩니다 — <code>(평택지제) 0100 요약문.hwp</code>처럼 <b>첫 네 자리 코드</b>를 읽습니다.<br>
+      · 파일은 <b>이름 순서</b>대로 편철되므로 코드가 곧 쪽 순서입니다.<br>
+      · 코드가 없는 파일(<code>표지.hwp</code> 등)과 <code>00</code>장(표지·옆표지·목차)은 번호에서 제외됩니다.
+    </div>` : ""}
     <div id="hw-locked" class="placeholder" style="margin-bottom:var(--space-4)"></div>
     <div id="hw-form">
       <div class="field">
@@ -170,7 +180,7 @@ export function init(section, { bridge, toast }, kind) {
     $("#hw-pick-files").addEventListener("click", async () => {
       try {
         const r = await bridge.call("/pick", { method: "POST", timeoutMs: 120000,
-          body: { kind: "files", patterns: "*.hwpx" } });
+          body: { kind: "files", patterns: "*.hwp *.hwpx" } });
         if (r.paths?.length) { hwPaths = r.paths; hwShow(); }
       } catch (e) { toast(e.message, "fail"); }
     });
@@ -341,6 +351,7 @@ export function init(section, { bridge, toast }, kind) {
                   },
         });
         const done = await bridge.pollJob(job.job_id, {
+          label: "쪽번호 스캔",
           onLog: (l) => log(l),
           onProgress: (p) => {
             if (!p) return;
@@ -351,6 +362,12 @@ export function init(section, { bridge, toast }, kind) {
             }
           },
         });
+        /* 사용자 취소 — 실패도 성공도 아니다. 스캔은 전량이 모여야 번호가
+           맞으므로 부분 표를 쓰지 않는다(빈 표를 '완료'로 안내하면 거짓말이 된다). */
+        if (done.status === "cancelled") {
+          toast("스캔을 중단했습니다 — 문서는 그대로입니다", "");
+          return;
+        }
         scanned = done.result || [];
         renderPlan(scanned);
         // '현재 쪽번호'가 전부 비면 브리지가 구버전이거나(웹만 갱신됨)
@@ -407,7 +424,8 @@ export function init(section, { bridge, toast }, kind) {
             a3_back: $("#hw-a3back").value,
             overrides };
       const job = await bridge.call("/jobs", { method: "POST", body });
-      await bridge.pollJob(job.job_id, {
+      const done = await bridge.pollJob(job.job_id, {
+        label: kind === "pagenum" ? "쪽번호 적용" : "HWP→PDF 변환",
         onLog: (line) => log(line),
         onProgress: (p) => {
           if (!p) return;
@@ -419,6 +437,12 @@ export function init(section, { bridge, toast }, kind) {
           }
         },
       });
+      // 취소를 '완료'라고 말하지 않는다 — 남은 파일은 손대지 않은 상태다.
+      if (done.status === "cancelled") {
+        log("─── 중단됨 (완료된 파일은 그대로 남아 있습니다)");
+        toast("작업을 중단했습니다 — 완료된 파일은 남아 있습니다", "");
+        return;
+      }
       log("─── 완료", "ok");
       toast("작업 완료 — 대상 폴더를 확인하세요", "ok");
     } catch (e) {

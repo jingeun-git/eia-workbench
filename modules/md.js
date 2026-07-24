@@ -132,7 +132,10 @@ async function convertPdf(buf, onPage) {
       if (deduped.length && line === deduped[deduped.length - 1] && line.startsWith("#")) continue;
       deduped.push(line);
     }
-    pages.push(`<!-- 페이지 ${p} -->\n${deduped.join("\n")}`);
+    /* 쪽 표기는 로컬 코어(convert_core.pdf_to_markdown)와 **같은 형식**으로 쓴다.
+       예전에는 HTML 주석(`<!-- 페이지 N -->`)이라 눈에도 안 보이고, `## Page N`을
+       찾는 후속 도구·검수에서 걸리지 않았다(2026-07-24 대조에서 발견). */
+    pages.push(`## Page ${p}\n${deduped.join("\n")}`);
     // 페이지 단위 자원 해제 — 대용량 PDF에서 페이지 객체가 누적되면 탭이 죽는다(SYS-32)
     page.cleanup();
   }
@@ -187,10 +190,17 @@ export function init(section, { bridge, toast }) {
      한글·Word는 쪽 나눔이 파일에 저장되지 않아 원리상 불가능하다.
      표: HWPX <hp:tbl> · PDF find_tables() · Excel DataFrame · Word docx.table
          (구형 HWP는 미지원 — HWPX로 저장 안내) */
+  /* ⚠ 표 지원은 **경로마다 다르다** — 예전에는 한 줄로 "표 ○"이라고만 적어
+     브라우저 변환도 표가 살아나는 것처럼 보였다. 실측(2026-07-24):
+       · 브라우저 PDF  — 표 추출 코드가 없다(줄 텍스트로만 나온다)
+       · 브라우저 Word — mammoth 마크다운 출력에 표 행 0건·구분선 0건
+       · 브라우저 Excel — SheetJS로 마크다운 표 생성(정상)
+     EIA 문서는 표가 본문의 핵심이라 이 차이를 숨기면 안 된다. */
   const CAPS = [
     ["", "HWPX", "PDF", "Excel", "Word"],
     ["쪽번호 <code>## Page N</code>", 0, 1, 0, 0],
-    ["표 → 마크다운 표", 1, 1, 1, 1],
+    ["표 → 마크다운 표 <b>(로컬 런처)</b>", 1, 1, 1, 1],
+    ["표 → 마크다운 표 <b>(브라우저)</b>", "—", 0, 1, 0],
     ["제목·목차(헤딩)", 1, 1, "시트명", 1],
     ["스캔 문서 OCR", "—", 1, "—", "—"],
     ["브라우저만으로 변환", 0, 1, 1, 1],
@@ -206,6 +216,13 @@ export function init(section, { bridge, toast }) {
         `<tr><th>${r[0]}</th>${r.slice(1).map((v) => `<td class="num">${cell(v)}</td>`).join("")}</tr>`
       ).join("")}</tbody>
     </table>
+    <p class="help" style="margin-top:8px;color:var(--warn)">
+      <b>표가 중요한 문서는 아래 [로컬 런처] 변환을 쓰세요.</b>
+      브라우저 변환은 <b>PDF·Word의 표를 마크다운 표로 만들지 못합니다</b> —
+      셀 내용이 낱줄로 흩어집니다(브라우저에서 쓸 수 있는 라이브러리의 한계).
+      로컬 런처는 같은 파일에서 표를 <code>| … |</code> 표로 뽑아냅니다.
+      <b>Excel은 브라우저에서도 표가 그대로 나옵니다.</b>
+    </p>
     <p class="help" style="margin-top:8px">
       <b>쪽번호가 PDF에만 있는 이유</b> — 한글·Word는 쪽 나눔을 파일에 저장하지 않고
       프로그램이 화면에 그릴 때 정합니다. 그래서 파일을 읽는 방식으로는 알 수 없습니다.
@@ -261,8 +278,9 @@ export function init(section, { bridge, toast }) {
 
   <div class="panel">
     <h2>한글·스캔 문서 변환 (로컬 런처)</h2>
-    <p class="desc">브라우저가 열 수 없는 한글(HWPX)·스캔 PDF와 폴더 통째 변환을 여기서 처리합니다.
-      <b>변환 품질이 다른 게 아니라, 다룰 수 있는 형식이 다릅니다.</b>
+    <p class="desc">브라우저가 열 수 없는 한글(HWPX)·스캔 PDF와 폴더 통째 변환을 여기서 처리하며,
+      <b>PDF·Word는 이쪽이 결과가 더 좋습니다 — 표를 마크다운 표로 뽑아냅니다.</b>
+      (브라우저 변환은 표 구조를 살리지 못합니다. 형식만 다른 게 아니라 표에서 품질 차이가 납니다.)
       변환 결과는 원본이 있는 폴더 안 <code>markdown_output</code> 폴더에 만들어집니다.</p>
     <p class="help" style="margin-top:-6px">
       <b>내용만 필요하면</b> 한글 문서(HWPX)를 바로 변환하셔도 됩니다 — 목차·소제목·표 구조가 그대로 살아납니다.
@@ -542,6 +560,7 @@ export function init(section, { bridge, toast }) {
     try {
       const job = await bridge.call("/jobs", { method: "POST", body: { type: "convert", paths: mbPaths } });
       await bridge.pollJob(job.job_id, {
+        label: "문서 → MD 변환",
         onLog: (line) => mbLog(line),
         onProgress: (p) => {
           if (!p) return;

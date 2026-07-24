@@ -14,6 +14,11 @@ export function init(section, { bridge, toast }) {
     <h2>PDF 표 → 엑셀</h2>
     <p class="desc">PDF 안의 표만 골라 엑셀로 옮깁니다 — 연속된 페이지에 걸친 표는 하나로 합치고,
       중간에 반복되는 머리행은 지웁니다. 표마다 <b>표명·출처</b> 2행이 머리부로 붙습니다.</p>
+    <p class="desc" style="margin-top:calc(-1*var(--space-2))">
+      <b>지원 파일 — PDF</b> · 한글·Word 문서는 <b>PDF로 저장한 뒤</b> 넣어 주세요.
+      <b style="color:var(--warn)">스캔(이미지) PDF는 표를 뽑을 수 없습니다</b> —
+      글자가 그림이라 표의 칸을 읽을 수 없습니다(그 경우 [문서 → MD] 탭의 OCR을 쓰세요).
+      페이지 범위는 <b>PDF에 실제로 매겨진 물리 쪽번호</b> 기준입니다(보고서 인쇄 쪽번호와 다를 수 있습니다).</p>
     <div id="px-locked" class="placeholder" style="margin-bottom:var(--space-2)">
       ○ 로컬 런처 미연결 — 로컬 런처 실행 후 활성화됩니다.
     </div>
@@ -140,6 +145,7 @@ export function init(section, { bridge, toast }) {
     try {
       const job = await bridge.call("/jobs", { method: "POST", body });
       const done = await bridge.pollJob(job.job_id, {
+        label: "PDF 표 추출",
         onLog: (l) => log(l),
         onProgress: (p) => {
           if (!p) return;

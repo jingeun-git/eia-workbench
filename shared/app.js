@@ -7,14 +7,14 @@ import { keys } from "./keys.js";
 /* 배포 버전 — 도구 모듈 import에 붙여 브라우저 모듈 캐시를 무효화한다.
    Pages는 즉시 갱신되는데 브라우저가 옛 .js를 계속 쓰는 바람에, 이미 고친
    버그가 화면에 계속 뜨는 일이 반복됐다(2026-07-20). 배포 시 이 값을 올린다. */
-export const V = "3.60.0";
+export const V = "3.61.0";
 
 /* 브리지가 마지막으로 **실제로 바뀐** 버전.
    웹과 브리지는 별개 프로그램이라 버전이 따로 논다. 웹은 자주 바뀌지만
    브리지는 PC에서 하는 일(한컴·파일 접근)이 늘어날 때만 바뀐다.
    여기 값을 웹 버전에 맞춰 올리면 안 된다 — 바뀐 것도 없는데 사용자에게
    매번 재시작을 시키게 된다. **브리지 코드를 고칠 때만** 올린다. */
-const MIN_BRIDGE = "3.26.0";   // nodelock(/ping) 지원 최소 버전 — 셸 게이트가 이 신호를 요구한다
+const MIN_BRIDGE = "3.27.0";   // 작업 취소(/jobs/{id}/cancel) 지원 최소 버전 — 탭전환 안전장치가 이걸 부른다
 const cmpVer = (a, b) => {
   const pa = String(a).split("."), pb = String(b).split(".");
   for (let i = 0; i < 3; i++) {
@@ -95,8 +95,86 @@ function initTheme() {
 }
 
 /* ── 탭 ───────────────────────────────────────────────────────────── */
+/* 작업 중 탭 전환 안전장치 (SYS-76 W3) ─────────────────────────────────
+   한컴 작업은 사용자가 탭을 떠나도 계속 돌아 백그라운드 좀비로 남았다.
+   그래서 **전환과 중단을 하나로 묶는다** — 옮기려면 반드시 멈춘다.
+   대신 무엇이 남고 무엇이 안 남는지 먼저 알려 사용자가 선택하게 한다.
+
+   왜 셸(여기)에서 하는가: 모듈마다 각자 막게 하면 한 곳만 빠져도 좀비가
+   되살아난다. 탭 전환의 단일 관문인 `activate()`에서 한 번만 막는다. */
+function currentToolId() {
+  const on = $$(".tab").find((b) => b.getAttribute("aria-selected") === "true");
+  return on?.dataset.tool || null;
+}
+
+function askStopRunning() {
+  return new Promise((resolve) => {
+    const labels = [...bridge.activeJobs.values()]
+      .map((j) => j.label).filter(Boolean);
+    const what = $("#busy-what");
+    if (what)
+      what.textContent = labels.length ? labels.join(" · ") : "진행 중인 작업";
+    const modal = $("#busy-modal");
+    const go = $("#busy-go"), stay = $("#busy-stay");
+    let settled = false;
+    let obs = null;          // 아래에서 만든다. done이 먼저 불려도 죽지 않게 미리 선언
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      go.removeEventListener("click", onGo);
+      stay.removeEventListener("click", onStay);
+      obs?.disconnect();
+      closeModals();
+      resolve(v);
+    };
+    const onGo = () => done(true);
+    const onStay = () => done(false);
+    go.addEventListener("click", onGo);
+    stay.addEventListener("click", onStay);
+    /* Escape·배경 클릭으로도 이 창이 닫힌다(공용 모달 규칙). 그 경로를 여기서
+       잡지 않으면 창은 사라지는데 이 Promise가 영원히 안 풀려 **탭 전환이 조용히
+       멈춘다** — 사용자에겐 "눌러도 아무 일이 없는" 상태가 된다(2026-07-24 발견).
+       닫히는 방법을 하나하나 열거하는 대신 **닫혔다는 사실**을 관찰해 취소로 본다.
+       그래야 나중에 닫는 경로가 늘어도 여기가 깨지지 않는다. */
+    obs = new MutationObserver(() => {
+      if (!modal.classList.contains("active")) done(false);
+    });
+    obs.observe(modal, { attributes: true, attributeFilter: ["class"] });
+    openModal("busy-modal");
+  });
+}
+
 async function activate(id, pushHash = true) {
   const tool = TOOLS.find((t) => t.id === id && !t.planned) || TOOLS[0];
+  const from = currentToolId();
+  if (bridge.busy && from && from !== tool.id) {
+    if (!(await askStopRunning())) {
+      /* 머무르기 — 해시로 들어온 전환(뒤로가기 등)이면 주소를 원래대로 돌린다.
+         안 돌리면 주소는 새 탭인데 화면은 옛 탭인 상태가 되어 다음 전환이 꼬인다. */
+      if (from && location.hash !== `#${from}`)
+        history.replaceState(null, "", `#${from}`);
+      return;
+    }
+    try {
+      const res = await bridge.cancelAll();
+      const killed = res.reduce((n, r) => n + (r.hwp_killed || 0), 0);
+      /* 취소를 보내는 순간 작업이 끝나는 경합이 실제로 일어난다(2026-07-24 실측).
+         그때 "중단했습니다"라고 말하면 거짓이다 — 브리지가 알려주는 대로 말한다. */
+      const failed = res.filter((r) => r.ok === false);
+      if (failed.length)
+        /* 브리지가 도중에 죽으면 취소 요청 자체가 실패한다. 그때도 "중단했습니다"라고
+           말하면 거짓이다 — 남은 작업이 정말 멈췄는지 알 수 없다고 알린다. */
+        toast(`작업을 멈추지 못했습니다 — ${failed[0].error}. `
+              + "로컬 런처가 살아 있으면 백그라운드에서 계속될 수 있습니다", "fail");
+      else if (res.length && res.every((r) => r.already_finished))
+        toast("작업이 이미 끝났습니다 — 결과를 확인하세요", "ok");
+      else
+        toast(killed ? `작업을 중단했습니다 (한컴 ${killed}개 종료) — 완료된 파일은 남아 있습니다`
+                     : "작업을 중단했습니다 — 완료된 파일은 남아 있습니다", "ok");
+    } catch (e) {
+      toast(`작업 중단에 실패했습니다 — ${String(e.message || e)}`, "fail");
+    }
+  }
   $$(".tab").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.tool === tool.id)));
   $$(".tool-section").forEach((s) =>
