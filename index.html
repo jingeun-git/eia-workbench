@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EIA Workbench — 통합 업무도구</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="shared/tokens.css">
+<link rel="stylesheet" href="shared/ui.css?v=3.62.1">
+</head>
+<body>
+
+
+
+
+
+<div id="bridge-banner" class="bridge-banner" role="status" hidden>
+  <span id="bridge-banner-msg">로컬 런처 연결을 확인하는 중입니다…</span>
+</div>
+
+<header class="shell-header">
+  <div class="shell-bar">
+    <div class="brand">
+      <b>EIA Workbench</b>
+      <small>환경영향평가 통합 업무도구</small>
+      <span class="ver" id="web-ver" title="웹 버전 — 새로고침하면 항상 최신을 받아옵니다"></span>
+    </div>
+
+    <button id="bridge-chip" class="chip warn" aria-label="로컬 런처 연결 상태">◌ 확인 중…</button>
+
+  <button id="settings-btn" class="icon-btn" aria-label="설정 (API 키·토큰)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  </button>
+
+    <button id="theme-toggle" class="icon-btn" aria-label="라이트/다크 전환">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="shell-nav">
+    <div class="shell-nav-inner">
+      <nav class="tabs" role="tablist" aria-label="도구 선택"></nav>
+    </div>
+  </div>
+</header>
+
+<main class="shell-main">
+  <section id="sec-parcel" class="tool-section" aria-label="건축물대장 조회"></section>
+
+  <section id="sec-md" class="tool-section" aria-label="md 변환"></section>
+
+  <section id="sec-eiass" class="tool-section" aria-label="EIASS 다운로더"></section>
+  <section id="sec-hwppdf" class="tool-section" aria-label="HWPX를 PDF로 변환"></section>
+  <section id="sec-pagenum" class="tool-section" aria-label="쪽번호"></section>
+  <section id="sec-pdf2xl" class="tool-section" aria-label="PDF 표를 엑셀로 변환"></section>
+  <section id="sec-photo" class="tool-section" aria-label="사진 좌표 조회"></section>
+  <section id="sec-geocode" class="tool-section" aria-label="지오코딩"></section>
+  <section id="sec-envdata" class="tool-section" aria-label="환경질 측정 데이터 분석"></section>
+</main>
+
+<footer class="shell-footer">
+  <span>EIA Workbench</span>
+</footer>
+
+
+<div id="settings-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="modal">
+    <h3 id="settings-title">설정</h3>
+
+    <div class="field">
+      <label for="set-vworld">vworld API 키 <span class="req">*</span> (건축물대장 조회)</label>
+      <div class="input-row">
+        <input type="password" id="set-vworld" autocomplete="off" spellcheck="false">
+        <button class="btn btn-secondary" data-reveal="#set-vworld" type="button">표시</button>
+      </div>
+      <p class="help">
+        vworld.kr 로그인 → <b>인증키 관리</b>에서 발급받은 키를 <b>있는 그대로</b> 붙여넣으세요.<br>
+        형식: <code>00000000-0000-0000-0000-000000000000</code> — 하이픈 포함 36자<br>
+        <span class="help-warn">⚠ 하이픈(-)을 뺀 32자로 넣으면 「등록되지 않은 인증키입니다」로 거부됩니다.</span><br>
+        키는 이 브라우저의 localStorage에만 저장되며 서버로 전송되지 않습니다.
+      </p>
+    </div>
+
+    <div class="field">
+      <label for="set-pubdata">공공데이터포털 키 <span class="req">*</span> (건축물대장 조회)</label>
+      <div class="input-row">
+        <input type="password" id="set-pubdata" autocomplete="off" spellcheck="false">
+        <button class="btn btn-secondary" data-reveal="#set-pubdata" type="button">표시</button>
+      </div>
+      <p class="help">
+        data.go.kr 로그인 → 「건축HUB 건축물대장 정보 서비스」 <b>활용신청</b> → 마이페이지에서 <b>일반 인증키(Decoding)</b>를 붙여넣으세요.<br>
+        형식: 영문·숫자에 <code>+</code> <code>/</code> <code>=</code> 가 섞인 한 줄 — 약 88자, 공백·줄바꿈 없이<br>
+        <span class="help-warn">⚠ <code>%2B</code>·<code>%2F</code>가 보이면 Encoding 키입니다 — Decoding 키를 쓰세요.</span><br>
+        활용신청은 자동승인이지만 반영 직후 잠시 403이 날 수 있습니다(키 오류 아님). 개발계정 한도는 1일 1,000건입니다.
+      </p>
+    </div>
+
+    <div class="field">
+      <label for="set-token">로컬 런처 토큰 (로컬 런처 사용 시)</label>
+      <div class="input-row">
+        <input type="password" id="set-token" autocomplete="off" spellcheck="false">
+        <button class="btn btn-secondary" data-reveal="#set-token" type="button">표시</button>
+      </div>
+      <p class="help">로컬 런처 트레이 아이콘 → "토큰 복사"로 얻은 값을 붙여넣으세요.</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-close-modal type="button">취소</button>
+      <button class="btn btn-primary" id="settings-save" type="button">저장</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="bridge-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bridge-title">
+  <div class="modal">
+    <h3 id="bridge-title">로컬 런처</h3>
+    <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
+      이 도구는 <b>두 부분</b>으로 되어 있습니다.<br><br>
+      <b>① 웹</b> — 지금 보고 계신 화면입니다. 설치도 실행도 없는 인터넷 주소이며,
+      새로고침하면 항상 최신을 받아옵니다. 왼쪽 위에 <b>웹 버전</b>이 표시됩니다.<br>
+      <b>② 로컬 런처</b> — PC에서 도는 작은 프로그램입니다. 한컴(HWPX) 작업·한글/스캔 문서 변환·
+      EIASS 자동탐색·사진 폴더 읽기처럼 <b>브라우저가 할 수 없는 일</b>만 담당합니다.
+      상태칩에 <b>로컬 런처 버전</b>이 표시됩니다.<br><br>
+      <b>두 버전 숫자가 다른 것이 정상입니다.</b> 별개 프로그램이라 각자 필요할 때만 올라갑니다 —
+      로컬 런처는 PC에서 하는 작업이 바뀔 때만 갱신되므로 웹보다 낮은 것이 보통입니다.
+      맞지 않으면 상태칩에 <b style="color:var(--warn)">⚠ 갱신 필요</b>가 뜹니다.<br><br>
+      <b>로컬 런처 실행</b>: 받으신 번들 폴더의 <code>launcher.vbs</code> 더블클릭 — 끝.
+      브라우저가 자동으로 열리며 토큰이 스스로 등록됩니다.
+      (지오코딩·EIASS 수집·문서→MD 탭은 로컬 런처 없이도 동작합니다)<br><br>
+      상태칩이 <b style="color:var(--ok)">● 연결됨</b>으로 바뀌면 관련 탭이 활성화됩니다.
+      <b style="color:var(--warn)">⚠ 진단 스텁 감지</b>가 뜨면 예전 PoC 스텁 창이 켜져 있는 것입니다
+      — 그 창을 닫고 로컬 런처(launcher.vbs)를 다시 실행하세요.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-close-modal type="button">닫기</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div id="busy-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="busy-title">
+  <div class="modal">
+    <h3 id="busy-title">작업이 진행 중입니다</h3>
+    <p style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.7">
+      <b id="busy-what">진행 중인 작업</b>이 아직 끝나지 않았습니다.<br><br>
+      탭을 옮기면 이 작업을 <b>중단</b>합니다.
+      <b style="color:var(--ok)">이미 만들어진 파일은 그대로 남고</b>,
+      아직 처리하지 않은 파일은 원본 그대로 남습니다.<br><br>
+      계속 진행하려면 이 탭에 머물러 주세요.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="busy-stay" type="button">머무르기</button>
+      <button class="btn" id="busy-go" type="button">중단하고 이동</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" aria-live="polite"></div>
+
+
+
+
+
+<div class="corner-mark">
+  <div class="disclaimer">결과는 사용자 검증 필수, 오류 책임은 사용자에게 있습니다</div>
+  <div class="feedback-mark">버그·개선 의견은 <span id="contact-slot">개발자</span>에게 알려주세요</div>
+</div>
+
+<script src="vendor/shp.min.js"></script>
+<script src="vendor/proj4.js"></script>
+<script src="vendor/xlsx.min.js"></script>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/chartjs-plugin-annotation.min.js"></script>
+<script src="vendor/chartjs-plugin-datalabels.min.js"></script>
+
+<script type="module" src="shared/app.js?v=3.62.1"></script>
+</body>
+</html>
