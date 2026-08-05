@@ -483,6 +483,10 @@ export async function init(section, { bridge, toast, V }) {
       const r = await bridge.call("/photo/export", { method: "POST", timeoutMs: 120000,
         body: { format: fmt, out, photos: picked, epsg: parseInt($("#ph-epsg").value, 10) } });
       log(`✓ ${r.count}개 지점을 저장했습니다 — ${r.path}`, "ok");
+
+
+
+      (r.warnings || []).forEach((w) => log(`⚠ ${w}`, "warn"));
       toast(`${fmt.toUpperCase()} 저장 완료 — 사진 폴더에 있습니다`, "ok");
     } catch (e) {
       log(`✗ ${e.message}`, "fail");
