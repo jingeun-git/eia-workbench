@@ -453,6 +453,34 @@ def _a3_pages(hwp, total: int):
     return out
 
 
+def _co_init() -> bool:
+    """."""
+
+
+
+
+
+
+
+
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+        return True
+    except Exception:
+        return False
+
+
+def _co_uninit(active: bool) -> None:
+    if not active:
+        return
+    try:
+        import pythoncom
+        pythoncom.CoUninitialize()
+    except Exception:
+        pass
+
+
 def _hwp_process_helpers():
     """."""
 
@@ -491,6 +519,9 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None,
 
     _hwp_pids, _kill_pids = _hwp_process_helpers()
     _pids_before = _hwp_pids()
+
+
+    _co = _co_init()
 
 
     hwp = None
@@ -570,6 +601,7 @@ def scan_folder(folder, log=lambda *_: None, progress=lambda *_: None,
 
 
         _kill_pids(_hwp_pids() - _pids_before)
+        _co_uninit(_co)
     return out
 
 
@@ -800,6 +832,8 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
     _hwp_pids, _kill_pids = _hwp_process_helpers()
     _pids_before = _hwp_pids()
 
+    _co = _co_init()
+
     hwp = None
     ok = fail = 0
     cancelled = False
@@ -908,6 +942,7 @@ def apply_plan(plan, log=lambda *_: None, progress=lambda *_: None,
 
 
         _kill_pids(_hwp_pids() - _pids_before)
+        _co_uninit(_co)
     if cancelled:
         log(f"─── 사용자 취소 — 여기까지 {'미리보기' if dry_run else '적용'}됨: "
             f"성공 {ok} / 실패 {fail} (남은 {len(targets) - ok - fail}건은 원본 그대로)")
