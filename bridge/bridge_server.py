@@ -108,7 +108,11 @@ if getattr(sys, "frozen", False):
         pass
     sys.stdout = _Tee(sys.stdout, _logp)
     sys.stderr = _Tee(sys.stderr, _logp)
-TOOLS_DIR  = BRIDGE_DIR.parent.parent
+
+
+_TOOLS_ENV = os.environ.get("EIAWB_TOOLS_DIR", "")
+TOOLS_DIR  = (Path(_TOOLS_ENV) if _TOOLS_ENV and Path(_TOOLS_ENV).exists()
+              else BRIDGE_DIR.parent.parent)
 CONFIG     = BRIDGE_DIR / "bridge_config.json"
 
 
