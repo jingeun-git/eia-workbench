@@ -495,10 +495,17 @@ def cancel_job(job_id: str) -> dict:
             return {"ok": True, "was": "queued", "hwp_killed": 0}
     killed = kill_automation_hwp() if job["status"] == "running" else 0
     if killed:
-        job_log(job, f"─── 사용자 취소 — 한컴 {killed}개를 종료했습니다"
+
+
+
+
+
+        job_log(job, f"─── 사용자 취소 — 한컴 {killed}개를 종료했습니다."
+                     " 진행 중이던 문서의 연결이 풀리기까지 최대 30초쯤 걸릴 수 있습니다"
                      " (여기까지 만들어진 파일은 그대로 남습니다)")
     else:
-        job_log(job, "─── 사용자 취소 — 진행 중인 단계가 끝나면 멈춥니다")
+
+        job_log(job, "─── 사용자 취소 — 진행 중인 단계가 끝나면 멈춥니다(대개 1초 안)")
     return {"ok": True, "was": job["status"], "hwp_killed": killed}
 
 
@@ -918,12 +925,26 @@ def run_envdata_parse(job, params):
         job_log(job, f"HWP→PDF 변환: {src.name}")
         tmp_out = Path(tempfile.mkdtemp(prefix="envdata_parse_"))
         result_pdf = None
-        for ev in hwp2pdf_core.convert_batch([src], out_dir=str(tmp_out)):
+
+
+
+        for ev in hwp2pdf_core.convert_batch(
+                [src], out_dir=str(tmp_out),
+                should_cancel=lambda: bool(job.get("cancel"))):
+            if ev.get("phase") == "cancelled":
+                job_log(job, "─── 사용자 취소 — PDF 변환 단계에서 멈췄습니다")
+                return
             if ev.get("phase") == "item":
                 if ev.get("ok"):
                     result_pdf = Path(ev["pdf"])
+                elif job.get("cancel"):
+                    job_log(job, "─── 사용자 취소 — PDF 변환 중 중단했습니다")
+                    return
                 else:
                     raise RuntimeError(f"HWP→PDF 변환 실패: {ev.get('error')}")
+        if job.get("cancel"):
+            job_log(job, "─── 사용자 취소 — 표 추출을 시작하지 않았습니다")
+            return
         if not result_pdf or not result_pdf.exists():
             raise RuntimeError("HWP→PDF 변환 결과 파일을 찾지 못했습니다")
         pdf_path = result_pdf
@@ -933,7 +954,14 @@ def run_envdata_parse(job, params):
         job["progress"] = {"done": done, "total": total, "stage": f"{done}/{total} 쪽"}
 
     job_log(job, f"표 추출 중: {pdf_path.name}")
-    raws = pc.scan(pdf_path, "", progress=on_prog)
+
+
+
+    raws = pc.scan(pdf_path, "", progress=on_prog,
+                   cancel=lambda: bool(job.get("cancel")))
+    if job.get("cancel"):
+        job_log(job, "─── 사용자 취소 — 표 추출을 중단했습니다")
+        return
     if not raws:
         raise RuntimeError("표를 찾지 못했습니다 — 스캔 이미지 PDF는 표 추출이 불가합니다")
     tables = pc.group(raws)
@@ -989,8 +1017,16 @@ def run_hwp2pdf(job, params):
                 fail += 1
                 job_log(job, f"  ✗ {name}: {ev.get('error')}")
         elif ph == "cancelled":
-            job_log(job, f"─── 사용자 취소 — {ev.get('done')}/{ev.get('total')}건까지 "
-                         f"변환됨(성공 {ev.get('ok')}). 만들어진 PDF는 그대로 남습니다")
+
+
+
+
+
+
+            job_log(job, f"─── 사용자 취소 — 끝낸 건수 {ev.get('done')}/{ev.get('total')}"
+                         f" (성공 {ev.get('ok')} · 실패 {ev.get('fail')}"
+                         f" · 건너뜀 {ev.get('skip')}). 남은 파일은 시작하지 않았고,"
+                         " 취소 직전에 저장이 끝난 PDF는 지우지 않고 남깁니다")
             return
         elif ph == "done":
             job_log(job, f"─── 변환 완료: 성공 {ev['ok']} / 실패 {ev['fail']} / 건너뜀 {ev['skip']}")
@@ -1058,8 +1094,20 @@ def run_hwp_probe(job, params):
     if not path_allowed(folder):
         raise RuntimeError("대상 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
     job["progress"] = {"done": 0, "total": 1, "stage": "한컴 기동·문서 검사 중"}
+
+
+    if job.get("cancel"):
+        job_log(job, "─── 사용자 취소 — 한컴을 띄우지 않았습니다")
+        return
+
+
+
+
     text = probe.run_probe(str(folder), sink=lambda line: job_log(job, line),
                            max_files=int(params.get("max_files", 5)))
+    if job.get("cancel"):
+        job_log(job, "─── 사용자 취소 — 결과 파일을 쓰지 않고 멈췄습니다")
+        return
     try:
         out = folder / "probe_result.txt"
         out.write_text(text, encoding="utf-8")
