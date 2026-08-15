@@ -46,7 +46,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.30.0"
+BRIDGE_VERSION = "3.31.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -126,11 +126,13 @@ try:
     EIASS_DIR    = _resolve("eiass_doc_resolver").parent
     HWP2PDF_DIR  = _resolve("hwp2pdf_core").parent
     PDF2XLSX_DIR = _resolve("pdf2excel_core").parent
+    PDFMERGE_DIR = _resolve("pdf_merge_core").parent
 except Exception:
     CONVERT_DIR  = TOOLS_DIR / "convert_to_md"
     EIASS_DIR    = TOOLS_DIR / "EIASS"
     HWP2PDF_DIR  = TOOLS_DIR / "hwp2pdf"
     PDF2XLSX_DIR = TOOLS_DIR / "pdf2excel"
+    PDFMERGE_DIR = TOOLS_DIR / "pdf_merge"
 
 
 
@@ -144,7 +146,8 @@ RESOLVER     = EIASS_DIR / "eiass_doc_resolver.py"
 
 PROXY_HOSTS = ("apis.data.go.kr",)
 
-for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR, PDF2XLSX_DIR):
+for p in (BRIDGE_DIR, CONVERT_DIR, HWP2PDF_DIR, EIASS_DIR, PDF2XLSX_DIR,
+          PDFMERGE_DIR):
     if p.exists():
         sys.path.insert(0, str(p))
 
@@ -233,7 +236,7 @@ def evaluate_nodelock() -> dict:
 def detect_features():
     feats = {"convert": False, "ocr": False, "eiass": False,
              "hwp2pdf": False, "pagenum": False, "pdf2excel": False,
-             "photo": False,
+             "photo": False, "pdf_merge": False,
 
 
 
@@ -246,6 +249,11 @@ def detect_features():
     try:
         import photo_exif
         feats["photo"] = True
+    except Exception:
+        pass
+    try:
+        import pdf_merge_core
+        feats["pdf_merge"] = True
     except Exception:
         pass
     try:
@@ -414,6 +422,12 @@ def job_log(job, msg):
 JOB_KEEP = 40
 
 
+
+
+
+PDF_MERGE_TIMEOUT_S = 1800
+
+
 def _prune_jobs():
     """."""
 
@@ -550,6 +564,33 @@ def pick_dialog(kind: str, patterns=None, initial=None, initial_dir=None):
     return paths
 
 
+def _guard_module():
+    """."""
+
+
+
+
+
+
+
+
+
+
+
+
+    try:
+        import guarded_convert
+        return guarded_convert
+    except Exception:
+        pass
+    from claude_paths import resolve as _r
+    gdir = str(_r("guarded_convert.py").parent)
+    if gdir not in sys.path:
+        sys.path.insert(0, gdir)
+    import guarded_convert
+    return guarded_convert
+
+
 def run_convert(job, params):
     import convert_core
     paths = [Path(p) for p in params.get("paths", [])]
@@ -590,24 +631,66 @@ def run_convert(job, params):
     if not path_allowed(out_dir.parent if not out_dir.exists() else out_dir):
         raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
 
+
+
+
+
+
+
+    guard = _guard_module()
+    if not guard._measurable():
+
+
+
+        job_log(job, "⚠ 이 PC에서는 메모리 사용량을 잴 수 없어 **메모리 상한이"
+                     " 적용되지 않습니다**(시간 상한·취소는 그대로 작동합니다)")
+    runner = guard.GuardedConverter(
+        guard.MEM_CEILING_GB, guard.FILE_TIMEOUT_S,
+
+        no_ocr=True,
+
+
+        should_cancel=lambda: bool(job.get("cancel")))
+
     total = len(files)
-    ok = err = 0
-    for i, src in enumerate(files, 1):
-        if job.get("cancel"):
-            job_log(job, f"─── 사용자 취소 — {i - 1}/{total}개까지 변환됨"
-                         f"(성공 {ok} / 실패 {err}) → {out_dir}")
-            return
-        job["progress"] = {"done": i - 1, "total": total, "stage": src.name}
-        job_log(job, f"[{i}/{total}] {src.name}")
-        success, result = convert_core.convert_file(src, out_dir)
-        if success:
-            ok += 1
-            job_log(job, f"  ✓ {Path(result).name}")
-        else:
-            err += 1
-            job_log(job, f"  ✗ {result}")
+    ok = err = over = 0
+    try:
+        for i, src in enumerate(files, 1):
+            if job.get("cancel"):
+                break
+            job["progress"] = {"done": i - 1, "total": total, "stage": src.name}
+            job_log(job, f"[{i}/{total}] {src.name}")
+            res = runner.convert(src, out_dir=out_dir)
+            status = res.get("status")
+            if status == "ok":
+                ok += 1
+                job_log(job, f"  ✓ {Path(res['out']).name}" if res.get("out")
+                        else "  ✓ 완료")
+            elif status == "cancelled":
+                break
+            elif status == "problem":
+
+
+                over += 1
+                job_log(job, f"  ⛔ {res.get('msg', '자원 상한 초과')}"
+                             " — 이 파일만 건너뜁니다")
+            else:
+                err += 1
+                job_log(job, f"  ✗ {res.get('msg', '변환 실패')}")
+    finally:
+
+        runner.close()
+
+    done = ok + err + over
+    tail = (f"(성공 {ok} / 실패 {err} / 자원 상한 초과 {over}) → {out_dir}")
+    if job.get("cancel"):
+        job_log(job, f"─── 사용자 취소 — 끝낸 건수 {done}/{total} {tail}")
+        return
     job["progress"] = {"done": total, "total": total, "stage": "완료"}
-    job_log(job, f"─── 변환 완료: 성공 {ok} / 실패 {err} → {out_dir}")
+    job_log(job, f"─── 변환 완료: {done}/{total} {tail}")
+    if over:
+        job_log(job, "   ↳ 자원 상한을 넘긴 파일은 대개 스캔(이미지) 원문입니다 —"
+                     " 필요하면 그 파일만 따로 처리해 주세요")
 
 def run_eiass_dl(job, params):
     """."""
@@ -899,6 +982,170 @@ def run_pdf2excel_write(job, params):
     job_log(job, f"  ✓ {Path(path).name} ({size >> 10} KB · 표 {len(tables)}개)")
     job_log(job, f"─── 저장 완료 → {path}")
     job["result"] = {"path": str(path)}
+
+
+def run_pdf_merge_scan(job, params):
+    """."""
+
+
+
+
+
+
+
+    import fitz
+    import pdf_merge_core as pm
+
+    paths = [Path(p) for p in params.get("paths", [])]
+    for p in paths:
+        if not path_allowed(p):
+            raise RuntimeError("선택한 경로가 승인된 경로가 아닙니다 — [파일 선택]으로 다시 지정하세요")
+    files = pm.sort_files(pm.collect_pdfs(paths), params.get("sort", "natural"))
+    if not files:
+        raise RuntimeError("PDF를 찾지 못했습니다 — 폴더는 한 단계만 훑습니다(하위 폴더 제외)")
+
+    rows = []
+    for i, f in enumerate(files):
+
+        if job.get("cancel"):
+            job_log(job, f"─── 사용자 취소 — {i}/{len(files)}개까지 확인했습니다")
+            return
+        row = {"idx": i, "name": f.name, "path": str(f),
+               "size_kb": f.stat().st_size >> 10, "pages": None, "warn": ""}
+        try:
+            with fitz.open(f) as doc:
+                if doc.needs_pass:
+                    row["warn"] = "암호로 보호된 PDF — 병합에서 제외됩니다"
+                else:
+                    row["pages"] = doc.page_count
+                    if doc.page_count == 0:
+                        row["warn"] = "페이지가 0쪽 — 병합에서 제외됩니다"
+        except Exception as e:
+            row["warn"] = f"열 수 없음: {e}"
+        rows.append(row)
+        job_log(job, f"  [{i + 1}] {f.name}"
+                     + (f" · {row['pages']}쪽" if row["pages"] else "")
+                     + (f" · ⚠ {row['warn']}" if row["warn"] else ""))
+        job["progress"] = {"done": i + 1, "total": len(files), "stage": f.name}
+
+    total_pages = sum(r["pages"] or 0 for r in rows)
+    job_log(job, f"─── PDF {len(rows)}개 · 합계 {total_pages}쪽")
+    job["result"] = {"files": rows, "total_pages": total_pages,
+
+                     "presets": [{"key": k, "label": v["label"], "desc": v["desc"]}
+                                 for k, v in pm.QUALITY_PRESETS.items()]}
+
+
+def run_pdf_merge(job, params):
+    """."""
+
+
+
+
+    import pdf_merge_core as pm
+
+    files = [Path(p) for p in params.get("files", [])]
+    if not files:
+        raise RuntimeError("병합할 PDF가 없습니다 — 먼저 [1. 목록 만들기]를 누르세요")
+    for f in files:
+        if not path_allowed(f):
+            raise RuntimeError("선택한 파일이 승인된 경로가 아닙니다")
+
+    out = Path(params.get("out") or (files[0].parent / "병합본.pdf"))
+    if not path_allowed(out.parent):
+        raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [저장 위치]를 다시 지정하세요")
+
+    files = [f for f in files if f.resolve() != out.resolve()]
+    if not files:
+        raise RuntimeError("병합할 PDF가 없습니다 (저장 파일과 입력이 같습니다)")
+
+    quality = pm.resolve_quality(params.get("quality", "auto"))
+    if quality not in pm.QUALITY_PRESETS:
+        raise RuntimeError(f"알 수 없는 해상도 설정입니다: {quality}")
+    job["progress"] = {"done": 0, "total": len(files), "stage": "병합 중"}
+    job_log(job, f"병합 {len(files)}개 · 해상도 {pm.QUALITY_PRESETS[quality]['label']}")
+    if job.get("cancel"):
+        job_log(job, "─── 사용자 취소 — 병합을 시작하지 않았습니다")
+        return
+
+
+
+
+
+
+
+
+    req = {"inputs": [str(f) for f in files], "out": str(out),
+           "sort": "none",
+           "bookmark": params.get("bookmark", "topic"),
+           "quality": quality,
+           "no_number": not bool(params.get("number_bookmarks", True)),
+           "json": True}
+    proc = subprocess.Popen(
+        [sys.executable, str(PDFMERGE_DIR / "pdf_merge_core.py"), "--stdin-json"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, encoding="utf-8",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    box: dict = {}
+
+    def _talk():
+        try:
+            box["out"] = proc.communicate(json.dumps(req, ensure_ascii=False))[0]
+        except Exception as e:
+            box["err"] = str(e)
+
+    th = threading.Thread(target=_talk, daemon=True)
+    th.start()
+    t0 = time.time()
+    while th.is_alive():
+        th.join(0.5)
+        if job.get("cancel"):
+            proc.kill()
+            th.join(5)
+
+            out.unlink(missing_ok=True)
+            job_log(job, "─── 사용자 취소 — 병합을 중단했습니다(만들던 파일은 지웠습니다)")
+            return
+        if time.time() - t0 > PDF_MERGE_TIMEOUT_S:
+            proc.kill()
+            th.join(5)
+            out.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"병합이 {PDF_MERGE_TIMEOUT_S // 60}분을 넘겨 중단했습니다 — "
+                "파일 수를 줄이거나 해상도를 「자동」으로 두고 다시 시도하세요")
+
+    rc = proc.returncode
+    if rc is not None and rc < 0:
+
+        out.unlink(missing_ok=True)
+        raise RuntimeError(
+            "이 PDF는 선택한 해상도로 다시 압축할 수 없습니다(PDF 처리 엔진이 중단됨) — "
+            "해상도를 「자동 (원본 품질)」로 두면 대부분 정상 처리됩니다. "
+            "원본 손상이 아니라 재압축 단계의 한계입니다")
+    raw = (box.get("out") or "").strip()
+    if not raw:
+        out.unlink(missing_ok=True)
+        raise RuntimeError("병합 프로그램이 응답 없이 종료됐습니다 — "
+                           "해상도를 「자동 (원본 품질)」로 두고 다시 시도하세요")
+    try:
+        res = json.loads(raw)
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise RuntimeError(f"병합 결과를 읽지 못했습니다: {raw[:200]}") from None
+    if res.get("ok") is False:
+        raise RuntimeError(res.get("error", "병합 실패"))
+
+
+    one = (res.get("outputs") or [res])[0]
+    for s in one.get("skipped", []):
+        job_log(job, f"  ⚠ 건너뜀: {Path(s['file']).name} — {s['reason']}")
+    for w in one.get("warnings", []):
+        job_log(job, f"  ⚠ {w}")
+    job["progress"] = {"done": len(files), "total": len(files), "stage": "완료"}
+    job_log(job, f"  ✓ {out.name} ({one.get('pages')}쪽 · 책갈피 {one.get('bookmarks')}개"
+                 f" · {one.get('size_mb')}MB)")
+    job_log(job, f"─── 저장 완료 → {out}")
+    job["result"] = one
 
 
 def run_envdata_parse(job, params):
@@ -1256,6 +1503,7 @@ RUNNERS = {"convert": run_convert, "eiass_dl": run_eiass_dl,
            "eiass_seq_dl": run_eiass_seq_dl,
            "hwp2pdf": run_hwp2pdf,
            "pdf2excel_scan": run_pdf2excel_scan, "pdf2excel_write": run_pdf2excel_write,
+           "pdf_merge_scan": run_pdf_merge_scan, "pdf_merge": run_pdf_merge,
            "envdata_parse": run_envdata_parse}
 
 def worker():

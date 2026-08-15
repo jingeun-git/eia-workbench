@@ -7,14 +7,14 @@ import { keys } from "./keys.js";
 
 
 
-export const V = "3.62.1";
+export const V = "3.63.0";
 
 
 
 
 
 
-const MIN_BRIDGE = "3.27.0";
+const MIN_BRIDGE = "3.31.0";
 const cmpVer = (a, b) => {
   const pa = String(a).split("."), pb = String(b).split(".");
   for (let i = 0; i < 3; i++) {
@@ -57,6 +57,9 @@ const TOOLS = [
   { id: "envdata", group: "author",  label: "환경질 분석",   needsBridge: false,
     load: () => import(`../modules/envdata.js?v=${V}`) },
 
+
+  { id: "pdfmerge", group: "finish", label: "PDF 병합",   needsBridge: true,
+    load: () => import(`../modules/pdfmerge.js?v=${V}`) },
   { id: "pagenum",group: "finish",  label: "쪽번호",      needsBridge: true,
     load: () => import(`../modules/hwp.js?v=${V}`).then((m) => ({ init: (el, ctx) => m.init(el, ctx, "pagenum") })) },
   { id: "hwppdf", group: "finish",  label: "한글 → PDF",   needsBridge: true,

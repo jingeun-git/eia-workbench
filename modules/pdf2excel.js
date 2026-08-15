@@ -55,7 +55,7 @@ export function init(section, { bridge, toast }) {
         <div class="progress-head"><span class="stage" id="px-stage"></span><span class="count" id="px-count"></span></div>
         <div class="progress-track"><div class="progress-fill" id="px-fill"></div></div>
       </div>
-      <div class="table-wrap" id="px-tblwrap">
+      <div class="result-table-wrap" id="px-tblwrap">
         <table class="data-table">
           <thead><tr>
             <th style="width:36px"><input type="checkbox" id="px-all" checked></th>
