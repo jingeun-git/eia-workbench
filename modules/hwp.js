@@ -20,7 +20,7 @@ const META = {
   },
 };
 
-export function init(section, { bridge, toast }, kind) {
+export function init(section, { bridge, toast, mountStopButton }, kind) {
   const m = META[kind];
 
   section.innerHTML = `
@@ -134,6 +134,7 @@ export function init(section, { bridge, toast }, kind) {
              <button class="btn btn-primary" id="hw-run" disabled>2. 쪽번호 적용</button>`
           : `<button class="btn btn-primary" id="hw-run">실행</button>`}
         <button class="btn btn-secondary" id="hw-reset">초기화</button>
+        <span id="hw-stopslot"></span>
       </div>
       ${kind === "pagenum" ? `
       <div class="result-table-wrap" id="hw-tblwrap" style="margin-top:var(--space-4)">
@@ -159,6 +160,10 @@ export function init(section, { bridge, toast }, kind) {
 `;
 
   const $ = (s) => section.querySelector(s);
+
+
+
+  mountStopButton?.($("#hw-stopslot"));
   let running = false;
   const log = (msg, kindCls = "") => {
     const el = $("#hw-log");

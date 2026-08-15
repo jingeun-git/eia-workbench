@@ -7,14 +7,16 @@ import { keys } from "./keys.js";
 
 
 
-export const V = "3.63.0";
+export const V = "3.64.0";
 
 
 
 
 
 
-const MIN_BRIDGE = "3.31.0";
+const MIN_BRIDGE = "3.31.2";
+
+
 const cmpVer = (a, b) => {
   const pa = String(a).split("."), pb = String(b).split(".");
   for (let i = 0; i < 3; i++) {
@@ -147,6 +149,60 @@ function askStopRunning() {
   });
 }
 
+
+
+
+
+export async function stopAllRunning() {
+  try {
+    const res = await bridge.cancelAll();
+    const killed = res.reduce((n, r) => n + (r.hwp_killed || 0), 0);
+
+
+    const failed = res.filter((r) => r.ok === false);
+    if (failed.length)
+
+
+      toast(`작업을 멈추지 못했습니다 — ${failed[0].error}. `
+            + "로컬 런처가 살아 있으면 백그라운드에서 계속될 수 있습니다", "fail");
+    else if (res.length && res.every((r) => r.already_finished))
+      toast("작업이 이미 끝났습니다 — 결과를 확인하세요", "ok");
+    else
+      toast(killed ? `작업을 중단했습니다 (한컴 ${killed}개 종료) — 완료된 파일은 남아 있습니다`
+                   : "작업을 중단했습니다 — 완료된 파일은 남아 있습니다", "ok");
+  } catch (e) {
+    toast(`작업 중단에 실패했습니다 — ${String(e.message || e)}`, "fail");
+  }
+}
+
+
+
+
+export function mountStopButton(el, { label = "중지" } = {}) {
+  const b = document.createElement("button");
+  b.className = "btn btn-secondary";
+  b.type = "button";
+  b.textContent = `■ ${label}`;
+  const sync = () => {
+    b.disabled = !bridge.busy;
+    b.title = bridge.busy
+      ? "진행 중인 작업을 멈춥니다 — 여기까지 만들어진 파일은 남습니다"
+      : "진행 중인 작업이 없습니다";
+  };
+  b.addEventListener("click", async () => {
+    if (!bridge.busy) return;
+    b.disabled = true;
+    await stopAllRunning();
+    sync();
+  });
+
+  bridge.addEventListener("busy", sync);
+  bridge.addEventListener("change", sync);
+  sync();
+  el.appendChild(b);
+  return b;
+}
+
 async function activate(id, pushHash = true) {
   const tool = TOOLS.find((t) => t.id === id && !t.planned) || TOOLS[0];
   const from = currentToolId();
@@ -158,25 +214,7 @@ async function activate(id, pushHash = true) {
         history.replaceState(null, "", `#${from}`);
       return;
     }
-    try {
-      const res = await bridge.cancelAll();
-      const killed = res.reduce((n, r) => n + (r.hwp_killed || 0), 0);
-
-
-      const failed = res.filter((r) => r.ok === false);
-      if (failed.length)
-
-
-        toast(`작업을 멈추지 못했습니다 — ${failed[0].error}. `
-              + "로컬 런처가 살아 있으면 백그라운드에서 계속될 수 있습니다", "fail");
-      else if (res.length && res.every((r) => r.already_finished))
-        toast("작업이 이미 끝났습니다 — 결과를 확인하세요", "ok");
-      else
-        toast(killed ? `작업을 중단했습니다 (한컴 ${killed}개 종료) — 완료된 파일은 남아 있습니다`
-                     : "작업을 중단했습니다 — 완료된 파일은 남아 있습니다", "ok");
-    } catch (e) {
-      toast(`작업 중단에 실패했습니다 — ${String(e.message || e)}`, "fail");
-    }
+    await stopAllRunning();
   }
   $$(".tab").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.tool === tool.id)));
@@ -189,7 +227,9 @@ async function activate(id, pushHash = true) {
     inited.add(tool.id);
     try {
       const mod = await tool.load();
-      await mod.init($(`#sec-${tool.id}`), { bridge, toast, V });
+
+
+      await mod.init($(`#sec-${tool.id}`), { bridge, toast, V, mountStopButton });
     } catch (e) {
 
 

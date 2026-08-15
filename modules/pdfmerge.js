@@ -11,7 +11,7 @@
 
 
 
-export function init(section, { bridge, toast }) {
+export function init(section, { bridge, toast, mountStopButton }) {
   section.innerHTML = `
   <div class="panel">
     <h2>PDF 병합</h2>
@@ -60,6 +60,7 @@ export function init(section, { bridge, toast }) {
         <button class="btn btn-primary" id="pm-scan">1. 목록 만들기</button>
         <button class="btn btn-primary" id="pm-run" disabled>2. 하나로 합치기</button>
         <button class="btn btn-secondary" id="pm-reset">초기화</button>
+        <span id="pm-stopslot"></span>
         <span class="help" id="pm-summary"></span>
       </div>
       <div class="progress-wrap" id="pm-prog">
@@ -81,6 +82,9 @@ export function init(section, { bridge, toast }) {
   </div>`;
 
   const $ = (s) => section.querySelector(s);
+
+
+  mountStopButton?.($("#pm-stopslot"));
   let running = false;
   let rows = [];
   let srcPaths = [];

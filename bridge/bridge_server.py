@@ -46,7 +46,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.31.0"
+BRIDGE_VERSION = "3.31.2"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -993,8 +993,9 @@ def run_pdf_merge_scan(job, params):
 
 
 
-    import fitz
     import pdf_merge_core as pm
+    fitz = pm.fitz
+
 
     paths = [Path(p) for p in params.get("paths", [])]
     for p in paths:
@@ -1081,18 +1082,27 @@ def run_pdf_merge(job, params):
            "quality": quality,
            "no_number": not bool(params.get("number_bookmarks", True)),
            "json": True}
+
+
+
+
+
+
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
     proc = subprocess.Popen(
         [sys.executable, str(PDFMERGE_DIR / "pdf_merge_core.py"), "--stdin-json"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, encoding="utf-8",
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     box: dict = {}
 
     def _talk():
         try:
-            box["out"] = proc.communicate(json.dumps(req, ensure_ascii=False))[0]
+            box["out"], box["stderr"] = proc.communicate(
+                json.dumps(req, ensure_ascii=False))
         except Exception as e:
-            box["err"] = str(e)
+            box["err"] = f"{type(e).__name__}: {e}"
 
     th = threading.Thread(target=_talk, daemon=True)
     th.start()
@@ -1125,13 +1135,34 @@ def run_pdf_merge(job, params):
     raw = (box.get("out") or "").strip()
     if not raw:
         out.unlink(missing_ok=True)
-        raise RuntimeError("병합 프로그램이 응답 없이 종료됐습니다 — "
-                           "해상도를 「자동 (원본 품질)」로 두고 다시 시도하세요")
+
+
+
+        why = box.get("err") or (box.get("stderr") or "").strip()[-300:]
+        raise RuntimeError(
+            "병합 프로그램이 결과를 돌려주지 않았습니다"
+            + (f" — {why}" if why else f" (종료코드 {rc})"))
     try:
         res = json.loads(raw)
     except Exception:
-        out.unlink(missing_ok=True)
-        raise RuntimeError(f"병합 결과를 읽지 못했습니다: {raw[:200]}") from None
+
+
+
+
+
+
+
+        head, sep, tail = raw.partition("{")
+        res = None
+        if sep:
+            try:
+                res = json.loads(sep + tail)
+            except Exception:
+                res = None
+        if res is None:
+            out.unlink(missing_ok=True)
+            raise RuntimeError(f"병합 결과를 읽지 못했습니다: {raw[:200]}") from None
+        job_log(job, f"  ⚠ 병합 엔진이 결과 앞에 남긴 출력을 무시했습니다: {head.strip()[:120]}")
     if res.get("ok") is False:
         raise RuntimeError(res.get("error", "병합 실패"))
 
