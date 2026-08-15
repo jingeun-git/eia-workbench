@@ -1343,6 +1343,61 @@ export async function init(section, { toast, bridge, V }) {
     toast(`"${name}" 프로젝트를 만들었습니다`, "ok");
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+  const EXPORT_SCHEMA_REVISION = 2;
+
+  function appendSourceSheets(wb) {
+    const isMulti = analysisMode === "multi";
+    const round = isMulti ? (activeProject?.rounds || []).find((r) => r.id === currentEditRoundId) : null;
+    const meta = [
+      ["key", "value"],
+      ["schema_revision", EXPORT_SCHEMA_REVISION],
+      ["exported_at", new Date().toISOString()],
+      ["workbench_version", (V || "")],
+      ["field_code", standards.field || ""],
+      ["field_label", FIELDS[fieldIdx]?.label || ""],
+      ["analysis_mode", analysisMode],
+      ["project_id", isMulti ? (activeProject?.id || "") : ""],
+      ["project_name", isMulti ? (activeProject?.name || "") : ""],
+      ["round_id", round?.id || ""],
+      ["round_label", round?.label || ""],
+      ["site_count", isMulti ? (activeProject?.sites?.length || 0) : rows.length],
+      ["item_count", columns.length],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), "_출처");
+
+
+
+    const rl = round?.label || "";
+    const cells = [["round_label", "site_label", "item_label", "value", "unit", "grade"]];
+    for (const row of rows) {
+      for (const c of columns) {
+        const v = row.values?.[c.id];
+        if (v === undefined || v === null || v === "") continue;
+        cells.push([
+          rl, row.label || "", c.label || "", v, c.unit || "",
+          (withGradeFor(c) ? gradeBadgeFor(c, v).replace(/^\(|\)$/g, "") : ""),
+        ]);
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cells), "_셀출처");
+  }
+
+  function withGradeFor(col) {
+    return showGrades && hasGradeScale() && !!col;
+  }
+
   function exportTableToExcel() {
     if (!window.XLSX) { toast("엑셀 라이브러리를 불러오지 못했습니다", "fail"); return; }
 
@@ -1359,7 +1414,12 @@ export async function init(section, { toast, bridge, V }) {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "측정데이터");
-    XLSX.writeFile(wb, `${standards.field}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+
+
+    appendSourceSheets(wb);
+    const fname = `${standards.field}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fname);
     toast("엑셀을 다운로드 폴더에 저장했습니다 — 차트는 엑셀에서 표를 선택한 뒤 삽입 메뉴로 추가해주세요", "ok");
   }
 
