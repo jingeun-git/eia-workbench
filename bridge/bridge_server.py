@@ -46,7 +46,7 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.31.2"
+BRIDGE_VERSION = "3.32.0"
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -466,11 +466,19 @@ def kill_automation_hwp() -> int:
         "ForEach-Object { $_.ProcessId }"
     )
     try:
+
+
+
+
+
+
+
         out = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True, text=True, timeout=20,
+            capture_output=True, timeout=20,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        pids = [int(t) for t in out.stdout.split() if t.strip().isdigit()]
+        raw = (out.stdout or b"").decode("utf-8", "replace")
+        pids = [int(t) for t in raw.split() if t.strip().isdigit()]
     except Exception:
         return 0
     killed = 0
@@ -1268,16 +1276,34 @@ def run_hwp2pdf(job, params):
         raise RuntimeError("HWP/HWPX 파일이 없습니다")
     out_dir = params.get("out_dir") or None
 
+    print_opts = params.get("print_opts") or {}
+
     ok = fail = 0
     for ev in hwp2pdf_core.convert_batch(
             files, out_dir=out_dir,
-            should_cancel=lambda: bool(job.get("cancel"))):
+            should_cancel=lambda: bool(job.get("cancel")),
+            print_opts=print_opts):
         ph = ev.get("phase")
         if ph == "start":
             job["progress"] = {"done": 0, "total": ev["total"], "stage": "한컴 기동 중"}
             job_log(job, f"HWP→PDF 일괄 변환 {ev['total']}건 시작")
         elif ph == "engine":
             job_log(job, f"  엔진: {ev.get('mode')} / PDF 프린터: {ev.get('pdf_printer') or '-'}")
+            applied = ev.get("print_opts") or {}
+            if applied:
+                labels = hwp2pdf_core.PRINT_OPT_LABELS
+                job_log(job, "  인쇄 내용 지정: " + " · ".join(
+                    f"{labels.get(k, k)} {'출력' if v else '미출력'}" for k, v in applied.items())
+                    + " (지정하지 않은 항목은 문서에 저장된 설정을 따릅니다)")
+        elif ph == "opts_degraded":
+
+            un = ev.get("unsupported") or []
+            if un:
+                job_log(job, "  ⚠ 이 한글 버전이 지원하지 않는 인쇄 옵션: "
+                             + " · ".join(un) + " → 해당 항목은 문서에 저장된 설정대로 출력됩니다")
+            if ev.get("ignored"):
+                job_log(job, f"  ⚠ 한컴 PDF 프린터를 쓰지 못해 {ev['ignored']}건은 저장 방식으로"
+                             " 변환됐습니다 — 그 건들은 인쇄 내용 지정이 반영되지 않습니다")
         elif ph == "begin":
 
 
@@ -1308,6 +1334,13 @@ def run_hwp2pdf(job, params):
             return
         elif ph == "done":
             job_log(job, f"─── 변환 완료: 성공 {ev['ok']} / 실패 {ev['fail']} / 건너뜀 {ev['skip']}")
+
+            if ev.get("opts_unsupported"):
+                job_log(job, "  ⚠ 미지원으로 문서설정 유지된 항목: "
+                             + " · ".join(ev["opts_unsupported"]))
+            if ev.get("opts_ignored"):
+                job_log(job, f"  ⚠ 인쇄 내용 지정이 반영되지 않은 파일 {ev['opts_ignored']}건"
+                             " (한컴 PDF 프린터 미사용 폴백 경로)")
     if job.get("cancel"):
         return
     if fail and not ok:
@@ -1720,6 +1753,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if LOCAL_WEB and (url.path == "/app" or url.path.startswith("/app/")):
             self._serve_web(url.path)
+            return
+
+
+
+
+
+        if url.path == "/favicon.ico":
+            self._headers(204, length=0)
             return
         if not self._auth_ok():
             self._json({"ok": False, "error": "unauthorized"}, 401)

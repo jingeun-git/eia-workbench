@@ -127,7 +127,40 @@ export function init(section, { bridge, toast, mountStopButton }, kind) {
           <input type="text" id="hw-outdir" readonly placeholder="선택 안 함 — 원본 파일 옆에 저장">
           <button class="btn btn-secondary" id="hw-pick-out" type="button">폴더 선택</button>
         </div>
-      </div>` : ""}
+      </div>
+      <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4)">
+        <div class="field" style="margin-bottom:0;flex:0 0 190px">
+          <label for="hw-opt-memo">메모</label>
+          <select id="hw-opt-memo">
+            <option value="keep">문서설정 유지</option>
+            <option value="on">출력</option>
+            <option value="off">미출력</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0;flex:0 0 190px">
+          <label for="hw-opt-memoc" title="본문의 메모 표시가 아니라, 메모 목록을 담은 별도 쪽을 뒤에 덧붙이는 옵션입니다">메모 내용(별도 쪽)</label>
+          <select id="hw-opt-memoc">
+            <option value="keep">문서설정 유지</option>
+            <option value="on">출력</option>
+            <option value="off">미출력</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0;flex:0 0 190px">
+          <label for="hw-opt-hl">형광펜</label>
+          <select id="hw-opt-hl">
+            <option value="keep">문서설정 유지</option>
+            <option value="on">출력</option>
+            <option value="off">미출력</option>
+          </select>
+        </div>
+      </div>
+      <p class="help" style="margin:-8px 0 var(--space-4)">
+        「문서설정 유지」는 파일마다 저장된 인쇄 설정을 그대로 따릅니다 — 같은 배치에서도 결과가 갈릴 수 있습니다.
+        <b>메모를 「출력」하면 오른쪽 여백에 메모 칸이 생기면서 본문이 그만큼 작게 인쇄됩니다</b>
+        (실측: 9쪽 전 쪽의 배치가 달라집니다). 메모를 「미출력」하면 본문이 지면을 온전히 씁니다.
+        「메모 내용」은 본문 표시가 아니라 <b>메모 목록을 담은 별도 쪽</b>이라 쪽수가 늘어납니다(실측 9쪽 → 10쪽).
+        한글 버전이 옵션을 지원하지 않으면 그 항목만 문서설정대로 나가며, 그 사실을 아래 로그에 적습니다.
+      </p>` : ""}
       <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
         ${kind === "pagenum"
           ? `<button class="btn btn-primary" id="hw-scan">1. 스캔</button>
@@ -461,7 +494,12 @@ export function init(section, { bridge, toast, mountStopButton }, kind) {
     $("#hw-fill").classList.add("indeterminate");
     try {
       const body = kind === "pdf"
-        ? { type: "hwp2pdf", paths: hwPaths, out_dir: $("#hw-outdir").value.trim() || null }
+        ? { type: "hwp2pdf", paths: hwPaths, out_dir: $("#hw-outdir").value.trim() || null,
+
+
+            print_opts: { memo: $("#hw-opt-memo").value,
+                          memo_contents: $("#hw-opt-memoc").value,
+                          highlight: $("#hw-opt-hl").value } }
         : { type: "pagenum_apply", folder: dir, files: scanned,
             start_num: parseInt($("#hw-start").value, 10) || 1,
 

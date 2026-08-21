@@ -99,18 +99,29 @@ export class BridgeClient extends EventTarget {
 
 
 
-    const found = [];
-    let stubFound = false;
-    for (const base of candidates) {
+
+
+
+
+
+
+
+
+    const probes = await Promise.all(candidates.map(async (base) => {
       try {
         const res = await this._fetch(`${base}/ping`, { timeoutMs: 1500 });
         if (res && res.ok) {
           const info = await res.json();
-          if (!info.features) { stubFound = true; continue; }
-          found.push({ base, info });
+          if (!info.features) return { stub: true };
+          return { base, info };
         }
       } catch (_) {  }
-    }
+      return null;
+    }));
+
+
+    const found = probes.filter((r) => r && r.base);
+    const stubFound = probes.some((r) => r && r.stub);
 
     if (found.length) {
       const ver = (v) => String(v || "0").split(".").map((n) => parseInt(n, 10) || 0);
