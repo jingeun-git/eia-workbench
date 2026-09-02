@@ -235,6 +235,13 @@ export function init(section, { bridge, toast }) {
     <p class="desc">PDF·Word·Excel을 브라우저 안에서 마크다운으로 변환합니다 (파일은 업로드되지 않습니다).
       HWPX와 OCR(스캔 PDF)은 브라우저가 열 수 없어 아래 <b>로컬 런처</b>에서 처리합니다.</p>
 
+    <div id="md-prefer" class="placeholder" style="display:none;margin-bottom:var(--space-3)">
+      ✓ <b>로컬 런처가 연결돼 있습니다.</b> 표와 목차까지 살리는 변환은 아래
+      <b>한글·스캔 문서 변환</b>에서 처리합니다 — 이 위쪽은 표를 살리지 못하는 <b>간이 변환</b>입니다.
+      <button class="btn btn-secondary" id="md-goto-bridge" type="button"
+              style="margin-left:var(--space-2)">아래로 이동</button>
+    </div>
+
     <div class="field">
       <label>변환할 파일 <span class="req">*</span></label>
       <label class="dropzone" id="md-drop">
@@ -317,6 +324,11 @@ export function init(section, { bridge, toast }) {
   let activeTab = 0;
   let running = false;
 
+
+
+
+  let bridgeReady = false;
+
   const ext = (n) => n.split(".").pop().toLowerCase();
 
   function renderList() {
@@ -339,8 +351,14 @@ export function init(section, { bridge, toast }) {
       b.addEventListener("click", () => { files.splice(+b.dataset.rm, 1); renderList(); updateUI(); warnIfHeavy(); }));
   }
   function updateUI() {
-    $("#md-run").disabled = running ||
+    const btn = $("#md-run");
+    btn.disabled = running ||
       !files.some((f) => !BRIDGE_EXTS.includes(f.ext));
+
+    if (!running) {
+      btn.textContent = bridgeReady ? "간이 변환 실행" : "변환 실행";
+      btn.className = bridgeReady ? "btn btn-secondary" : "btn btn-primary";
+    }
   }
 
 
@@ -466,7 +484,6 @@ export function init(section, { bridge, toast }) {
       toast(e.message, "fail");
     } finally {
       running = false;
-      runBtn.textContent = "변환 실행";
       updateUI();
     }
   });
@@ -508,9 +525,19 @@ export function init(section, { bridge, toast }) {
     $("#mb-form").style.display = ok ? "" : "none";
     if (!ok && bridge.state === "ok")
       $("#mb-locked").textContent = "⚠ 로컬 런처에서 이 기능을 찾지 못했습니다 — 로컬 런처를 최신 버전으로 다시 실행하세요.";
+
+
+    bridgeReady = !!ok;
+    $("#md-prefer").style.display = ok ? "" : "none";
+    updateUI();
   };
   bridge.addEventListener("change", renderBridge);
   renderBridge();
+
+  $("#md-goto-bridge").addEventListener("click", () => {
+    $("#mb-form").scrollIntoView({ behavior: "smooth", block: "center" });
+    $("#mb-pick").focus();
+  });
 
 
 

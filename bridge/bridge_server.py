@@ -46,7 +46,9 @@ try:
 except Exception:
     pass
 
-BRIDGE_VERSION = "3.32.0"
+BRIDGE_VERSION = "3.33.0"
+
+
 PORTS = [8765, 8766, 8767, 8768, 8769, 8770]
 WEB_URL = "https://jingeun-git.github.io/eia-workbench/"
 
@@ -599,6 +601,35 @@ def _guard_module():
     return guarded_convert
 
 
+def convert_root(paths: list, files: list) -> Path:
+    """."""
+
+
+
+
+    try:
+        return Path(os.path.commonpath(
+            [str(p if p.is_dir() else p.parent) for p in paths]))
+    except ValueError:
+        return files[0].parent
+
+
+def mirror_dir(out_dir: Path, root: Path, src: Path) -> Path:
+    """."""
+
+
+
+
+
+
+
+    try:
+        rel = src.parent.relative_to(root)
+    except ValueError:
+        rel = Path()
+    return out_dir / rel
+
+
 def run_convert(job, params):
     import convert_core
     paths = [Path(p) for p in params.get("paths", [])]
@@ -635,7 +666,8 @@ def run_convert(job, params):
                 f"변환 대상이 구형 HWP(.hwp) {len(skipped_hwp)}건뿐입니다 — "
                 "한글에서 HWPX로 저장한 뒤 다시 시도해 주세요")
         raise RuntimeError("변환 대상 파일이 없습니다 (지원: pdf·xlsx·xls·docx·hwpx)")
-    out_dir = Path(params.get("out_dir") or (files[0].parent / "markdown_output"))
+    root = convert_root(paths, files)
+    out_dir = Path(params.get("out_dir") or (root / "markdown_output"))
     if not path_allowed(out_dir.parent if not out_dir.exists() else out_dir):
         raise RuntimeError("저장 폴더가 승인된 경로가 아닙니다 — [폴더 선택]으로 다시 지정하세요")
 
@@ -668,7 +700,7 @@ def run_convert(job, params):
                 break
             job["progress"] = {"done": i - 1, "total": total, "stage": src.name}
             job_log(job, f"[{i}/{total}] {src.name}")
-            res = runner.convert(src, out_dir=out_dir)
+            res = runner.convert(src, out_dir=mirror_dir(out_dir, root, src))
             status = res.get("status")
             if status == "ok":
                 ok += 1
