@@ -175,6 +175,17 @@ function convertXlsx(buf) {
   return parts.join("\n");
 }
 
+
+
+
+function outBase(name, allNames) {
+  const stem = (n) => n.replace(/\.[^.]+$/, "") || "output";
+  const base = stem(name);
+  const ext = (name.match(/\.([^.]+)$/) || ["", ""])[1].toLowerCase();
+  const dup = allNames.filter((n) => stem(n) === base).length > 1;
+  return dup && ext ? `${base}(${ext})` : base;
+}
+
 function detectGarbledHangul(text) {
   const garbled = text.match(/[?□]{2,}/g);
   if (garbled && garbled.length > 0)
@@ -413,7 +424,7 @@ export function init(section, { bridge, toast }) {
     results.forEach((r, i) => {
       const b = document.createElement("button");
       b.className = "rtab" + (i === activeTab ? " active" : "");
-      b.textContent = r.name.replace(/\.[^.]+$/, "");
+      b.textContent = outBase(r.name, results.map((x) => x.name));
       b.title = r.name;
       b.addEventListener("click", () => { activeTab = i; renderTabs(); });
       tabs.appendChild(b);
@@ -506,7 +517,7 @@ export function init(section, { bridge, toast }) {
   $("#md-save").addEventListener("click", () => {
     const cur = results[activeTab];
     if (!cur) return;
-    downloadMd(cur.name.replace(/\.[^.]+$/, "") + ".md", cur.md);
+    downloadMd(outBase(cur.name, results.map((x) => x.name)) + ".md", cur.md);
     toast("MD 파일을 다운로드 폴더에 저장했습니다", "ok");
   });
 
@@ -605,7 +616,9 @@ export function init(section, { bridge, toast }) {
     if (!targets.length) return;
     const used = new Set();
     for (let i = 0; i < targets.length; i++) {
-      let base = targets[i].name.replace(/\.[^.]+$/, "") || "output";
+      const base = outBase(targets[i].name, targets.map((x) => x.name));
+
+
       let fn = base + ".md", n = 2;
       while (used.has(fn)) fn = `${base} (${n++}).md`;
       used.add(fn);
